@@ -1,10 +1,11 @@
 from fastapi.exceptions import HTTPException
 from sqlalchemy.orm import Session
 
-from app.core.security import hash_password, verify_password, create_access_token
-from app.auth.repository import get_user_by_email, create_user
-from app.auth.schemas import UserRegister, UserLogin
+from app.auth.repository import create_user, get_user_by_email
+from app.auth.schemas import UserLogin, UserRegister
+from app.core.security import create_access_token, hash_password, verify_password
 from app.models.user import User
+
 
 def register(db: Session, register_data: UserRegister) -> User:
     if get_user_by_email(db, email=register_data.email) is not None:
@@ -16,16 +17,16 @@ def register(db: Session, register_data: UserRegister) -> User:
 
     return user
 
+
 def login(db: Session, login_data: UserLogin) -> str:
     user = get_user_by_email(db, email=login_data.email)
 
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
-    if not verify_password(plain_password=login_data.password, hashed_password=user.hashed_password):
+
+    if not verify_password(login_data.password, user.hashed_password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+
     payload = {"sub": str(user.id)}
     access_token = create_access_token(payload=payload)
     return access_token
-    
