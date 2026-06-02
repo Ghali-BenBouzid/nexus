@@ -22,4 +22,14 @@ def create_access_token(payload: dict) -> str:
     expiry = datetime.now(UTC) + timedelta(minutes=settings.access_token_expire_minutes)
     data["exp"] = expiry
 
-    return jwt.encode(data, settings.secret_key, settings.algorithm)
+    return jwt.encode(
+        claims=data, key=settings.secret_key, algorithm=settings.algorithm
+    )
+
+
+def decode_access_token(token: str) -> str:
+    claims = jwt.decode(
+        token=token, key=settings.secret_key, algorithms=[settings.algorithm]
+    )
+
+    return claims["sub"]
