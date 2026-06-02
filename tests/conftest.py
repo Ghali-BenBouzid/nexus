@@ -36,3 +36,16 @@ def client() -> Generator[TestClient]:
     yield TestClient(app)
 
     Base.metadata.drop_all(bind=engine)  # dropping all the tables / cleaning
+
+
+@pytest.fixture
+def auth_headers(client: TestClient) -> dict[str, str]:
+    client.post("/auth/register", json={"email": "test@test.com", "password": "secret"})
+
+    response = client.post(
+        "/auth/login", data={"username": "test@test.com", "password": "secret"}
+    )
+
+    token = response.json()["access_token"]
+
+    return {"Authorization": f"Bearer {token}"}
