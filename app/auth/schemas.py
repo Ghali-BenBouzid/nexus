@@ -8,11 +8,6 @@ class UserRegister(BaseModel):
     password: str
 
 
-class UserLogin(BaseModel):
-    email: str
-    password: str
-
-
 class UserResponse(BaseSchema):
     id: int
     email: str
