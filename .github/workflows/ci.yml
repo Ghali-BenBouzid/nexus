@@ -28,7 +28,9 @@ jobs:
       
       - name: Run pytest
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          # Tests use an in-memory SQLite engine (see tests/conftest.py); the app
+          # engine is never connected, so this just needs to be a valid async URL.
+          DATABASE_URL: "sqlite+aiosqlite:///:memory:"
           SECRET_KEY: ${{ secrets.SECRET_KEY }}
           ALGORITHM: ${{ secrets.ALGORITHM }}
           ACCESS_TOKEN_EXPIRE_MINUTES: ${{ secrets.ACCESS_TOKEN_EXPIRE_MINUTES }}
