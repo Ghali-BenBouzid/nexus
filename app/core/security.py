@@ -1,3 +1,4 @@
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 from jose import jwt
@@ -8,12 +9,14 @@ from app.core.config import settings
 pwd_context = CryptContext(schemes=["bcrypt"])
 
 
-def hash_password(password: str) -> str:
-    return pwd_context.hash(password)
+async def hash_password(password: str) -> str:
+    # bcrypt is CPU-bound and blocking; run it off the event loop.
+    return await asyncio.to_thread(pwd_context.hash, password)
 
 
-def verify_password(plain_password: str, hashed_password: str) -> bool:
-    return pwd_context.verify(secret=plain_password, hash=hashed_password)
+async def verify_password(plain_password: str, hashed_password: str) -> bool:
+    # bcrypt is CPU-bound and blocking; run it off the event loop.
+    return await asyncio.to_thread(pwd_context.verify, plain_password, hashed_password)
 
 
 def create_access_token(payload: dict) -> str:

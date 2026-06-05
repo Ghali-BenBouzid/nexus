@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth.dependencies import get_current_user
 from app.db.session import get_db
@@ -11,12 +11,12 @@ router = APIRouter(prefix="/research")
 
 
 @router.post("/query", status_code=201, response_model=QueryResponse)
-def create_query(
+async def create_query(
     query_create: QueryCreate,
-    db: Session = Depends(get_db),
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    created_query = service.handle_query(
+    created_query = await service.handle_query(
         db=db, user_id=current_user.id, prompt=query_create.prompt
     )
 
