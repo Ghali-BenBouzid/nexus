@@ -1,9 +1,12 @@
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 
-import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from sqlalchemy.pool import StaticPool
 
 from app.db.base import Base
@@ -11,38 +14,49 @@ from app.db.session import get_db
 from main import app
 
 
-@pytest.fixture
-def client() -> Generator[TestClient]:
-    # Setting up the test database and dependency override
-    engine = create_engine(
-        url="sqlite:///:memory:",
+@pytest_asyncio.fixture
+async def client() -> AsyncGenerator[AsyncClient]:
+    # In-memory async SQLite. StaticPool keeps a single shared connection so the
+    # schema created below is visible to every request in the test.
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
 
-    session_local = sessionmaker(bind=engine, autocommit=False, autoflush=False)
+    session_local = async_sessionmaker(
+        bind=engine,
+        autocommit=False,
+        autoflush=False,
+        expire_on_commit=False,
+    )
 
-    def get_test_db() -> Generator[Session]:
-        db = session_local()
-        try:
+    async def get_test_db() -> AsyncGenerator[AsyncSession]:
+        async with session_local() as db:
             yield db
-        finally:
-            db.close()
 
     app.dependency_overrides[get_db] = get_test_db
 
-    Base.metadata.create_all(bind=engine)  # creating tables
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)  # creating tables
 
-    yield TestClient(app)
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
 
-    Base.metadata.drop_all(bind=engine)  # dropping all the tables / cleaning
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)  # cleaning up
+    await engine.dispose()
+    app.dependency_overrides.clear()
 
 
-@pytest.fixture
-def auth_headers(client: TestClient) -> dict[str, str]:
-    client.post("/auth/register", json={"email": "test@test.com", "password": "secret"})
+@pytest_asyncio.fixture
+async def auth_headers(client: AsyncClient) -> dict[str, str]:
+    await client.post(
+        "/auth/register", json={"email": "test@test.com", "password": "secret"}
+    )
 
-    response = client.post(
+    response = await client.post(
         "/auth/login", data={"username": "test@test.com", "password": "secret"}
     )
 
