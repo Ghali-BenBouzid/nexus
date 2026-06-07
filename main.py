@@ -9,5 +9,5 @@ app.include_router(research_router)
 
 
 @app.get("/health")
-def health():
+async def health():
     return {"status": "ok"}
