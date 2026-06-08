@@ -12,5 +12,8 @@ class Settings(BaseSettings):
     algorithm: str
     access_token_expire_minutes: int
 
+    # agent / provider settings
+    gemini_api_key: str | None = None
+
 
 settings = Settings()
