@@ -1,7 +1,30 @@
 import pytest
 from pydantic import BaseModel, Field, ValidationError
 
-from app.agents.tools import BaseTool, SubmitFinding, SubmitPlan, ToolResult
+from app.agents.tools import (
+    MAX_PAGE_CHARS,
+    BaseTool,
+    FetchPage,
+    SearchHit,
+    SubmitFinding,
+    SubmitPlan,
+    ToolResult,
+    WebSearch,
+)
+
+
+class FakeSearchBackend:
+    """Canned SearchBackend so tool tests never hit the network."""
+
+    def __init__(self, hits: list[SearchHit] | None = None, page: str = "") -> None:
+        self.hits = hits or []
+        self.page = page
+
+    async def search(self, query: str, max_results: int) -> list[SearchHit]:
+        return self.hits[:max_results]
+
+    async def extract(self, url: str) -> str:
+        return self.page
 
 
 class DummyArgs(BaseModel):
@@ -38,6 +61,40 @@ def test_basetool_requires_run() -> None:
 
     with pytest.raises(TypeError):  # abstractmethod -> can't instantiate
         Incomplete()
+
+
+async def test_web_search_maps_hits_to_sources() -> None:
+    hits = [
+        SearchHit(title="A", url="http://a", content="snippet a"),
+        SearchHit(title="B", url="http://b", content="snippet b"),
+    ]
+    tool = WebSearch(backend=FakeSearchBackend(hits=hits))
+
+    result = await tool.execute(query="x", max_results=5)
+
+    assert [s.url for s in result.sources] == ["http://a", "http://b"]
+    assert "snippet a" in result.content and "snippet b" in result.content
+
+
+async def test_web_search_handles_no_results() -> None:
+    tool = WebSearch(backend=FakeSearchBackend(hits=[]))
+    result = await tool.execute(query="x", max_results=5)
+    assert result.sources == []
+    assert result.content == "No results found."
+
+
+async def test_fetch_page_returns_text_and_source() -> None:
+    tool = FetchPage(backend=FakeSearchBackend(page="full page text"))
+    result = await tool.execute(url="http://a")
+    assert result.content == "full page text"
+    assert [s.url for s in result.sources] == ["http://a"]
+
+
+async def test_fetch_page_truncates_long_text() -> None:
+    tool = FetchPage(backend=FakeSearchBackend(page="x" * (MAX_PAGE_CHARS + 500)))
+    result = await tool.execute(url="http://a")
+    assert len(result.content) < MAX_PAGE_CHARS + 100
+    assert result.content.endswith("[...truncated]")
 
 
 def test_control_schemas_expose_parameters() -> None:

@@ -14,6 +14,21 @@ class RetrievalResult(ToolResult):
     sources: list[Source] = []
 
 
+class SearchHit(BaseModel):
+    title: str
+    url: str
+    content: str  # snippet returned by the search backend
+
+
+class SearchBackend(Protocol):
+    """A swappable web-retrieval backend (Tavily, Brave, ...). Isolates the
+    concrete search provider from the tools that depend on it."""
+
+    async def search(self, query: str, max_results: int) -> list[SearchHit]: ...
+
+    async def extract(self, url: str) -> str: ...
+
+
 class ToolSpec(Protocol):
     name: str
     description: str
@@ -87,5 +102,42 @@ class WebSearch(BaseTool):
     description = "Run a web search for a query and return up to max_results results."
     args_model = WebSearchArgs
 
+    def __init__(self, backend: SearchBackend) -> None:
+        self.backend = backend
+
     async def _run(self, args: WebSearchArgs) -> RetrievalResult:
-        raise NotImplementedError  # backend call
+        hits = await self.backend.search(args.query, args.max_results)
+        sources = [Source(title=hit.title, url=hit.url) for hit in hits]
+        content = (
+            "\n\n".join(f"{hit.title}\n{hit.url}\n{hit.content}" for hit in hits)
+            or "No results found."
+        )
+        return RetrievalResult(content=content, sources=sources)
+
+
+class FetchPageArgs(BaseModel):
+    url: str = Field(description="The URL of the page to fetch and read in full")
+
+
+MAX_PAGE_CHARS = 12_000  # cap fetched page text so it can't blow the token budget
+
+
+class FetchPage(BaseTool):
+    name = "fetch_page"
+    description = (
+        "Fetch a web page by URL and return its cleaned full text, for when a "
+        "search snippet is promising but insufficient."
+    )
+    args_model = FetchPageArgs
+
+    def __init__(self, backend: SearchBackend) -> None:
+        self.backend = backend
+
+    async def _run(self, args: FetchPageArgs) -> RetrievalResult:
+        text = await self.backend.extract(args.url)
+        if len(text) > MAX_PAGE_CHARS:
+            text = text[:MAX_PAGE_CHARS] + "\n\n[...truncated]"
+        return RetrievalResult(
+            content=text,
+            sources=[Source(title=args.url, url=args.url)],
+        )

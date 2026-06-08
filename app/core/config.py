@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     # agent / provider settings
     gemini_api_key: str | None = None
+    tavily_api_key: str | None = None
 
 
 settings = Settings()
