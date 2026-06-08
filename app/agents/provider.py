@@ -1,12 +1,11 @@
 import uuid
-from typing import TYPE_CHECKING, Any, Literal, Protocol
+from typing import Any, Literal, Protocol
 
 from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
-if TYPE_CHECKING:
-    from app.agents.tools import Tool
+from app.agents.tools import ToolSpec
 
 
 class ToolCall(BaseModel):
@@ -36,7 +35,7 @@ class LLMProvider(Protocol):
     async def generate(
         self,
         messages: list[Message],
-        tools: list["Tool"] | None = None,
+        tools: list[ToolSpec] | None = None,
         tool_choice: str = "auto",
     ) -> LLMResponse: ...
 
@@ -55,7 +54,7 @@ class FakeLLMProvider:
     async def generate(
         self,
         messages: list[Message],
-        tools: list["Tool"] | None = None,
+        tools: list[ToolSpec] | None = None,
         tool_choice: str = "auto",
     ) -> LLMResponse:
         self.calls.append((messages, tools, tool_choice))
@@ -84,7 +83,7 @@ class GeminiProvider:
     async def generate(
         self,
         messages: list[Message],
-        tools: list["Tool"] | None = None,
+        tools: list[ToolSpec] | None = None,
         tool_choice: str = "auto",
     ) -> LLMResponse:
         if self._client is None:
@@ -154,7 +153,7 @@ class GeminiProvider:
         return "\n\n".join(system_parts), contents
 
     @staticmethod
-    def _to_tools(tools: list["Tool"] | None) -> list[types.Tool] | None:
+    def _to_tools(tools: list[ToolSpec] | None) -> list[types.Tool] | None:
         if not tools:
             return None
         declarations = [
@@ -169,7 +168,7 @@ class GeminiProvider:
 
     @staticmethod
     def _to_tool_config(
-        tool_choice: str, tools: list["Tool"] | None
+        tool_choice: str, tools: list[ToolSpec] | None
     ) -> types.ToolConfig | None:
         # "auto" (or no tools) -> SDK default (AUTO), so send nothing.
         if not tools or tool_choice == "auto":
