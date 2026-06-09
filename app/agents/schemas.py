@@ -23,3 +23,24 @@ class AgentEvent(BaseModel):
     type: str
     message: str
     data: dict[str, Any] | None = None
+
+
+class ResearchPoint(BaseModel):
+    sub_question: str
+    answer: str
+    source_ids: list[int]  # 1-based citation numbers into ResearchResult.sources
+
+
+class ResearchResult(BaseModel):
+    """The deterministic, style-agnostic artifact the consolidator produces: one
+    global, deduped, numbered source list and the per-point citation mapping."""
+
+    points: list[ResearchPoint]
+    sources: list[Source]  # global, deduped; citation n -> sources[n - 1]
+    gaps: list[str]
+
+
+class Report(BaseModel):
+    content: str
+    sources: list[Source]
+    failed_subquestions: list[str]

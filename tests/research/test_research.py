@@ -3,14 +3,87 @@ from datetime import UTC, datetime, timedelta
 from httpx import AsyncClient
 from jose import jwt
 
+from app.agents.provider import LLMResponse, Message, ToolCall
 from app.core.config import settings
+from app.research.dependencies import get_provider, get_search_backend
+from main import app
+
+# --- fakes for the background pipeline (no network) -------------------------
+
+
+class RoleProvider:
+    def __init__(self, sub_questions: list[str]) -> None:
+        self.sub_questions = sub_questions
+
+    async def __aenter__(self) -> "RoleProvider":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def generate(
+        self, messages: list[Message], tools: object = None, tool_choice: str = "auto"
+    ) -> LLMResponse:
+        system = messages[0].content or ""
+        if "research planner" in system:
+            return LLMResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="p",
+                        name="submit_plan",
+                        args={"sub_questions": self.sub_questions},
+                    )
+                ]
+            )
+        if "research agent" in system:
+            return LLMResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="f",
+                        name="submit_finding",
+                        args={
+                            "answer": "an answer",
+                            "cited_source_ids": [],
+                            "found_info": True,
+                        },
+                    )
+                ]
+            )
+        return LLMResponse(text="FINAL REPORT")
+
+
+class FakeBackend:
+    async def __aenter__(self) -> "FakeBackend":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def search(self, query: str, max_results: int) -> list:
+        return []
+
+    async def extract(self, url: str) -> str:
+        return ""
+
+
+def _use_fake_pipeline(sub_questions: list[str]) -> None:
+    app.dependency_overrides[get_provider] = lambda: RoleProvider(sub_questions)
+    app.dependency_overrides[get_search_backend] = FakeBackend
+
+
+async def _register_and_headers(client: AsyncClient, email: str) -> dict[str, str]:
+    await client.post("/auth/register", json={"email": email, "password": "secret"})
+    response = await client.post(
+        "/auth/login", data={"username": email, "password": "secret"}
+    )
+    return {"Authorization": f"Bearer {response.json()['access_token']}"}
+
+
+# --- auth guards ------------------------------------------------------------
 
 
 async def test_query_without_token(client: AsyncClient) -> None:
-    response = await client.post(
-        "/research/query", json={"prompt": "This is a test prompt"}
-    )
-
+    response = await client.post("/research/query", json={"prompt": "p"})
     assert response.status_code == 401
 
 
@@ -18,36 +91,69 @@ async def test_query_invalid_token(client: AsyncClient) -> None:
     response = await client.post(
         "/research/query",
         headers={"Authorization": "Bearer invalid.garbage.token"},
-        json={"prompt": "test prompt"},
+        json={"prompt": "p"},
     )
-
     assert response.status_code == 401
 
 
 async def test_query_expired_token(client: AsyncClient) -> None:
-    expired_payload = {"sub": "1", "exp": datetime.now(UTC) - timedelta(minutes=1)}
-
-    token = jwt.encode(
-        claims=expired_payload, key=settings.secret_key, algorithm=settings.algorithm
-    )
-
+    expired = {"sub": "1", "exp": datetime.now(UTC) - timedelta(minutes=1)}
+    token = jwt.encode(expired, key=settings.secret_key, algorithm=settings.algorithm)
     response = await client.post(
         "/research/query",
         headers={"Authorization": f"Bearer {token}"},
-        json={"prompt": "test prompt"},
+        json={"prompt": "p"},
     )
-
     assert response.status_code == 401
 
 
-async def test_query_success(client: AsyncClient, auth_headers: dict[str, str]) -> None:
+# --- lifecycle --------------------------------------------------------------
+
+
+async def test_create_returns_202_pending_then_completes(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    _use_fake_pipeline(sub_questions=["q1"])
+
     response = await client.post(
-        "/research/query",
-        headers=auth_headers,
-        json={"prompt": "This is a test prompt"},
+        "/research/query", headers=auth_headers, json={"prompt": "a prompt"}
     )
 
-    assert response.status_code == 201
-    assert response.json()["prompt"] == "This is a test prompt"
-    assert response.json()["report"] is not None
-    assert response.json()["report"] != ""
+    assert response.status_code == 202
+    body = response.json()
+    assert body["status"] == "pending"
+    assert body["prompt"] == "a prompt"
+
+    # the background job runs to completion during the request cycle
+    detail = await client.get(f"/research/query/{body['id']}", headers=auth_headers)
+    assert detail.status_code == 200
+    assert detail.json()["status"] == "complete"
+    assert detail.json()["report"] == "FINAL REPORT"
+
+
+async def test_get_other_users_query_returns_404(client: AsyncClient) -> None:
+    owner = await _register_and_headers(client, "owner@test.com")
+    other = await _register_and_headers(client, "other@test.com")
+    _use_fake_pipeline(sub_questions=["q1"])
+
+    created = await client.post(
+        "/research/query", headers=owner, json={"prompt": "secret"}
+    )
+    query_id = created.json()["id"]
+
+    response = await client.get(f"/research/query/{query_id}", headers=other)
+    assert response.status_code == 404
+
+
+async def test_list_returns_only_callers_queries(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    _use_fake_pipeline(sub_questions=["q1"])
+    await client.post("/research/query", headers=auth_headers, json={"prompt": "one"})
+    await client.post("/research/query", headers=auth_headers, json={"prompt": "two"})
+
+    response = await client.get("/research/query", headers=auth_headers)
+
+    assert response.status_code == 200
+    prompts = {q["prompt"] for q in response.json()}
+    assert prompts == {"one", "two"}

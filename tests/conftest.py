@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
+from app.db import session as db_session
 from app.db.base import Base
 from app.db.session import get_db
 from main import app
@@ -36,6 +37,10 @@ async def client() -> AsyncGenerator[AsyncClient]:
             yield db
 
     app.dependency_overrides[get_db] = get_test_db
+    # The background research job creates its OWN session via db_session.SessionLocal
+    # (not a Depends), so point it at the test engine too.
+    original_session_local = db_session.SessionLocal
+    db_session.SessionLocal = session_local
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)  # creating tables
@@ -47,6 +52,7 @@ async def client() -> AsyncGenerator[AsyncClient]:
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)  # cleaning up
     await engine.dispose()
+    db_session.SessionLocal = original_session_local
     app.dependency_overrides.clear()
 
 
