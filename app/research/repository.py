@@ -1,15 +1,58 @@
+from datetime import UTC, datetime
+
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.query import Query
+from app.agents.schemas import Report
+from app.models.query import Query, QueryStatus
 
 
-async def create_query(
-    db: AsyncSession, user_id: int, prompt: str, report: str | None
-) -> Query:
-    query = Query(user_id=user_id, prompt=prompt, report=report)
-
+async def create_pending_query(db: AsyncSession, user_id: int, prompt: str) -> Query:
+    query = Query(user_id=user_id, prompt=prompt, status=QueryStatus.pending)
     db.add(query)
     await db.commit()
     await db.refresh(query)
-
     return query
+
+
+async def get_query(db: AsyncSession, query_id: int, user_id: int) -> Query | None:
+    result = await db.execute(
+        select(Query).where(Query.id == query_id, Query.user_id == user_id)
+    )
+    return result.scalar_one_or_none()
+
+
+async def list_queries(db: AsyncSession, user_id: int) -> list[Query]:
+    result = await db.execute(
+        select(Query).where(Query.user_id == user_id).order_by(Query.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def set_status(db: AsyncSession, query_id: int, status: QueryStatus) -> None:
+    query = await db.get(Query, query_id)
+    if query is None:
+        return
+    query.status = status
+    await db.commit()
+
+
+async def complete_query(db: AsyncSession, query_id: int, report: Report) -> None:
+    query = await db.get(Query, query_id)
+    if query is None:
+        return
+    query.status = QueryStatus.complete
+    query.report = report.content
+    query.result = report.model_dump()
+    query.completed_at = datetime.now(UTC)
+    await db.commit()
+
+
+async def fail_query(db: AsyncSession, query_id: int, error: str) -> None:
+    query = await db.get(Query, query_id)
+    if query is None:
+        return
+    query.status = QueryStatus.failed
+    query.error = error
+    query.completed_at = datetime.now(UTC)
+    await db.commit()
