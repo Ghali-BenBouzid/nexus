@@ -2,6 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.provider import LLMProvider
+from app.agents.schemas import ResearchResult
 from app.agents.tools import SearchBackend
 from app.auth.dependencies import get_current_user
 from app.db.session import get_db
@@ -58,16 +59,17 @@ async def get_query(
         # 404 (not 403) for another user's id so the id's existence doesn't leak.
         raise HTTPException(status_code=404, detail="Query not found")
 
-    # result is the stored ResearchResult dump (points / sources / gaps).
-    result = query.result or {}
+    # Rehydrate the stored dump back into a ResearchResult (closes the
+    # model_dump round-trip); null until the job completes.
+    result = ResearchResult(**query.result) if query.result else None
     return QueryDetail(
         id=query.id,
         prompt=query.prompt,
         status=query.status,
         report=query.report,
         error=query.error,
-        sources=result.get("sources", []),
-        gaps=result.get("gaps", []),
+        sources=result.sources if result else [],
+        gaps=result.gaps if result else [],
         created_at=query.created_at,
         completed_at=query.completed_at,
     )
