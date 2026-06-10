@@ -5,7 +5,7 @@ from app.agents.consolidator import consolidate
 from app.agents.planner import plan
 from app.agents.provider import LLMProvider
 from app.agents.researcher import research
-from app.agents.schemas import AgentEvent, Finding, Report
+from app.agents.schemas import AgentEvent, Finding, Report, ResearchResult
 from app.agents.tools import Tool
 from app.agents.writer import write
 
@@ -35,10 +35,15 @@ async def run(
     max_iters: int = DEFAULT_MAX_ITERS,
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
     per_researcher_timeout: float = DEFAULT_PER_RESEARCHER_TIMEOUT,
-) -> Report:
+) -> tuple[Report, ResearchResult]:
     """Pure orchestrator (no DB): plan -> fan out researchers -> consolidate ->
     write. Resilient: a researcher that fails or times out becomes a reported
     gap; only an empty plan or all researchers failing is a system failure.
+
+    Returns both the rendered ``Report`` and the structured ``ResearchResult`` it
+    was written from. The ``ResearchResult`` is the durable, style-agnostic source
+    of truth (points + per-point citations) the caller persists, so a report can
+    be re-rendered later without re-running the research.
     """
     sub_questions = await plan(prompt, provider=provider, emit=emit, cap=cap)
 
@@ -80,4 +85,5 @@ async def run(
         raise OrchestratorError("all researchers failed")
 
     research_result = consolidate(findings, failed)
-    return await write(research_result, provider=provider, emit=emit)
+    report = await write(research_result, provider=provider, emit=emit)
+    return report, research_result

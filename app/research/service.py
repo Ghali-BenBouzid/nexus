@@ -33,7 +33,7 @@ async def run_research_job(
         try:
             async with provider, backend:
                 tools = [WebSearch(backend=backend), FetchPage(backend=backend)]
-                report = await asyncio.wait_for(
+                report, research_result = await asyncio.wait_for(
                     orchestrator.run(
                         prompt,
                         provider=provider,
@@ -46,7 +46,7 @@ async def run_research_job(
                     ),
                     timeout=settings.global_timeout,
                 )
-            await repository.complete_query(db, query_id, report)
+            await repository.complete_query(db, query_id, report, research_result)
         except Exception as exc:
             logger.exception("research job failed for query %s", query_id)
             await repository.fail_query(db, query_id, str(exc))

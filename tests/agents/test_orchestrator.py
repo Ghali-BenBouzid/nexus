@@ -58,20 +58,25 @@ class RoleProvider:
 async def test_run_full_pipeline() -> None:
     provider = RoleProvider(sub_questions=["q1", "q2"])
 
-    report = await run("big question", provider=provider, tools=[])
+    report, research_result = await run("big question", provider=provider, tools=[])
 
     assert report.content == "FINAL REPORT"
     assert report.failed_subquestions == []
+    # the structured artifact carries one point per answered sub-question
+    assert [p.sub_question for p in research_result.points] == ["q1", "q2"]
+    assert research_result.gaps == []
 
 
 async def test_run_degrades_on_partial_failure() -> None:
     provider = RoleProvider(sub_questions=["q1", "q2"], fail={"q2"})
 
-    report = await run("big question", provider=provider, tools=[])
+    report, research_result = await run("big question", provider=provider, tools=[])
 
     # survivor produced a report; the failed sub-question is reported as a gap
     assert report.content == "FINAL REPORT"
     assert report.failed_subquestions == ["q2"]
+    assert research_result.gaps == ["q2"]
+    assert [p.sub_question for p in research_result.points] == ["q1"]
 
 
 async def test_run_raises_when_all_researchers_fail() -> None:
