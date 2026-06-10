@@ -22,7 +22,13 @@ class SearchHit(BaseModel):
 
 class SearchBackend(Protocol):
     """A swappable web-retrieval backend (Tavily, Brave, ...). Isolates the
-    concrete search provider from the tools that depend on it."""
+    concrete search provider from the tools that depend on it. It is an async
+    context manager so the job can scope the client's lifetime with
+    ``async with backend:`` (mirrors LLMProvider)."""
+
+    async def __aenter__(self) -> "SearchBackend": ...
+
+    async def __aexit__(self, exc_type, exc, tb) -> None: ...
 
     async def search(self, query: str, max_results: int) -> list[SearchHit]: ...
 

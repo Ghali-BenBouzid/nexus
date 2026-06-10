@@ -4,8 +4,7 @@ import logging
 from app.agents import orchestrator
 from app.agents.provider import LLMProvider
 from app.agents.schemas import AgentEvent
-from app.agents.search import TavilyBackend
-from app.agents.tools import FetchPage, WebSearch
+from app.agents.tools import FetchPage, SearchBackend, WebSearch
 from app.core.config import settings
 from app.db import session as db_session
 from app.models.query import QueryStatus
@@ -24,7 +23,7 @@ async def run_research_job(
     prompt: str,
     *,
     provider: LLMProvider,
-    backend: TavilyBackend,
+    backend: SearchBackend,
 ) -> None:
     """Background job for one query. Owns its own session (the request's closed
     when the 202 was sent), drives the orchestrator under a global timeout, and
