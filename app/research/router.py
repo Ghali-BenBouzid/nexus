@@ -2,7 +2,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.provider import LLMProvider
-from app.agents.search import TavilyBackend
+from app.agents.tools import SearchBackend
 from app.auth.dependencies import get_current_user
 from app.db.session import get_db
 from app.models.user import User
@@ -20,7 +20,7 @@ async def create_query(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     provider: LLMProvider = Depends(get_provider),
-    backend: TavilyBackend = Depends(get_search_backend),
+    backend: SearchBackend = Depends(get_search_backend),
 ):
     query = await repository.create_pending_query(
         db=db, user_id=current_user.id, prompt=query_create.prompt
