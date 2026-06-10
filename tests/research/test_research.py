@@ -129,6 +129,9 @@ async def test_create_returns_202_pending_then_completes(
     assert detail.status_code == 200
     assert detail.json()["status"] == "complete"
     assert detail.json()["report"] == "FINAL REPORT"
+    # detail reads sources/gaps from the persisted ResearchResult dump
+    assert detail.json()["gaps"] == []
+    assert detail.json()["sources"] == []
 
 
 async def test_get_other_users_query_returns_404(client: AsyncClient) -> None:

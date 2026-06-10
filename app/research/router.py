@@ -25,8 +25,8 @@ async def create_query(
     query = await repository.create_pending_query(
         db=db, user_id=current_user.id, prompt=query_create.prompt
     )
-    # provider/backend are passed by value (they outlive the response, unlike db);
-    # the job opens and closes them itself.
+    # provider/backend have no request-scoped teardown, so the task can hold them
+    # past the response
     background_tasks.add_task(
         service.run_research_job,
         query.id,
@@ -58,6 +58,7 @@ async def get_query(
         # 404 (not 403) for another user's id so the id's existence doesn't leak.
         raise HTTPException(status_code=404, detail="Query not found")
 
+    # result is the stored ResearchResult dump (points / sources / gaps).
     result = query.result or {}
     return QueryDetail(
         id=query.id,
@@ -66,7 +67,7 @@ async def get_query(
         report=query.report,
         error=query.error,
         sources=result.get("sources", []),
-        gaps=result.get("failed_subquestions", []),
+        gaps=result.get("gaps", []),
         created_at=query.created_at,
         completed_at=query.completed_at,
     )

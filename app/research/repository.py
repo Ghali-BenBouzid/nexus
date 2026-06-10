@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.schemas import Report
+from app.agents.schemas import Report, ResearchResult
 from app.models.query import Query, QueryStatus
 
 
@@ -37,13 +37,20 @@ async def set_status(db: AsyncSession, query_id: int, status: QueryStatus) -> No
     await db.commit()
 
 
-async def complete_query(db: AsyncSession, query_id: int, report: Report) -> None:
+async def complete_query(
+    db: AsyncSession,
+    query_id: int,
+    report: Report,
+    result: ResearchResult,
+) -> None:
     query = await db.get(Query, query_id)
     if query is None:
         return
     query.status = QueryStatus.complete
+    # report column = rendered prose; result JSONB = the structured, style-agnostic
+    # ResearchResult (points + per-point citations) so it can be re-rendered later.
     query.report = report.content
-    query.result = report.model_dump()
+    query.result = result.model_dump()
     query.completed_at = datetime.now(UTC)
     await db.commit()
 
