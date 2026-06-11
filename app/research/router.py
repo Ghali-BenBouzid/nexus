@@ -1,4 +1,7 @@
+import logging
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.provider import LLMProvider
@@ -11,7 +14,21 @@ from app.research import repository, service
 from app.research.dependencies import get_provider, get_search_backend
 from app.research.schemas import QueryCreate, QueryDetail, QueryResponse
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/research")
+
+
+def _load_result(raw: dict | None, query_id: int) -> ResearchResult | None:
+    """Rehydrate the stored dump, tolerating a malformed/legacy blob: log and
+    fall back to None rather than 500-ing the detail endpoint."""
+    if not raw:
+        return None
+    try:
+        return ResearchResult(**raw)
+    except ValidationError:
+        logger.warning("query %s has an unreadable result blob", query_id)
+        return None
 
 
 @router.post("/query", status_code=202, response_model=QueryResponse)
@@ -61,7 +78,7 @@ async def get_query(
 
     # Rehydrate the stored dump back into a ResearchResult (closes the
     # model_dump round-trip); null until the job completes.
-    result = ResearchResult(**query.result) if query.result else None
+    result = _load_result(query.result, query.id)
     return QueryDetail(
         id=query.id,
         prompt=query.prompt,
@@ -69,6 +86,7 @@ async def get_query(
         report=query.report,
         error=query.error,
         sources=result.sources if result else [],
+        consulted_sources=result.consulted_sources if result else [],
         gaps=result.gaps if result else [],
         created_at=query.created_at,
         completed_at=query.completed_at,

@@ -3,13 +3,17 @@ from app.agents.schemas import Finding, Source
 
 
 def _finding(
-    sub_q: str, answer: str, sources: list[Source], found: bool = True
+    sub_q: str,
+    answer: str,
+    sources: list[Source],
+    found: bool = True,
+    consulted: list[Source] | None = None,
 ) -> Finding:
     return Finding(
         sub_question=sub_q,
         answer=answer,
         cited_sources=sources,
-        consulted_sources=sources,
+        consulted_sources=sources if consulted is None else consulted,
         found_info=found,
     )
 
@@ -43,6 +47,30 @@ def test_consolidate_collects_gaps() -> None:
 
     assert [p.sub_question for p in result.points] == ["answered"]
     assert set(result.gaps) == {"empty", "hard failed"}
+
+
+def test_consolidate_collects_provenance_deduped_including_gaps() -> None:
+    cited = Source(title="Cited", url="http://cited")
+    extra = Source(title="Looked at, not cited", url="http://extra")
+    gap_only = Source(title="Seen by a gap finding", url="http://gap")
+
+    findings = [
+        # consulted a superset of what it cited
+        _finding("answered", "ok", [cited], consulted=[cited, extra]),
+        # a gap finding still contributes provenance, plus a duplicate url
+        _finding("empty", "", [], found=False, consulted=[gap_only, extra]),
+    ]
+
+    result = consolidate(findings)
+
+    # cited list holds only the cited source
+    assert [s.url for s in result.sources] == ["http://cited"]
+    # provenance holds everything looked at, deduped by url, gaps included
+    assert [s.url for s in result.consulted_sources] == [
+        "http://cited",
+        "http://extra",
+        "http://gap",
+    ]
 
 
 def test_consolidate_all_empty() -> None:

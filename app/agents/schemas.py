@@ -38,6 +38,9 @@ class ResearchResult(BaseModel):
     points: list[ResearchPoint]
     sources: list[Source]  # global, deduped; citation n -> sources[n - 1]
     gaps: list[str]
+    # provenance/audit: every source any researcher looked at (deduped by url),
+    # cited or not. Superset of ``sources``; hidden by default in the UI.
+    consulted_sources: list[Source] = []
 
 
 class Report(BaseModel):

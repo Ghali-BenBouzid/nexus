@@ -16,8 +16,18 @@ def consolidate(
     number_by_url: dict[str, int] = {}  # url -> 1-based citation number
     points: list[ResearchPoint] = []
     gaps: list[str] = list(failed_subquestions)
+    consulted: list[Source] = []  # provenance: everything looked at, deduped
+    consulted_urls: set[str] = set()
 
     for finding in findings:
+        # Record provenance even for findings that became gaps: "what we looked
+        # at" is part of the audit trail regardless of whether it produced an
+        # answer.
+        for source in finding.consulted_sources:
+            if source.url not in consulted_urls:
+                consulted_urls.add(source.url)
+                consulted.append(source)
+
         if not finding.found_info or not finding.answer.strip():
             gaps.append(finding.sub_question)
             continue
@@ -40,4 +50,6 @@ def consolidate(
             )
         )
 
-    return ResearchResult(points=points, sources=sources, gaps=gaps)
+    return ResearchResult(
+        points=points, sources=sources, gaps=gaps, consulted_sources=consulted
+    )

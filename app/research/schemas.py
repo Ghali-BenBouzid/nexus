@@ -28,7 +28,8 @@ class QueryDetail(BaseSchema):
     status: QueryStatus
     report: str | None
     error: str | None
-    sources: list[Source]
+    sources: list[Source]  # cited sources backing the report
+    consulted_sources: list[Source] = []  # full provenance/audit trail
     gaps: list[str]
     created_at: datetime
     completed_at: datetime | None
