@@ -1,10 +1,27 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.schemas import Report, ResearchResult
 from app.models.query import Query, QueryStatus
+
+
+async def reap_interrupted_queries(db: AsyncSession) -> int:
+    """Fail any query still 'running' from a previous process. Jobs run in-process,
+    so a query left running after a restart (e.g. a deploy) is orphaned: nothing is
+    left to finish or time it out. Returns how many were reaped."""
+    result = await db.execute(
+        update(Query)
+        .where(Query.status == QueryStatus.running)
+        .values(
+            status=QueryStatus.failed,
+            error="Interrupted by a server restart.",
+            completed_at=datetime.now(UTC),
+        )
+    )
+    await db.commit()
+    return result.rowcount or 0
 
 
 async def create_pending_query(db: AsyncSession, user_id: int, prompt: str) -> Query:
