@@ -1,9 +1,21 @@
 from collections.abc import Awaitable, Callable
 
-from app.agents.provider import LLMProvider, Message
+from app.agents.provider import LLMProvider, Message, ProviderError
+from app.agents.retry import RetryPolicy, retry_async
 from app.agents.schemas import AgentEvent, Report, ResearchResult
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
+
+# The writer is the final, UX-critical step: the polished prose report is the whole
+# point, so retry its one LLM call generously (on top of the provider's own per-call
+# retries) instead of degrading to a raw, unformatted dump. The backoff also lets a
+# saturated rate-limit window refill between attempts.
+_WRITER_RETRY = RetryPolicy(max_attempts=5, base_delay=2.0, max_delay=30.0)
+
+
+def _is_provider_error(exc: Exception) -> bool:
+    return isinstance(exc, ProviderError)
+
 
 _SYSTEM_PROMPT = (
     "You are a research report writer. You are given researched points, each with "
@@ -40,7 +52,11 @@ async def write(
         Message(role="system", content=_SYSTEM_PROMPT),
         Message(role="user", content=_render(result)),
     ]
-    response = await provider.generate(messages)
+    response = await retry_async(
+        lambda: provider.generate(messages),
+        policy=_WRITER_RETRY,
+        transient=_is_provider_error,
+    )
     await emit(AgentEvent(type="writer_done", message="Report written"))
 
     return Report(

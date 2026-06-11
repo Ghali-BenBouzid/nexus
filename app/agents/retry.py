@@ -42,6 +42,24 @@ def is_transient(exc: Exception) -> bool:
     return _status_code(exc) in _TRANSIENT_STATUS
 
 
+def _retry_after(exc: Exception) -> float | None:
+    """The server's ``Retry-After`` hint (seconds), if present. On a 429 the API
+    tells us exactly how long to wait, which beats guessing with backoff. We only
+    parse the numeric (delta-seconds) form; an HTTP-date is ignored (fall back to
+    computed backoff)."""
+    response = getattr(exc, "response", None)
+    headers = getattr(response, "headers", None)
+    if not headers:
+        return None
+    value = headers.get("retry-after")
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except ValueError:
+        return None
+
+
 async def retry_async[T](
     func: Callable[[], Awaitable[T]],
     *,
@@ -64,10 +82,16 @@ async def retry_async[T](
         except Exception as exc:
             if attempt >= policy.max_attempts or not transient(exc):
                 raise
-            # exponential backoff, capped, with jitter so concurrent researchers
-            # that were rate-limited together don't all retry in lockstep.
-            delay = min(policy.base_delay * 2 ** (attempt - 1), policy.max_delay)
-            delay *= 0.5 + random.random() / 2  # 50-100% of the computed delay
+            # Prefer the server's Retry-After hint; otherwise exponential backoff,
+            # capped, with jitter so researchers rate-limited together don't all
+            # retry in lockstep. (A long Retry-After is fine: the per-researcher /
+            # global wait_for can cancel the sleep, so retries never outrun them.)
+            retry_after = _retry_after(exc)
+            if retry_after is not None:
+                delay = retry_after
+            else:
+                delay = min(policy.base_delay * 2 ** (attempt - 1), policy.max_delay)
+                delay *= 0.5 + random.random() / 2  # 50-100% of the computed delay
             logger.warning(
                 "transient %s (attempt %d/%d), retrying in %.2fs",
                 type(exc).__name__,
