@@ -11,11 +11,6 @@ from app.agents.writer import write
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
 
-DEFAULT_CAP = 5
-DEFAULT_MAX_ITERS = 5
-DEFAULT_MAX_CONCURRENCY = 3
-DEFAULT_PER_RESEARCHER_TIMEOUT = 120.0
-
 
 class OrchestratorError(Exception):
     """The run failed at the system level (every researcher hard-failed)."""
@@ -31,10 +26,11 @@ async def run(
     provider: LLMProvider,
     tools: list[Tool],
     emit: Emit = _noop,
-    cap: int = DEFAULT_CAP,
-    max_iters: int = DEFAULT_MAX_ITERS,
-    max_concurrency: int = DEFAULT_MAX_CONCURRENCY,
-    per_researcher_timeout: float = DEFAULT_PER_RESEARCHER_TIMEOUT,
+    cap: int,
+    max_iters: int,
+    max_concurrency: int,
+    per_researcher_timeout: float,
+    retry_cap: int,
 ) -> tuple[Report, ResearchResult]:
     """Pure orchestrator (no DB): plan -> fan out researchers -> consolidate ->
     write. Resilient: a researcher that fails or times out becomes a reported
@@ -45,7 +41,9 @@ async def run(
     of truth (points + per-point citations) the caller persists, so a report can
     be re-rendered later without re-running the research.
     """
-    sub_questions = await plan(prompt, provider=provider, emit=emit, cap=cap)
+    sub_questions = await plan(
+        prompt, provider=provider, emit=emit, cap=cap, retry_cap=retry_cap
+    )
 
     semaphore = asyncio.Semaphore(max_concurrency)
 

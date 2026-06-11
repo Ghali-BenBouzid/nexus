@@ -2,6 +2,8 @@ import asyncio
 import logging
 
 from app.agents import orchestrator
+from app.agents.orchestrator import OrchestratorError
+from app.agents.planner import PlannerError
 from app.agents.provider import LLMProvider
 from app.agents.schemas import AgentEvent
 from app.agents.tools import FetchPage, SearchBackend, WebSearch
@@ -43,10 +45,22 @@ async def run_research_job(
                         max_iters=settings.max_iters,
                         max_concurrency=settings.max_concurrency,
                         per_researcher_timeout=settings.per_researcher_timeout,
+                        retry_cap=settings.planner_retry_cap,
                     ),
                     timeout=settings.global_timeout,
                 )
             await repository.complete_query(db, query_id, report, research_result)
-        except Exception as exc:
-            logger.exception("research job failed for query %s", query_id)
+        except TimeoutError:
+            # global_timeout fired (asyncio.wait_for raises TimeoutError)
+            logger.warning("research job timed out for query %s", query_id)
+            await repository.fail_query(db, query_id, "Research timed out.")
+        except (PlannerError, OrchestratorError) as exc:
+            # our own domain errors carry safe, user-meaningful messages
+            logger.warning("research job failed for query %s: %s", query_id, exc)
             await repository.fail_query(db, query_id, str(exc))
+        except Exception:
+            # unknown/SDK errors may embed secrets: log full server-side, store generic
+            logger.exception("research job crashed for query %s", query_id)
+            await repository.fail_query(
+                db, query_id, "Research failed due to an internal error."
+            )

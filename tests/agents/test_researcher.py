@@ -44,12 +44,34 @@ async def test_research_searches_then_submits() -> None:
         ]
     )
 
-    finding = await research("sub q", provider=provider, tools=[_web_search_tool()])
+    finding = await research(
+        "sub q", provider=provider, tools=[_web_search_tool()], max_iters=5
+    )
 
     assert finding.answer == "the answer"
     assert finding.found_info is True
     assert [s.url for s in finding.consulted_sources] == ["http://a", "http://b"]
     assert [s.url for s in finding.cited_sources] == ["http://a"]
+
+
+async def test_research_recovers_from_malformed_submit() -> None:
+    # first submit_finding omits the required 'answer' -> fed back; model recovers
+    malformed = LLMResponse(
+        tool_calls=[ToolCall(id="b", name="submit_finding", args={"found_info": True})]
+    )
+    good = LLMResponse(
+        tool_calls=[
+            _call("submit_finding", answer="ok", cited_source_ids=[], found_info=True)
+        ]
+    )
+    provider = FakeLLMProvider(responses=[malformed, good])
+
+    finding = await research(
+        "sub q", provider=provider, tools=[_web_search_tool()], max_iters=5
+    )
+
+    assert finding.answer == "ok"
+    assert len(provider.calls) == 2  # one retry after the malformed submit
 
 
 async def test_research_soft_no_answer() -> None:
@@ -68,7 +90,9 @@ async def test_research_soft_no_answer() -> None:
         ]
     )
 
-    finding = await research("sub q", provider=provider, tools=[_web_search_tool()])
+    finding = await research(
+        "sub q", provider=provider, tools=[_web_search_tool()], max_iters=5
+    )
 
     assert finding.found_info is False
     assert finding.cited_sources == []
@@ -118,7 +142,13 @@ async def test_research_emits_events() -> None:
         ]
     )
 
-    await research("sub q", provider=provider, tools=[_web_search_tool()], emit=collect)
+    await research(
+        "sub q",
+        provider=provider,
+        tools=[_web_search_tool()],
+        emit=collect,
+        max_iters=5,
+    )
 
     types = [e.type for e in events]
     assert "researcher_start" in types

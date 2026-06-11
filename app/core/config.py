@@ -25,5 +25,10 @@ class Settings(BaseSettings):
     per_researcher_timeout: float = 120.0  # seconds
     global_timeout: float = 300.0  # seconds, whole-job backstop
 
+    # transient-error retry/backoff for provider & search calls
+    retry_max_attempts: int = 3
+    retry_base_delay: float = 0.5  # seconds before the first retry
+    retry_max_delay: float = 8.0  # backoff ceiling
+
 
 settings = Settings()

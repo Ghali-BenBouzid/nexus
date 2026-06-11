@@ -3,6 +3,15 @@ import pytest
 from app.agents.orchestrator import OrchestratorError, run
 from app.agents.provider import LLMResponse, Message, ToolCall
 
+# orchestration knobs the service would supply from settings
+_KNOBS = {
+    "cap": 5,
+    "max_iters": 5,
+    "max_concurrency": 3,
+    "per_researcher_timeout": 120.0,
+    "retry_cap": 2,
+}
+
 
 class RoleProvider:
     """A fake provider that dispatches on the system prompt, so it works under the
@@ -58,7 +67,9 @@ class RoleProvider:
 async def test_run_full_pipeline() -> None:
     provider = RoleProvider(sub_questions=["q1", "q2"])
 
-    report, research_result = await run("big question", provider=provider, tools=[])
+    report, research_result = await run(
+        "big question", provider=provider, tools=[], **_KNOBS
+    )
 
     assert report.content == "FINAL REPORT"
     assert report.failed_subquestions == []
@@ -70,7 +81,9 @@ async def test_run_full_pipeline() -> None:
 async def test_run_degrades_on_partial_failure() -> None:
     provider = RoleProvider(sub_questions=["q1", "q2"], fail={"q2"})
 
-    report, research_result = await run("big question", provider=provider, tools=[])
+    report, research_result = await run(
+        "big question", provider=provider, tools=[], **_KNOBS
+    )
 
     # survivor produced a report; the failed sub-question is reported as a gap
     assert report.content == "FINAL REPORT"
@@ -83,4 +96,4 @@ async def test_run_raises_when_all_researchers_fail() -> None:
     provider = RoleProvider(sub_questions=["q1", "q2"], fail={"q1", "q2"})
 
     with pytest.raises(OrchestratorError):
-        await run("big question", provider=provider, tools=[])
+        await run("big question", provider=provider, tools=[], **_KNOBS)

@@ -5,7 +5,13 @@ from google import genai
 from google.genai import types
 from pydantic import BaseModel
 
+from app.agents.retry import RetryPolicy, retry_async
 from app.agents.tools import ToolSpec
+
+
+class ProviderError(Exception):
+    """An LLM provider call failed (network/SDK error). Carries no SDK detail so
+    a leaked API key can't ride along; the original is chained via ``__cause__``."""
 
 
 class ToolCall(BaseModel):
@@ -66,9 +72,10 @@ class GeminiProvider:
     does exactly one model round-trip per ``generate``. Use as an async context
     manager so the SDK client is opened and closed with the job."""
 
-    def __init__(self, api_key: str, model: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model: str, retry: RetryPolicy | None = None):
         self.api_key = api_key
         self.model = model
+        self.retry = retry or RetryPolicy()
         self._client: genai.Client | None = None
 
     async def __aenter__(self) -> "GeminiProvider":
@@ -95,9 +102,19 @@ class GeminiProvider:
             tools=self._to_tools(tools),
             tool_config=self._to_tool_config(tool_choice, tools),
         )
-        response = await self._client.aio.models.generate_content(
-            model=self.model, contents=contents, config=config
-        )
+        client = self._client
+
+        async def _call() -> types.GenerateContentResponse:
+            return await client.aio.models.generate_content(
+                model=self.model, contents=contents, config=config
+            )
+
+        try:
+            # retry_async handles transient 429/5xx/network blips; on a permanent
+            # error or exhausted retries it re-raises, which we normalize below.
+            response = await retry_async(_call, policy=self.retry)
+        except Exception as exc:  # never let a raw SDK error (key-bearing) escape
+            raise ProviderError("LLM request failed") from exc
 
         calls = response.function_calls
         if calls:

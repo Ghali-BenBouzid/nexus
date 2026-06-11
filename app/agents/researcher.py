@@ -15,8 +15,6 @@ from app.agents.tools import (
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
 
-DEFAULT_MAX_ITERS = 5
-
 _SYSTEM_PROMPT = (
     "You are a research agent answering a single sub-question.\n"
     "- Use web_search to find sources and fetch_page to read a promising page in "
@@ -39,7 +37,7 @@ async def research(
     provider: LLMProvider,
     tools: list[Tool],
     emit: Emit = _noop,
-    max_iters: int = DEFAULT_MAX_ITERS,
+    max_iters: int,
 ) -> Finding:
     """Run the ReAct tool-use loop for one sub-question and return a Finding.
 
@@ -75,7 +73,30 @@ async def research(
 
         for call in response.tool_calls:
             if call.name == submit.name:
-                return _build_finding(sub_question, call.args, consulted)
+                try:
+                    return _build_finding(sub_question, call.args, consulted)
+                except ValidationError as exc:
+                    # Malformed final call: feed the error back (like a tool error)
+                    # so the model can fix it while iterations remain, instead of
+                    # hard-failing a researcher that already did the work.
+                    await emit(
+                        AgentEvent(
+                            type="submit_invalid",
+                            message=f"submit_finding was malformed: {exc}",
+                        )
+                    )
+                    messages.append(
+                        Message(
+                            role="tool",
+                            tool_call_id=call.id,
+                            name=call.name,
+                            content=(
+                                f"submit_finding arguments were invalid: {exc}. "
+                                "Call submit_finding again with valid arguments."
+                            ),
+                        )
+                    )
+                    continue
 
             result = await _run_tool(call.name, call.args, executables, emit)
             messages.append(
