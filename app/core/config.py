@@ -6,11 +6,15 @@ class Settings(BaseSettings):
 
     # database settings
     database_url: str
+    database_ssl: bool = False  # True for managed Postgres (Neon); off locally
 
     # auth settings
     secret_key: str
     algorithm: str
     access_token_expire_minutes: int
+
+    # CORS: comma-separated allowed frontend origins (empty = no browser access)
+    cors_origins: str = ""
 
     # agent / provider settings
     gemini_api_key: str | None = None
@@ -29,6 +33,17 @@ class Settings(BaseSettings):
     retry_max_attempts: int = 3
     retry_base_delay: float = 0.5  # seconds before the first retry
     retry_max_delay: float = 8.0  # backoff ceiling
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [
+            origin.strip() for origin in self.cors_origins.split(",") if origin.strip()
+        ]
+
+    @property
+    def db_connect_args(self) -> dict[str, object]:
+        # asyncpg (unlike psycopg2) won't read sslmode from the URL; pass ssl here.
+        return {"ssl": True} if self.database_ssl else {}
 
 
 settings = Settings()
