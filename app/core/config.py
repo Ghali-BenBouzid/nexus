@@ -21,6 +21,15 @@ class Settings(BaseSettings):
     tavily_api_key: str | None = None
     model_name: str = "gemini-2.5-flash"
 
+    # LLM provider selection: gemini | groq | cerebras | sambanova
+    llm_provider: str = "gemini"
+    llm_model: str | None = None  # overrides the provider's default model
+    groq_api_key: str | None = None
+    cerebras_api_key: str | None = None
+    sambanova_api_key: str | None = None
+    # Pace all LLM calls under the active provider's free RPM (set below it).
+    llm_rate_limit_per_min: int = 25
+
     # orchestration knobs (12-factor: env-overridable defaults)
     cap: int = 5  # max sub-questions
     max_iters: int = 5  # max tool rounds per researcher
