@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 
 from app.agents.consolidator import consolidate
@@ -10,6 +11,8 @@ from app.agents.tools import Tool
 from app.agents.writer import write
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
+
+logger = logging.getLogger(__name__)
 
 
 class OrchestratorError(Exception):
@@ -70,6 +73,15 @@ async def run(
     for sub_question, result in zip(sub_questions, results, strict=True):
         if isinstance(result, Exception):
             failed.append(sub_question)
+            # Log the real cause (type + message + traceback); the emit below is
+            # only a user-facing summary and would otherwise hide why it failed.
+            logger.warning(
+                "researcher failed for sub-question %r: %s: %s",
+                sub_question,
+                type(result).__name__,
+                result,
+                exc_info=result,
+            )
             await emit(
                 AgentEvent(
                     type="researcher_failed",

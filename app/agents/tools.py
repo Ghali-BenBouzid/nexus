@@ -125,7 +125,7 @@ class FetchPageArgs(BaseModel):
     url: str = Field(description="The URL of the page to fetch and read in full")
 
 
-MAX_PAGE_CHARS = 12_000  # cap fetched page text so it can't blow the token budget
+MAX_PAGE_CHARS = 6_000  # cap fetched page text so it can't blow the token budget
 
 
 class FetchPage(BaseTool):

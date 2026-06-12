@@ -4,9 +4,15 @@ from typing import Any
 import httpx
 
 from app.agents.provider import LLMResponse, Message, ProviderError, ToolCall
-from app.agents.rate_limit import AsyncTokenBucket, llm_rate_limiter
-from app.agents.retry import RetryPolicy, retry_async
+from app.agents.rate_limit import RateLimiter, llm_rate_limiter
+from app.agents.retry import RetryPolicy, is_transient, retry_async
 from app.agents.tools import ToolSpec
+
+# A rough chars-per-token ratio for English + JSON tool schemas. Token-bucket
+# pacing only needs an estimate; the per-model TPM is set with a safety margin.
+_CHARS_PER_TOKEN = 4
+# Reserve room for the model's reply, which also counts against TPM.
+_OUTPUT_TOKEN_RESERVATION = 1024
 
 
 class OpenAICompatibleProvider:
@@ -21,7 +27,7 @@ class OpenAICompatibleProvider:
         model: str,
         api_key: str,
         retry: RetryPolicy | None = None,
-        rate_limiter: AsyncTokenBucket | None = None,
+        rate_limiter: RateLimiter | None = None,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
@@ -66,14 +72,18 @@ class OpenAICompatibleProvider:
             payload["tools"] = self._to_tools(tools)
             payload["tool_choice"] = self._to_tool_choice(tool_choice)
 
+        estimated_tokens = _estimate_tokens(payload)
+
         async def _call() -> dict[str, Any]:
-            await self._limiter.acquire()  # pace every attempt, incl. retries
+            # Pace every attempt (incl. retries) under both the request and token
+            # budgets; token cost is what keeps a fan-out under the free-tier TPM.
+            await self._limiter.acquire(estimated_tokens)
             resp = await client.post("/chat/completions", json=payload)
             resp.raise_for_status()
             return resp.json()
 
         try:
-            data = await retry_async(_call, policy=self.retry)
+            data = await retry_async(_call, policy=self.retry, transient=_retryable)
         except Exception as exc:  # never let a raw/key-bearing error escape
             raise ProviderError("LLM request failed") from exc
         return self._parse(data)
@@ -87,17 +97,7 @@ class OpenAICompatibleProvider:
                     {
                         "role": "assistant",
                         "content": m.content or "",
-                        "tool_calls": [
-                            {
-                                "id": c.id,
-                                "type": "function",
-                                "function": {
-                                    "name": c.name,
-                                    "arguments": json.dumps(c.args),
-                                },
-                            }
-                            for c in m.tool_calls
-                        ],
+                        "tool_calls": [_tool_call_payload(c) for c in m.tool_calls],
                     }
                 )
             elif m.role == "tool":
@@ -143,11 +143,57 @@ class OpenAICompatibleProvider:
                         id=tc.get("id") or "",
                         name=tc["function"]["name"],
                         args=_loads(tc["function"].get("arguments")),
+                        extra=tc.get("extra_content"),
                     )
                     for tc in tool_calls
                 ]
             )
         return LLMResponse(text=message.get("content"))
+
+
+def _tool_call_payload(call: ToolCall) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "id": call.id,
+        "type": "function",
+        "function": {"name": call.name, "arguments": json.dumps(call.args)},
+    }
+    if call.extra is not None:
+        # Echo provider passthrough unchanged (Gemini 3's thought_signature lives
+        # here and must be replayed on later turns or the request 400s).
+        payload["extra_content"] = call.extra
+    return payload
+
+
+def _estimate_tokens(payload: dict[str, Any]) -> int:
+    """Estimate a request's token cost for TPM pacing: the serialized messages and
+    tool schemas (the input billed against TPM) plus a reservation for the reply.
+    Approximate by design — paired with a per-model TPM safety margin."""
+    text = json.dumps(payload.get("messages", [])) + json.dumps(
+        payload.get("tools", [])
+    )
+    return len(text) // _CHARS_PER_TOKEN + _OUTPUT_TOKEN_RESERVATION
+
+
+def _tool_use_failed(exc: Exception) -> bool:
+    """True for Groq's ``400 tool_use_failed`` — the model emitted a tool call the
+    server could not parse (e.g. Llama's native ``<function=...>`` syntax instead
+    of JSON). It is stochastic, so a fresh generation usually parses; we treat it
+    as transient and let the retry re-roll. Scoped to this one error code so real
+    bad requests (bad key, malformed payload) still fail fast."""
+    response = getattr(exc, "response", None)
+    if response is None or getattr(response, "status_code", None) != 400:
+        return False
+    try:
+        body = response.json()
+    except Exception:
+        return False
+    return isinstance(body, dict) and body.get("error", {}).get("code") == (
+        "tool_use_failed"
+    )
+
+
+def _retryable(exc: Exception) -> bool:
+    return is_transient(exc) or _tool_use_failed(exc)
 
 
 def _loads(raw: str | None) -> dict[str, Any]:

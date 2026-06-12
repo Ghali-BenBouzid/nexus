@@ -30,15 +30,23 @@ class Settings(BaseSettings):
     # Pace all LLM calls under the active provider's free RPM (set below it).
     llm_rate_limit_per_min: int = 25
 
-    # orchestration knobs (12-factor: env-overridable defaults)
-    cap: int = 5  # max sub-questions
-    max_iters: int = 5  # max tool rounds per researcher
-    max_concurrency: int = 3  # simultaneous researchers
+    # orchestration knobs (12-factor: env-overridable defaults). Kept small so a
+    # run finishes in ~2-3 min on the default model's low free-tier TPM (run time
+    # ~= total tokens / TPM); a future "deep research" mode raises these for depth.
+    cap: int = 3  # max sub-questions
+    max_iters: int = 3  # max tool rounds per researcher
+    # Concurrency is bounded by the provider's tokens-per-minute: parallel
+    # researchers split the TPM budget and starve each other (timeouts). At the
+    # default model's 8k TPM, serial keeps each researcher at full throughput and
+    # avoids that; raise this on a higher-TPM / paid tier for parallel, faster runs.
+    max_concurrency: int = 1  # simultaneous researchers
     planner_retry_cap: int = 2
-    per_researcher_timeout: float = 120.0  # seconds
+    per_researcher_timeout: float = 150.0  # seconds
     global_timeout: float = 300.0  # seconds, whole-job backstop
 
-    # transient-error retry/backoff for provider & search calls
+    # transient-error retry/backoff for provider & search calls. Also re-rolls a
+    # stochastic 400 tool_use_failed (a malformed tool call usually parses on a
+    # fresh generation) — rare on the default model, common on llama-family ones.
     retry_max_attempts: int = 3
     retry_base_delay: float = 0.5  # seconds before the first retry
     retry_max_delay: float = 8.0  # backoff ceiling

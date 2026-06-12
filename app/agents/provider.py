@@ -18,6 +18,9 @@ class ToolCall(BaseModel):
     id: str
     name: str
     args: dict[str, Any]
+    # Opaque provider data echoed back unchanged on the next turn. Gemini 3 thinking
+    # models return a thought_signature here that must be replayed or they 400.
+    extra: dict[str, Any] | None = None
 
 
 class Message(BaseModel):
