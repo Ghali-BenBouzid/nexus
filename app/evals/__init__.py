@@ -1,3 +1,12 @@
+from app.evals.judge import (
+    evaluate_full as evaluate_full,
+)
+from app.evals.judge import (
+    judge as judge,
+)
+from app.evals.judge import (
+    score_cases as score_cases,
+)
 from app.evals.metrics import (
     CheckResult as CheckResult,
 )

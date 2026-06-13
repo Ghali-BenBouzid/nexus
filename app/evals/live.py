@@ -16,6 +16,7 @@ failure rather than sinking the whole suite.
 
 import asyncio
 import logging
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -24,6 +25,7 @@ from app.agents.provider import LLMProvider
 from app.agents.tools import FetchPage, SearchBackend, Tool, WebSearch
 from app.core.config import settings
 from app.evals.cases import EVAL_PROMPTS
+from app.evals.judge import score_cases
 from app.evals.runner import Case, format_aggregate, run_cases
 from app.research.dependencies import get_provider, get_search_backend
 
@@ -87,7 +89,7 @@ def _write_reports(cases: list[Case]) -> Path:
     return out
 
 
-async def _amain() -> None:
+async def _amain(*, use_judge: bool) -> None:
     provider = get_provider()
     backend: SearchBackend = get_search_backend()
     async with provider, backend:
@@ -103,8 +105,12 @@ async def _amain() -> None:
             retry_cap=settings.planner_retry_cap,
             global_timeout=settings.global_timeout,
         )
-
-    aggregate = run_cases(cases)
+        # Tier 2 judging calls the provider, so it must run while it is still open.
+        aggregate = (
+            await score_cases(cases, provider=provider)
+            if use_judge
+            else run_cases(cases)
+        )
     print(format_aggregate(aggregate))
     if failures:
         print("\nRuns that failed (not scored):")
@@ -117,7 +123,9 @@ async def _amain() -> None:
 
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
-    asyncio.run(_amain())
+    # Tier 2 judging is on by default; --no-judge runs Tier 1 only to save quota.
+    use_judge = "--no-judge" not in sys.argv
+    asyncio.run(_amain(use_judge=use_judge))
 
 
 if __name__ == "__main__":
