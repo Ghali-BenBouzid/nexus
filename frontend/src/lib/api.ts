@@ -203,12 +203,11 @@ type ConvMessage = {
 };
 type ConvDetail = { id: number; title: string | null; created_at: string; messages: ConvMessage[] };
 
-function lastAssistantQueryId(detail: ConvDetail): number {
+function lastAssistant(detail: ConvDetail): ConvMessage | null {
   for (let i = detail.messages.length - 1; i >= 0; i--) {
-    const m = detail.messages[i];
-    if (m.role === "assistant" && m.query_id != null) return m.query_id;
+    if (detail.messages[i].role === "assistant") return detail.messages[i];
   }
-  throw new Error("The message did not start a research run.");
+  return null;
 }
 
 async function postConvJson(path: string, body: object, token: string): Promise<ConvDetail> {
@@ -247,10 +246,22 @@ export async function runLiveResearch(
     detail = await startTurn(prompt, conversationId, token);
   }
   cb.onConversation?.(detail.id);
-  const id = lastAssistantQueryId(detail);
-  cb.onQueryId?.(id);
 
-  return pollQuery(id, token, cb);
+  const assistant = lastAssistant(detail);
+  // The supervisor either started a research run (poll it) or answered directly
+  // from the conversation's reports (show the reply, no polling).
+  if (assistant && assistant.query_id == null) {
+    return {
+      result: { report: "", sources: [], consulted: [], gaps: [] },
+      outcome: "ok",
+      reply: assistant.content,
+    };
+  }
+  if (!assistant || assistant.query_id == null) {
+    throw new Error("The message did not produce a response.");
+  }
+  cb.onQueryId?.(assistant.query_id);
+  return pollQuery(assistant.query_id, token, cb);
 }
 
 // Poll a query to its terminal state, draining the agent event feed as it goes.
@@ -380,6 +391,7 @@ export type LoadedTurn = {
   status: Status;
   error: string | null;
   result: Result;
+  reply?: string; // a supervisor answer instead of a research report
 };
 export type LoadedConversation = { id: number; title: string | null; turns: LoadedTurn[] };
 
@@ -394,22 +406,35 @@ export async function loadConversation(id: number): Promise<LoadedConversation |
   const turns: LoadedTurn[] = [];
   let prompt = "";
   for (const m of detail.messages) {
-    if (m.role === "user") prompt = m.content;
-    else {
-      const q = m.query;
-      turns.push({
-        queryId: m.query_id,
-        query: prompt,
-        status: q?.status ?? "complete",
-        error: q?.error ?? null,
-        result: {
-          report: q?.report ?? "",
-          sources: q?.sources ?? [],
-          consulted: [],
-          gaps: q?.gaps ?? [],
-        },
-      });
+    if (m.role === "user") {
+      prompt = m.content;
+      continue;
     }
+    // An assistant message with no query is a supervisor answer.
+    if (m.query_id == null) {
+      turns.push({
+        queryId: null,
+        query: prompt,
+        status: "complete",
+        error: null,
+        result: { report: "", sources: [], consulted: [], gaps: [] },
+        reply: m.content,
+      });
+      continue;
+    }
+    const q = m.query;
+    turns.push({
+      queryId: m.query_id,
+      query: prompt,
+      status: q?.status ?? "complete",
+      error: q?.error ?? null,
+      result: {
+        report: q?.report ?? "",
+        sources: q?.sources ?? [],
+        consulted: [],
+        gaps: q?.gaps ?? [],
+      },
+    });
   }
   return { id: detail.id, title: detail.title, turns };
 }

@@ -2,7 +2,10 @@ import { I } from "../icons";
 import { t } from "../lib/i18n";
 import type { Turn } from "../types";
 import { AgentFeed } from "./AgentFeed";
+import { Markdown } from "./Markdown";
 import { NexusMark } from "./NexusLogo";
+
+const noop = () => {};
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
@@ -40,7 +43,13 @@ export function TurnCard({ turn, now, feedTag, inSplit, focused, onSelect, onOpe
         <div className="assistant-reply">
           <div className="reply-agent"><span className="reply-mark"><NexusMark size={18} /></span>{t.turn.brand}</div>
 
-          {running && !hasActivity && (
+          {turn.reply != null && (
+            <div className="reply-text">
+              <Markdown text={turn.reply} onCite={noop} activeCite={null} />
+            </div>
+          )}
+
+          {turn.reply == null && running && !hasActivity && (
             <div className="reply-thinking">
               <span className="spin" />{t.turn.planning}
             </div>
@@ -52,7 +61,7 @@ export function TurnCard({ turn, now, feedTag, inSplit, focused, onSelect, onOpe
             </div>
           )}
 
-          {(running || elapsed > 0.2) && (
+          {turn.reply == null && (running || elapsed > 0.2) && (
             <div className="reply-status">
               {running ? t.turn.researching : turn.stopped ? t.turn.stopped : t.turn.done} · {fmt(elapsed)}
             </div>

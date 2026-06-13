@@ -96,7 +96,8 @@ export default function App() {
       query: lt.query,
       status: lt.status,
       events: [],
-      result: lt.result,
+      reply: lt.reply,
+      result: lt.reply ? null : lt.result, // an answer turn carries no report
       outcome,
       error: lt.error,
       startedAt: performance.now(),
@@ -237,6 +238,18 @@ export default function App() {
       if (cancelled.current.has(id)) return;
       if (!res) {
         patch((t) => ({ ...t, endedAt: performance.now() }));
+        return;
+      }
+      // The supervisor answered from context: show the reply inline, no report.
+      if (res.reply != null) {
+        patch((t) => ({
+          ...t,
+          reply: res.reply,
+          result: null,
+          outcome: "ok",
+          status: "complete",
+          endedAt: performance.now(),
+        }));
         return;
       }
       patch((t) => ({

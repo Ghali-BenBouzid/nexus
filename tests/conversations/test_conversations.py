@@ -1,6 +1,30 @@
 from httpx import AsyncClient
 
+from app.agents.provider import LLMResponse, ToolCall
+from app.research.dependencies import get_provider
+from main import app
 from tests.research.test_research import _register_and_headers, _use_fake_pipeline
+
+
+class _AnswerProvider:
+    """Supervisor that always routes to a direct answer (no research)."""
+
+    async def __aenter__(self) -> "_AnswerProvider":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def generate(self, messages, tools=None, tool_choice="auto") -> LLMResponse:
+        return LLMResponse(
+            tool_calls=[
+                ToolCall(
+                    id="d",
+                    name="submit_decision",
+                    args={"action": "answer", "reply": "Answer from the report."},
+                )
+            ]
+        )
 
 
 async def test_create_conversation_starts_research(
@@ -63,6 +87,30 @@ async def test_list_conversations_newest_first(
     listed = await client.get("/conversations", headers=auth_headers)
     ids = [c["id"] for c in listed.json()]
     assert ids[:2] == [second.json()["id"], first.json()["id"]]
+
+
+async def test_supervisor_answers_from_context_without_research(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    # First message researches; the follow-up is routed to a direct answer, so it
+    # produces an assistant message with a reply and NO research run.
+    _use_fake_pipeline(sub_questions=["q1"])
+    created = await client.post(
+        "/conversations", headers=auth_headers, json={"prompt": "first"}
+    )
+    conversation_id = created.json()["id"]
+
+    app.dependency_overrides[get_provider] = _AnswerProvider
+    followed = await client.post(
+        f"/conversations/{conversation_id}/messages",
+        headers=auth_headers,
+        json={"content": "what did the report say?"},
+    )
+
+    last = followed.json()["messages"][-1]
+    assert last["role"] == "assistant"
+    assert last["query_id"] is None
+    assert last["content"] == "Answer from the report."
 
 
 async def test_conversation_hidden_from_other_users(client: AsyncClient) -> None:

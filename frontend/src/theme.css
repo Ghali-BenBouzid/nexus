@@ -797,6 +797,13 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .activity-reply .feed { padding: 2px 0 0; max-height: none; }
 
 .reply-status { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.03em; color: var(--faint); }
+/* A supervisor answer (no research): the reply rendered as prose in the thread. */
+.reply-text { font-size: 15px; line-height: 1.65; color: var(--fg); }
+.reply-text .doc > :first-child { margin-top: 0; }
+.reply-text .doc > :last-child { margin-bottom: 0; }
+.reply-text .doc h2 { font-size: 18px; margin: 18px 0 8px; }
+.reply-text .doc h3 { font-size: 16px; margin: 14px 0 6px; }
+.reply-text .doc p { margin: 0 0 10px; }
 
 .report-ready { display: flex; align-items: center; gap: 13px; width: 100%; text-align: left; cursor: pointer;
   padding: 13px 15px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2);

@@ -19,7 +19,13 @@ export type ResearchCallbacks = {
   onConversation?: (id: number) => void;
 };
 
-export type ResearchOutcome = { result: Result; outcome: Outcome; error?: string };
+export type ResearchOutcome = {
+  result: Result;
+  outcome: Outcome;
+  error?: string;
+  // Set when the supervisor answered from context instead of researching.
+  reply?: string;
+};
 
 const EMPTY_RESULT: Result = { report: "", sources: [], consulted: [], gaps: [] };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));

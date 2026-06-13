@@ -50,6 +50,9 @@ export type Turn = {
   query: string;
   status: Status;
   events: TimelineEvent[];
+  // The supervisor answered from existing reports instead of researching: this is
+  // the chat reply, rendered in place of a report.
+  reply?: string;
   result: Result | null;
   outcome: Outcome;
   error: string | null;

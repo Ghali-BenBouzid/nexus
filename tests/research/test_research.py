@@ -26,6 +26,16 @@ class RoleProvider:
         self, messages: list[Message], tools: object = None, tool_choice: str = "auto"
     ) -> LLMResponse:
         system = messages[0].content or ""
+        if "controller of a research assistant" in system:
+            return LLMResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="d",
+                        name="submit_decision",
+                        args={"action": "research", "query": "research"},
+                    )
+                ]
+            )
         if "research planner" in system:
             return LLMResponse(
                 tool_calls=[
