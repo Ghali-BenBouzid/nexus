@@ -597,11 +597,26 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .report .doc h2:first-child { margin-top: 0; }
 .report .doc h3 { font-family: var(--font-display); font-weight: 600; font-size: 19px; margin: 26px 0 10px; }
 .report .doc p { margin: 0 0 16px; }
-.report .doc ul { margin: 0 0 16px; padding-left: 22px; display: grid; gap: 7px; }
+.report .doc ul, .report .doc ol { margin: 0 0 16px; padding-left: 22px; display: grid; gap: 7px; }
+.report .doc ol { list-style: decimal; }
 .report .doc li { line-height: 1.6; }
+.report .doc li::marker { color: var(--faint); }
 .report .doc strong { font-weight: 600; }
+.report .doc em { font-style: italic; }
+.report .doc a { color: var(--accent-2); text-decoration: underline; text-underline-offset: 2px; }
 .report .doc blockquote { margin: 22px 0; padding: 16px 20px; border: 1px solid var(--line); background: var(--accent-soft); border-radius: 12px; font-size: 15px; color: var(--fg); line-height: 1.6; }
+.report .doc blockquote p:last-child { margin-bottom: 0; }
 .report .doc .lead { font-size: 18.5px; line-height: 1.6; color: var(--fg); }
+/* Inline + fenced code */
+.report .doc code { font-family: var(--font-mono); font-size: 0.88em; background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+.report .doc pre { margin: 0 0 18px; padding: 15px 17px; background: var(--surface-solid); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; }
+.report .doc pre code { background: none; border: none; padding: 0; font-size: 13px; line-height: 1.6; }
+/* GFM tables: a scroll wrapper so a wide comparison never overflows the column */
+.report .doc .md-table { margin: 0 0 20px; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+.report .doc table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+.report .doc th, .report .doc td { padding: 10px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+.report .doc th { font-weight: 600; background: var(--surface); white-space: nowrap; }
+.report .doc tr:last-child td { border-bottom: none; }
 .cite {
   font-family: var(--font-mono); font-size: 0.72em; font-weight: 600;
   color: var(--accent); cursor: pointer; vertical-align: super;
