@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { I } from "../icons";
-import { listQueries, type QuerySummary } from "../lib/api";
+import { listConversations, type ConversationSummary } from "../lib/api";
 import { lang, t } from "../lib/i18n";
 
 function when(iso: string): string {
@@ -24,15 +24,15 @@ type ChatHistoryProps = {
 // hides it entirely: it shrinks to a slim icon rail (expand + new chat) that is
 // always reachable, so the toggle lives next to the column it controls.
 export function ChatHistory({ open, onToggle, onOpen, onNewChat, refreshKey }: ChatHistoryProps) {
-  const [items, setItems] = useState<QuerySummary[] | null>(null);
+  const [items, setItems] = useState<ConversationSummary[] | null>(null);
 
   useEffect(() => {
-    listQueries()
+    listConversations()
       .then(setItems)
       .catch(() => setItems([]));
   }, [refreshKey]);
 
-  const sorted = items && [...items].sort((a, b) => b.created_at.localeCompare(a.created_at));
+  const sorted = items && [...items].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 
   return (
     <aside className={"chat-history" + (open ? "" : " collapsed")}>
@@ -51,12 +51,12 @@ export function ChatHistory({ open, onToggle, onOpen, onNewChat, refreshKey }: C
           <div className="ch-body">
             {sorted === null && <div className="drawer-empty">{t.history.loading}</div>}
             {sorted?.length === 0 && <div className="drawer-empty">{t.history.empty}</div>}
-            {sorted?.map((q) => (
-              <button key={q.id} className="hist-item" onClick={() => onOpen(q.id)}>
-                <span className={"hist-dot " + q.status} />
+            {sorted?.map((c) => (
+              <button key={c.id} className="hist-item" onClick={() => onOpen(c.id)}>
+                <span className="hist-dot complete" />
                 <div className="hist-main">
-                  <div className="hist-q">{q.prompt}</div>
-                  <div className="hist-meta">{t.history.status(q.status)} · {when(q.created_at)}</div>
+                  <div className="hist-q">{c.title ?? t.history.untitled}</div>
+                  <div className="hist-meta">{when(c.updated_at)}</div>
                 </div>
               </button>
             ))}

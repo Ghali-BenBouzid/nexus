@@ -14,6 +14,9 @@ export type ResearchCallbacks = {
   // Live mode only: the backend query id, as soon as the run is submitted, so the
   // turn can later refresh or cancel it. The simulated engine never calls it.
   onQueryId?: (id: number) => void;
+  // Live mode only: the conversation this run belongs to (a new one on the first
+  // message, the existing one on follow-ups), so the app can persist it.
+  onConversation?: (id: number) => void;
 };
 
 export type ResearchOutcome = { result: Result; outcome: Outcome; error?: string };
@@ -22,11 +25,15 @@ const EMPTY_RESULT: Result = { report: "", sources: [], consulted: [], gaps: [] 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Returns null if the run was cancelled (a newer run superseded it).
+// `conversationId` is the live-mode thread to append to (null = start a new one).
 export function runResearch(
   prompt: string,
   cb: ResearchCallbacks,
+  conversationId?: number | null,
 ): Promise<ResearchOutcome | null> {
-  return LIVE_MODE ? runLiveResearch(prompt, cb) : runSimulated(prompt, cb);
+  return LIVE_MODE
+    ? runLiveResearch(prompt, cb, conversationId ?? null)
+    : runSimulated(prompt, cb);
 }
 
 async function runSimulated(

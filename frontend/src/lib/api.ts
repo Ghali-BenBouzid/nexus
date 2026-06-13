@@ -73,20 +73,6 @@ async function ensureToken(): Promise<string> {
   return token;
 }
 
-async function submitQuery(prompt: string, token: string): Promise<number> {
-  const res = await fetch(`${BASE}/research/query`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ prompt }),
-  });
-  if (res.status === 401) {
-    localStorage.removeItem(TOKEN_KEY);
-    throw new Error("Session expired. Try again.");
-  }
-  if (!res.ok) throw new Error(`Could not start research (${res.status}).`);
-  return (await res.json()).id as number;
-}
-
 // Authenticated GET that self-heals a stale/expired token: on 401 it drops the
 // cached token, mints a fresh session, and retries once. The cached JWT is
 // returned by ensureToken without validation, so a backend restart (rotated
@@ -195,24 +181,84 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
   }
 }
 
+// --- conversations ----------------------------------------------------------
+// A research turn now belongs to a conversation: the first message creates one,
+// follow-ups append to it. The conversation (server-side) is what makes the chat
+// survive reload and is the foundation the supervisor + plan-confirmation build on.
+
+type ConvMessageQuery = {
+  status: Status;
+  report: string | null;
+  error: string | null;
+  sources: Source[];
+  gaps: string[];
+};
+type ConvMessage = {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  query_id: number | null;
+  created_at: string;
+  query: ConvMessageQuery | null;
+};
+type ConvDetail = { id: number; title: string | null; created_at: string; messages: ConvMessage[] };
+
+function lastAssistantQueryId(detail: ConvDetail): number {
+  for (let i = detail.messages.length - 1; i >= 0; i--) {
+    const m = detail.messages[i];
+    if (m.role === "assistant" && m.query_id != null) return m.query_id;
+  }
+  throw new Error("The message did not start a research run.");
+}
+
+async function postConvJson(path: string, body: object, token: string): Promise<ConvDetail> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    throw new Error("Session expired. Try again.");
+  }
+  if (!res.ok) throw new Error(`Could not reach the research service (${res.status}).`);
+  return (await res.json()) as ConvDetail;
+}
+
+const startTurn = (prompt: string, conversationId: number | null, token: string) =>
+  conversationId == null
+    ? postConvJson(`/conversations`, { prompt }, token)
+    : postConvJson(`/conversations/${conversationId}/messages`, { content: prompt }, token);
+
 export async function runLiveResearch(
   prompt: string,
   cb: ResearchCallbacks,
+  conversationId: number | null,
 ): Promise<ResearchOutcome | null> {
   cb.onStatus("running");
 
   let token = await ensureToken();
-  let id: number;
+  let detail: ConvDetail;
   try {
-    id = await submitQuery(prompt, token);
+    detail = await startTurn(prompt, conversationId, token);
   } catch {
     // One retry after a fresh session, in case a stored token went stale.
     token = await ensureToken();
-    id = await submitQuery(prompt, token);
+    detail = await startTurn(prompt, conversationId, token);
   }
+  cb.onConversation?.(detail.id);
+  const id = lastAssistantQueryId(detail);
   cb.onQueryId?.(id);
 
-  // Drain any agent events emitted since the last poll into the feed, in order.
+  return pollQuery(id, token, cb);
+}
+
+// Poll a query to its terminal state, draining the agent event feed as it goes.
+async function pollQuery(
+  id: number,
+  token: string,
+  cb: ResearchCallbacks,
+): Promise<ResearchOutcome | null> {
   // The backend event id is a monotonic cursor and a stable, unique timeline id.
   let lastEventId = 0;
   const drainEvents = async () => {
@@ -276,16 +322,6 @@ export async function cancelQuery(id: number): Promise<void> {
 
 // --- query history ----------------------------------------------------------
 
-export type QuerySummary = { id: number; prompt: string; status: Status; created_at: string };
-
-// The caller's past queries, newest first (GET /research/query). Best-effort: an
-// auth/network hiccup yields an empty list rather than throwing into the UI.
-export async function listQueries(): Promise<QuerySummary[]> {
-  const res = await authedGet(`/research/query`);
-  if (!res || !res.ok) return [];
-  return (await res.json()) as QuerySummary[];
-}
-
 export type LoadedQuery = {
   prompt: string;
   status: Status;
@@ -321,4 +357,59 @@ export async function openQuery(id: number): Promise<LoadedQuery | null> {
     },
     events,
   };
+}
+
+// --- conversation history ----------------------------------------------------
+
+export type ConversationSummary = {
+  id: number;
+  title: string | null;
+  updated_at: string;
+};
+
+// The caller's conversations, newest-active first (for the sidebar).
+export async function listConversations(): Promise<ConversationSummary[]> {
+  const res = await authedGet(`/conversations`);
+  if (!res || !res.ok) return [];
+  return (await res.json()) as ConversationSummary[];
+}
+
+export type LoadedTurn = {
+  queryId: number | null;
+  query: string;
+  status: Status;
+  error: string | null;
+  result: Result;
+};
+export type LoadedConversation = { id: number; title: string | null; turns: LoadedTurn[] };
+
+// Rehydrate a whole conversation thread into turns (used on reload and when
+// opening a past conversation). Each assistant message that carries a research
+// run becomes a turn, with the preceding user message as its prompt.
+export async function loadConversation(id: number): Promise<LoadedConversation | null> {
+  const res = await authedGet(`/conversations/${id}`);
+  if (!res || !res.ok) return null;
+  const detail = (await res.json()) as ConvDetail;
+
+  const turns: LoadedTurn[] = [];
+  let prompt = "";
+  for (const m of detail.messages) {
+    if (m.role === "user") prompt = m.content;
+    else {
+      const q = m.query;
+      turns.push({
+        queryId: m.query_id,
+        query: prompt,
+        status: q?.status ?? "complete",
+        error: q?.error ?? null,
+        result: {
+          report: q?.report ?? "",
+          sources: q?.sources ?? [],
+          consulted: [],
+          gaps: q?.gaps ?? [],
+        },
+      });
+    }
+  }
+  return { id: detail.id, title: detail.title, turns };
 }

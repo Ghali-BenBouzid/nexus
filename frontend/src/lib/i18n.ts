@@ -209,7 +209,8 @@ const en = {
   history: {
     recent: "Recent",
     loading: "Loading…",
-    empty: "No past queries yet.",
+    empty: "No conversations yet.",
+    untitled: "Untitled chat",
     close: "Close history",
     collapse: "Collapse",
     expand: "Recent",
@@ -393,7 +394,8 @@ const fr: Dict = {
   history: {
     recent: "Récent",
     loading: "Chargement…",
-    empty: "Aucune recherche pour l'instant.",
+    empty: "Aucune conversation pour l'instant.",
+    untitled: "Discussion sans titre",
     close: "Fermer l'historique",
     collapse: "Réduire",
     expand: "Récent",

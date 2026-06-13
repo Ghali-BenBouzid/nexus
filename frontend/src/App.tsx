@@ -6,7 +6,7 @@ import { Hero } from "./components/Hero";
 import { History } from "./components/History";
 import { Nav } from "./components/Nav";
 import { About, Engineering, Footer, HowItWorks } from "./components/Sections";
-import { cancelQuery, openQuery } from "./lib/api";
+import { cancelQuery, loadConversation, openQuery, type LoadedTurn } from "./lib/api";
 import { t } from "./lib/i18n";
 import {
   applyBackground,
@@ -60,9 +60,65 @@ export default function App() {
       return next;
     });
 
+  // The live conversation this chat belongs to (null = a fresh, unsaved chat).
+  // Persisted so a reload reopens the same thread.
+  const [activeConversationId, setActiveConversationId] = useState<number | null>(() => {
+    try {
+      const v = localStorage.getItem("nexus-active-conversation");
+      return v ? Number(v) : null;
+    } catch {
+      return null;
+    }
+  });
+  const setActiveConversation = (id: number | null) => {
+    setActiveConversationId(id);
+    try {
+      if (id == null) localStorage.removeItem("nexus-active-conversation");
+      else localStorage.setItem("nexus-active-conversation", String(id));
+    } catch {
+      /* ignore */
+    }
+  };
+
   const turnSeq = useRef(0);
   const cancelled = useRef<Set<number>>(new Set());
   const fluidRef = useRef<FluidHandle | null>(null);
+
+  // Map a rehydrated backend turn into the conversation's Turn shape.
+  const turnFromLoaded = (lt: LoadedTurn): Turn => {
+    let outcome: Outcome = "ok";
+    if (lt.status === "failed") outcome = "failed";
+    else if (!lt.result.report.trim() && lt.result.sources.length === 0)
+      outcome = "empty";
+    return {
+      id: ++turnSeq.current,
+      queryId: lt.queryId ?? undefined,
+      query: lt.query,
+      status: lt.status,
+      events: [],
+      result: lt.result,
+      outcome,
+      error: lt.error,
+      startedAt: performance.now(),
+      endedAt: performance.now(),
+    };
+  };
+
+  // On load, reopen the persisted conversation (live mode) so the chat survives a
+  // refresh. Runs once on mount.
+  useEffect(() => {
+    if (!LIVE_MODE || activeConversationId == null) return;
+    let stale = false;
+    loadConversation(activeConversationId).then((conv) => {
+      if (stale || !conv || conv.turns.length === 0) return;
+      setTurns(conv.turns.map(turnFromLoaded));
+      setView("chat");
+    });
+    return () => {
+      stale = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Mount the WebGL fluid background on the canvas declared in index.html.
   useEffect(() => {
@@ -161,17 +217,23 @@ export default function App() {
       setTurns((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
 
     try {
-      const res = await runResearch(prompt, {
-        onEvent: (e) => {
-          if (!cancelled.current.has(id)) patch((t) => ({ ...t, events: [...t.events, e] }));
+      const res = await runResearch(
+        prompt,
+        {
+          onEvent: (e) => {
+            if (!cancelled.current.has(id)) patch((t) => ({ ...t, events: [...t.events, e] }));
+          },
+          onStatus: (s) => {
+            if (!cancelled.current.has(id)) patch((t) => ({ ...t, status: s }));
+          },
+          isCancelled: () => cancelled.current.has(id),
+          // Remember the backend query id so this turn can refresh or cancel it.
+          onQueryId: (qid) => patch((t) => ({ ...t, queryId: qid })),
+          // Persist the conversation (new on the first message, existing after).
+          onConversation: (cid) => setActiveConversation(cid),
         },
-        onStatus: (s) => {
-          if (!cancelled.current.has(id)) patch((t) => ({ ...t, status: s }));
-        },
-        isCancelled: () => cancelled.current.has(id),
-        // Remember the backend query id so this turn can refresh or cancel it.
-        onQueryId: (qid) => patch((t) => ({ ...t, queryId: qid })),
-      });
+        activeConversationId,
+      );
       if (cancelled.current.has(id)) return;
       if (!res) {
         patch((t) => ({ ...t, endedAt: performance.now() }));
@@ -252,34 +314,17 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  async function openHistory(id: number) {
+  // Open a past conversation from the sidebar: load its whole thread and make it
+  // the active conversation. Anything running in the current chat is cancelled.
+  async function openHistory(conversationId: number) {
     setHistoryOpen(false);
-    const data = await openQuery(id);
-    if (!data) return;
-    // Opening a past query navigates to *that* chat: a stored query is its own
-    // conversation, so we replace the thread rather than appending to the current
-    // one. Anything still running in the current chat is cancelled as we leave.
+    const conv = await loadConversation(conversationId);
+    if (!conv) return;
     turns.forEach((t) => {
       if (t.status === "running" || t.status === "pending") cancelled.current.add(t.id);
     });
-    let outcome: Outcome = "ok";
-    if (data.status === "failed") outcome = "failed";
-    else if (!data.result.report.trim() && data.result.sources.length === 0) outcome = "empty";
-    const tid = ++turnSeq.current;
-    const loaded: Turn = {
-      id: tid,
-      query: data.prompt,
-      status: data.status,
-      events: data.events,
-      result: data.result,
-      outcome,
-      error: data.error,
-      startedAt: performance.now(),
-      endedAt: performance.now(),
-    };
-    setTurns([loaded]);
-    // Loading a past chat does not pop the report: the panel stays closed, so the
-    // artifact button lands on the Artifacts list when the user opens it.
+    setTurns(conv.turns.map(turnFromLoaded));
+    setActiveConversation(conv.id);
     setFocusedId(null);
     setView("chat");
     setLayout("thread");
@@ -290,6 +335,7 @@ export default function App() {
     setTurns([]);
     setFocusedId(null);
     setLayout("thread");
+    setActiveConversation(null); // a fresh chat starts a new conversation
     setView("chat"); // land on a fresh, empty conversation, not the hero
   }
 

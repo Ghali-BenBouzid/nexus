@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { listQueries, type QuerySummary } from "../lib/api";
+import { listConversations, type ConversationSummary } from "../lib/api";
 import { lang, t } from "../lib/i18n";
 
 type HistoryProps = {
@@ -18,12 +18,12 @@ function when(iso: string): string {
 // Slide-in drawer over the whole app: the caller's past queries, pulled from the
 // backend. Selecting one rehydrates it as a turn in the conversation.
 export function History({ open, onClose, onOpen }: HistoryProps) {
-  const [items, setItems] = useState<QuerySummary[] | null>(null);
+  const [items, setItems] = useState<ConversationSummary[] | null>(null);
 
   useEffect(() => {
     if (!open) return;
     setItems(null);
-    listQueries()
+    listConversations()
       .then(setItems)
       .catch(() => setItems([]));
   }, [open]);
@@ -47,12 +47,12 @@ export function History({ open, onClose, onOpen }: HistoryProps) {
         <div className="drawer-body">
           {items === null && <div className="drawer-empty">{t.history.loading}</div>}
           {items?.length === 0 && <div className="drawer-empty">{t.history.empty}</div>}
-          {items?.map((q) => (
-            <button key={q.id} className="hist-item" onClick={() => onOpen(q.id)}>
-              <span className={"hist-dot " + q.status} />
+          {items?.map((c) => (
+            <button key={c.id} className="hist-item" onClick={() => onOpen(c.id)}>
+              <span className="hist-dot complete" />
               <div className="hist-main">
-                <div className="hist-q">{q.prompt}</div>
-                <div className="hist-meta">{t.history.status(q.status)} · {when(q.created_at)}</div>
+                <div className="hist-q">{c.title ?? t.history.untitled}</div>
+                <div className="hist-meta">{when(c.updated_at)}</div>
               </div>
             </button>
           ))}
