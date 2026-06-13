@@ -1,0 +1,13 @@
+{
+  // Deploy the built SPA as static assets only (no Worker script). This keeps the
+  // Cloudflare build off the @cloudflare/vite-plugin path, which requires Vite 6+;
+  // we build with Vite 5 and just upload the output. "directory" is relative to
+  // the project root directory (frontend), so it points at frontend/dist.
+  "name": "nexus",
+  "compatibility_date": "2025-06-01",
+  "assets": {
+    "directory": "./dist",
+    // Any unknown path serves index.html, so client-side routing and reloads work.
+    "not_found_handling": "single-page-application"
+  }
+}
