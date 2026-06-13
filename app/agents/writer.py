@@ -15,6 +15,9 @@ _CITATION = re.compile(r"\[(\d+)\]")
 # A comma-grouped citation the model sometimes emits despite the prompt, e.g.
 # "[2, 4, 5]" or "[2,4,5]"; the renderer only understands one number per bracket.
 _CITATION_GROUP = re.compile(r"\[(\d+(?:\s*,\s*\d+)+)\]")
+# Fenced blocks and inline code, so a bracketed integer inside code is not treated
+# as a citation. Fenced first (it may span lines); inline code stays on one line.
+_CODE_SPAN = re.compile(r"```.*?```|`[^`\n]*`", re.DOTALL)
 
 # The writer is the final, UX-critical step: the polished prose report is the whole
 # point, so retry its one LLM call generously (on top of the provider's own per-call
@@ -193,18 +196,38 @@ def _finalize_citations(
     Returns the rewritten prose, the pruned+renumbered sources, and the stripped
     out-of-range numbers (for logging/telemetry).
     """
-    content = _split_citation_groups(content)
-    content, stripped = _strip_unbacked(content, len(sources))
+    # Code spans/blocks are masked out first so a literal bracketed integer inside
+    # code (e.g. ``arr[10]``) is never mistaken for a citation and stripped or
+    # renumbered. The placeholders carry no brackets, so the citation passes skip
+    # them; they are restored verbatim at the end.
+    code: list[str] = []
+
+    def _mask(match: re.Match[str]) -> str:
+        code.append(match.group(0))
+        return f"\x00{len(code) - 1}\x00"
+
+    masked = _CODE_SPAN.sub(_mask, content)
+
+    masked = _split_citation_groups(masked)
+    masked, stripped = _strip_unbacked(masked, len(sources))
 
     order: list[int] = []
-    for match in _CITATION.finditer(content):
+    for match in _CITATION.finditer(masked):
         n = int(match.group(1))
         if n not in order:
             order.append(n)
     remap = {old: new for new, old in enumerate(order, start=1)}
+    masked = _CITATION.sub(lambda m: f"[{remap[int(m.group(1))]}]", masked)
+
+    content = re.sub(r"\x00(\d+)\x00", lambda m: code[int(m.group(1))], masked)
 
     kept = [sources[old - 1] for old in order]
-    content = _CITATION.sub(lambda m: f"[{remap[int(m.group(1))]}]", content)
+    # A grounded report that happened to cite nothing would otherwise drop every
+    # source and render an empty Sources panel (reads as broken). Keep the full
+    # list in that case; a report with sources but no inline markers beats one with
+    # neither.
+    if not kept and sources:
+        return content, list(sources), stripped
     return content, kept, stripped
 
 

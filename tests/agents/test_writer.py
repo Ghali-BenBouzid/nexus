@@ -163,6 +163,46 @@ async def test_write_raises_after_exhausting_writer_retries(monkeypatch) -> None
     assert provider.calls == writer_module._WRITER_RETRY.max_attempts
 
 
+async def test_write_keeps_sources_when_report_cites_nothing() -> None:
+    # A grounded report that omits every [n] marker must not drop its sources to an
+    # empty panel (that reads as broken); keep the full list instead.
+    result = ResearchResult(
+        points=[
+            ResearchPoint(sub_question="q", claims=[Claim(text="ans", source_ids=[1])])
+        ],
+        sources=[Source(title="A", url="http://a"), Source(title="B", url="http://b")],
+        gaps=[],
+    )
+    provider = FakeLLMProvider(
+        responses=[LLMResponse(text="A solid report with no inline markers.")]
+    )
+
+    report = await write(result, provider=provider)
+
+    assert report.content == "A solid report with no inline markers."
+    assert [s.url for s in report.sources] == ["http://a", "http://b"]
+
+
+async def test_write_leaves_bracketed_integers_in_code_untouched() -> None:
+    # A literal bracketed integer inside a code span (`arr[10]`) is not a citation:
+    # with only one source it must survive, not be stripped as an unbacked marker.
+    result = ResearchResult(
+        points=[
+            ResearchPoint(sub_question="q", claims=[Claim(text="ans", source_ids=[1])])
+        ],
+        sources=[Source(title="A", url="http://a")],
+        gaps=[],
+    )
+    provider = FakeLLMProvider(
+        responses=[LLMResponse(text="Use `arr[10]` to index the list [1].")]
+    )
+
+    report = await write(result, provider=provider)
+
+    assert report.content == "Use `arr[10]` to index the list [1]."
+    assert [s.url for s in report.sources] == ["http://a"]
+
+
 async def test_write_short_circuits_when_no_points() -> None:
     result = ResearchResult(points=[], sources=[], gaps=["nothing found"])
     provider = FakeLLMProvider(responses=[])  # must NOT be called

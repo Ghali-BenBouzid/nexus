@@ -1,3 +1,7 @@
+import asyncio
+
+import pytest
+
 from app.agents.search_cache import CachingSearchBackend
 from app.agents.tools import SearchHit
 
@@ -48,6 +52,41 @@ async def test_extract_is_cached_by_url() -> None:
 
     await cache.extract("http://other.com")
     assert inner.extracts == 2
+
+
+async def test_concurrent_searches_for_one_key_share_a_call() -> None:
+    # The fan-out is exactly when two researchers reach for the same key at once.
+    # They should share one in-flight backend call, not each issue their own.
+    inner = _CountingBackend()
+    cache = CachingSearchBackend(inner)
+
+    results = await asyncio.gather(
+        cache.search("ai safety", 5), cache.search("ai safety", 5)
+    )
+
+    assert results[0] == results[1]
+    assert inner.searches == 1
+
+
+class _FlakyOnceBackend(_CountingBackend):
+    async def search(self, query: str, max_results: int) -> list[SearchHit]:
+        self.searches += 1
+        if self.searches == 1:
+            raise RuntimeError("transient")
+        return [SearchHit(title=query, url=f"http://{query}", content="snippet")]
+
+
+async def test_failed_search_is_not_cached() -> None:
+    # A failure must not be memoized: a later call should be free to retry it.
+    inner = _FlakyOnceBackend()
+    cache = CachingSearchBackend(inner)
+
+    with pytest.raises(RuntimeError):
+        await cache.search("ai", 5)
+
+    hits = await cache.search("ai", 5)  # retried, now succeeds
+    assert hits
+    assert inner.searches == 2
 
 
 async def test_context_manager_delegates_to_inner() -> None:
