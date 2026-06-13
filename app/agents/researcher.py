@@ -3,6 +3,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.agents.language import language_directive
 from app.agents.provider import LLMProvider, LLMResponse, Message
 from app.agents.schemas import AgentEvent, Finding, FindingClaim, Source
 from app.agents.tools import (
@@ -29,8 +30,7 @@ _SYSTEM_PROMPT = (
     "that back it (use only the ids shown in the tool results).\n"
     "- If you cannot find relevant information, call submit_finding with "
     "found_info=false and say so plainly. Never invent facts or sources.\n"
-    "- Write your answer in the same language as the sub-question (a French "
-    "sub-question gets a French answer)."
+    "- Write your answer in the same language as the sub-question."
 )
 
 
@@ -62,7 +62,10 @@ async def research(
     executables = {tool.name: tool for tool in tools}
     consulted: list[Source] = []
     messages = [
-        Message(role="system", content=_SYSTEM_PROMPT),
+        Message(
+            role="system",
+            content=_SYSTEM_PROMPT + language_directive(sub_question),
+        ),
         Message(role="user", content=sub_question),
     ]
 

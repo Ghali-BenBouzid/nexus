@@ -22,6 +22,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
+from app.agents.language import language_directive
 from app.agents.provider import LLMProvider, LLMResponse, Message
 from app.agents.schemas import AgentEvent
 from app.agents.tools import (
@@ -203,7 +204,7 @@ async def decide(
         fetch_page.name: fetch_page,
     }
     messages = [
-        Message(role="system", content=_SYSTEM_PROMPT),
+        Message(role="system", content=_SYSTEM_PROMPT + language_directive(message)),
         Message(
             role="user",
             content=f"{context}\n\nLatest message from the user:\n{message}",
