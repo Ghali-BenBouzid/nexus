@@ -3,7 +3,11 @@
 // AgentEvents while running.
 
 export type Theme = "dark" | "light";
-export type View = "home" | "run";
+export type View = "home" | "chat";
+// How the conversation workspace is laid out: a single-column chat thread, or a
+// split workspace (conversation on the left, the focused run's activity on the
+// right, the slot the future parallel-agent graph will live in).
+export type LayoutMode = "thread" | "split";
 export type Status = "pending" | "running" | "complete" | "failed";
 export type Outcome = "ok" | "empty" | "failed";
 
@@ -11,7 +15,7 @@ export type Source = { title: string; url: string };
 
 export type Result = {
   report: string; // markdown with [n] citation tokens
-  sources: Source[]; // cited — index+1 maps to [n] in the report
+  sources: Source[]; // cited, index+1 maps to [n] in the report
   consulted: Source[]; // consulted but not cited (provenance)
   gaps: string[]; // unanswered questions / failed leads
 };
@@ -37,3 +41,18 @@ export type AgentEvent =
 // An event placed on the simulated timeline: the event plus an id and the delay
 // (ms) the UI waits before revealing it.
 export type TimelineEvent = AgentEvent & { id: number; delay: number };
+
+// One turn in the conversation: a submitted query and everything that run
+// produced. The thread is an ordered list of these; each runs independently.
+export type Turn = {
+  id: number;
+  query: string;
+  status: Status;
+  events: TimelineEvent[];
+  result: Result | null;
+  outcome: Outcome;
+  error: string | null;
+  startedAt: number; // performance.now() when the run began
+  endedAt: number | null; // performance.now() when it resolved; null while running
+  stopped?: boolean; // the user halted this run before it finished
+};

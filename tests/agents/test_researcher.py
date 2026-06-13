@@ -150,6 +150,13 @@ async def test_research_emits_events() -> None:
         max_iters=5,
     )
 
+    # researcher_start/done is the orchestrator's job (it knows index/total); the
+    # leaf emits only its internal steps.
     types = [e.type for e in events]
-    assert "researcher_start" in types
+    assert "researcher_start" not in types
     assert "tool_call" in types
+    tool_call = next(e for e in events if e.type == "tool_call")
+    assert tool_call.data == {
+        "tool": "web_search",
+        "args": {"query": "q", "max_results": 5},
+    }

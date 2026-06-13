@@ -54,10 +54,9 @@ async def research(
         Message(role="user", content=sub_question),
     ]
 
-    await emit(
-        AgentEvent(type="researcher_start", message=f"Researching: {sub_question}")
-    )
-
+    # The researcher_start/done lifecycle is emitted by the orchestrator, which
+    # knows this researcher's index and the total. The leaf emits only its own
+    # internal steps (tool calls, errors, forced finish).
     for _ in range(max_iters):
         response = await provider.generate(messages, tools=specs, tool_choice="auto")
         messages.append(_assistant_message(response))
@@ -144,7 +143,13 @@ async def _run_tool(
     tool = executables.get(name)
     if tool is None:
         return ToolResult(content=f"Unknown tool: {name}")
-    await emit(AgentEvent(type="tool_call", message=f"{name}({args})"))
+    await emit(
+        AgentEvent(
+            type="tool_call",
+            message=f"{name}({args})",
+            data={"tool": name, "args": args},
+        )
+    )
     try:
         return await tool.execute(**args)
     except Exception as exc:  # one failed tool call must not kill the whole loop

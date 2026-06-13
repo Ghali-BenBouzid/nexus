@@ -1,4 +1,4 @@
-// Simulated research engine — ported from the handoff's nexus-data.js. Mirrors
+// Simulated research engine, ported from the handoff's nexus-data.js. Mirrors
 // the backend contract: a job emits AgentEvents while running, then resolves to
 // a cited Result. Used for the instant, no-auth demo runs (example chips and any
 // prompt while VITE_LIVE_MODE is off).
@@ -30,7 +30,7 @@ const GRID: Run = {
       q: "Lithium-ion vs. emerging chemistries",
       tools: [
         { action: "search", text: "grid-scale lithium-ion LFP cost per kWh 2026" },
-        { action: "read", domain: "iea.org", title: "Grid-Scale Storage — IEA" },
+        { action: "read", domain: "iea.org", title: "Grid-Scale Storage, IEA" },
         { action: "read", domain: "about.bnef.com", title: "2025 Battery Price Survey" },
         { action: "search", text: "sodium-ion grid storage commercial deployment" },
       ],
@@ -45,14 +45,14 @@ const GRID: Run = {
         { action: "error", text: "iron-air vendor pricing page timed out (504)" },
       ],
       found: 2,
-      gap: "Verified 2026 grid-scale pricing for iron-air batteries — the primary vendor source timed out, so cost figures could not be confirmed.",
+      gap: "Verified 2026 grid-scale pricing for iron-air batteries, the primary vendor source timed out, so cost figures could not be confirmed.",
     },
     {
       q: "Policy & market drivers",
       tools: [
         { action: "search", text: "energy storage policy IRA 45X 2025 2026 incentives" },
         { action: "read", domain: "energy.gov", title: "Energy Storage Grand Challenge" },
-        { action: "read", domain: "iea.org", title: "Electricity 2026 — market outlook" },
+        { action: "read", domain: "iea.org", title: "Electricity 2026, market outlook" },
       ],
       found: 3,
     },
@@ -64,15 +64,15 @@ Grid-scale storage in 2026 is no longer a single bet on one chemistry. **Lithium
 
 ## Lithium-ion is cheaper and safer than the headlines suggest
 
-Pack prices fell sharply through 2025, and LFP now dominates new stationary projects on cost and cycle-life grounds, having largely displaced nickel-manganese chemistries for grid use [2]. For daily cycling up to ~4 hours, lithium-ion is the default — abundant, bankable, and fast to deploy [1].
+Pack prices fell sharply through 2025, and LFP now dominates new stationary projects on cost and cycle-life grounds, having largely displaced nickel-manganese chemistries for grid use [2]. For daily cycling up to ~4 hours, lithium-ion is the default, abundant, bankable, and fast to deploy [1].
 
-The interesting frontier is **sodium-ion**: it trades some energy density for cheaper, more abundant materials and better cold-weather behavior, and the first grid-scale installations are now online — promising for cost-sensitive, stationary use where footprint matters less than price [2].
+The interesting frontier is **sodium-ion**: it trades some energy density for cheaper, more abundant materials and better cold-weather behavior, and the first grid-scale installations are now online, promising for cost-sensitive, stationary use where footprint matters less than price [2].
 
 ## Long-duration storage is the real 2026 story
 
 Beyond ~6 hours, lithium economics weaken and a portfolio of approaches competes [3]:
 
-- **Flow batteries** (vanadium and iron) decouple power from energy, so adding hours is cheap — well-suited to 8–12 hour shifting [5].
+- **Flow batteries** (vanadium and iron) decouple power from energy, so adding hours is cheap, well-suited to 8–12 hour shifting [5].
 - **Iron-air** targets multi-day duration at very low material cost, with first utility deployments underway.
 - **Thermal and gravity/mechanical** storage offer 10–100 hour discharge for grid firming.
 
@@ -80,9 +80,9 @@ The U.S. DOE's storage program explicitly targets a large cost reduction for lon
 
 ## What's actually driving deployment
 
-Policy is the accelerant. Manufacturing and investment incentives have pulled battery supply chains onshore and improved project economics, while capacity markets increasingly value the firm, dispatchable capability that storage provides [4]. Market signals — rising curtailment and widening price spreads on renewable-heavy grids — now make daily arbitrage profitable in more regions than a year ago [1].
+Policy is the accelerant. Manufacturing and investment incentives have pulled battery supply chains onshore and improved project economics, while capacity markets increasingly value the firm, dispatchable capability that storage provides [4]. Market signals, rising curtailment and widening price spreads on renewable-heavy grids, now make daily arbitrage profitable in more regions than a year ago [1].
 
-**Bottom line:** pair LFP (and increasingly sodium-ion) for daily cycling with an emerging LDES layer — flow and iron-air leading — and let policy plus arbitrage economics decide the mix region by region [1][3][4].`,
+**Bottom line:** pair LFP (and increasingly sodium-ion) for daily cycling with an emerging LDES layer, flow and iron-air leading, and let policy plus arbitrage economics decide the mix region by region [1][3][4].`,
     sources: [
       { title: "Grid-Scale Storage", url: "https://www.iea.org/energy-system/electricity/grid-scale-storage" },
       { title: "2025 Battery Price Survey", url: "https://about.bnef.com/insights/clean-energy/battery-prices" },
@@ -91,10 +91,10 @@ Policy is the accelerant. Manufacturing and investment incentives have pulled ba
       { title: "Flow batteries for grid storage", url: "https://www.nature.com/nenergy" },
     ],
     consulted: [
-      { title: "Grid energy storage — overview", url: "https://en.wikipedia.org/wiki/Grid_energy_storage" },
+      { title: "Grid energy storage, overview", url: "https://en.wikipedia.org/wiki/Grid_energy_storage" },
       { title: "Sodium-ion battery", url: "https://en.wikipedia.org/wiki/Sodium-ion_battery" },
-      { title: "Form Energy — iron-air", url: "https://formenergy.com/technology" },
-      { title: "EIA — battery storage capacity", url: "https://www.eia.gov/todayinenergy" },
+      { title: "Form Energy, iron-air", url: "https://formenergy.com/technology" },
+      { title: "EIA, battery storage capacity", url: "https://www.eia.gov/todayinenergy" },
     ],
     gaps: [],
   },
@@ -143,7 +143,7 @@ Small language models (roughly 1–8B parameters) have crossed the threshold whe
 
 ## What changed
 
-Distillation and better training data closed much of the gap: today's small models match the general-assistant quality of cloud models from ~18 months earlier on everyday tasks — summarizing, drafting, classification, and structured extraction [1]. They still trail frontier models on long-horizon reasoning, so the emerging pattern is **hybrid**: handle most requests locally, escalate the hard ones to the cloud [3].
+Distillation and better training data closed much of the gap: today's small models match the general-assistant quality of cloud models from ~18 months earlier on everyday tasks, summarizing, drafting, classification, and structured extraction [1]. They still trail frontier models on long-horizon reasoning, so the emerging pattern is **hybrid**: handle most requests locally, escalate the hard ones to the cloud [3].
 
 ## Why it's now practical
 
@@ -151,11 +151,11 @@ Two engineering advances did the heavy lifting: aggressive **quantization** (4-b
 
 ## The trade-offs
 
-- **Privacy:** data never leaves the device — decisive for messaging, health, and enterprise use [3].
+- **Privacy:** data never leaves the device, decisive for messaging, health, and enterprise use [3].
 - **Latency:** no network hop means instant first-token response.
 - **Cost:** no per-call inference bill, shifting economics from operators to a one-time hardware cost [3].
 
-**Bottom line:** small on-device models won't replace frontier systems, but they're absorbing the long tail of everyday AI — privately, instantly, and essentially for free [1][3].`,
+**Bottom line:** small on-device models won't replace frontier systems, but they're absorbing the long tail of everyday AI, privately, instantly, and essentially for free [1][3].`,
     sources: [
       { title: "A survey of efficient small language models", url: "https://arxiv.org/list/cs.CL/recent" },
       { title: "Open model leaderboard", url: "https://huggingface.co/spaces/open-llm-leaderboard" },
@@ -163,7 +163,7 @@ Two engineering advances did the heavy lifting: aggressive **quantization** (4-b
     ],
     consulted: [
       { title: "llama.cpp", url: "https://github.com/ggml-org/llama.cpp" },
-      { title: "Quantization — overview", url: "https://en.wikipedia.org/wiki/Quantization_(signal_processing)" },
+      { title: "Quantization, overview", url: "https://en.wikipedia.org/wiki/Quantization_(signal_processing)" },
     ],
     gaps: [],
   },
@@ -186,7 +186,7 @@ function buildGeneric(prompt: string): Run {
         q: "Background & definitions",
         tools: [
           { action: "search", text: `${t} overview explained` },
-          { action: "read", domain: "wikipedia.org", title: `${t} — overview` },
+          { action: "read", domain: "wikipedia.org", title: `${t}, overview` },
           { action: "read", domain: "nature.com", title: "Foundational review" },
         ],
         found: 2,
@@ -224,11 +224,11 @@ Current approaches cluster into a few families, each with distinct trade-offs in
 
 ## Challenges & outlook
 
-The open problems are as much practical as theoretical — data, deployment, and trust — and the near-term trajectory favors incremental, measurable gains over step changes [2].
+The open problems are as much practical as theoretical, data, deployment, and trust, and the near-term trajectory favors incremental, measurable gains over step changes [2].
 
 > This is a **simulated** run wired to the live agent-feed UI. Connect the Nexus API and the same interface streams real plans, searches, and a cited report.`,
       sources: [
-        { title: `${t} — overview`, url: "https://en.wikipedia.org/wiki/Main_Page" },
+        { title: `${t}, overview`, url: "https://en.wikipedia.org/wiki/Main_Page" },
         { title: "Recent advances (preprint)", url: "https://arxiv.org/list/cs/recent" },
       ],
       consulted: [

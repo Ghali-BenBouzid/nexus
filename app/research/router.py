@@ -12,7 +12,12 @@ from app.db.session import get_db
 from app.models.user import User
 from app.research import repository, service
 from app.research.dependencies import get_provider, get_search_backend
-from app.research.schemas import QueryCreate, QueryDetail, QueryResponse
+from app.research.schemas import (
+    QueryCreate,
+    QueryDetail,
+    QueryEventResponse,
+    QueryResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +66,24 @@ async def list_queries(
     current_user: User = Depends(get_current_user),
 ):
     return await repository.list_queries(db=db, user_id=current_user.id)
+
+
+@router.get("/query/{query_id}/events", response_model=list[QueryEventResponse])
+async def get_query_events(
+    query_id: int,
+    after: int = 0,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Tail the live agent feed: events for this query with id > ``after`` (the
+    last id the client saw), oldest first. Same ownership guard as the detail
+    endpoint — a non-owner gets 404 so the id's existence doesn't leak."""
+    query = await repository.get_query(
+        db=db, query_id=query_id, user_id=current_user.id
+    )
+    if query is None:
+        raise HTTPException(status_code=404, detail="Query not found")
+    return await repository.list_events(db=db, query_id=query_id, after_id=after)
 
 
 @router.get("/query/{query_id}", response_model=QueryDetail)

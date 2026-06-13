@@ -3,8 +3,8 @@ from datetime import UTC, datetime
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.schemas import Report, ResearchResult
-from app.models.query import Query, QueryStatus
+from app.agents.schemas import AgentEvent, Report, ResearchResult
+from app.models.query import Query, QueryEvent, QueryStatus
 
 
 async def reap_interrupted_queries(db: AsyncSession) -> int:
@@ -70,6 +70,33 @@ async def complete_query(
     query.result = result.model_dump()
     query.completed_at = datetime.now(UTC)
     await db.commit()
+
+
+async def add_event(db: AsyncSession, query_id: int, event: AgentEvent) -> None:
+    """Append one agent event for a query. Called from the emit sink in its own
+    short-lived session so concurrent emits never share a session."""
+    db.add(
+        QueryEvent(
+            query_id=query_id,
+            type=event.type,
+            message=event.message,
+            data=event.data,
+        )
+    )
+    await db.commit()
+
+
+async def list_events(
+    db: AsyncSession, query_id: int, after_id: int
+) -> list[QueryEvent]:
+    """Events for a query with id greater than ``after_id``, in order. The id is a
+    monotonic cursor, so a client tails the feed by passing the last id it saw."""
+    result = await db.execute(
+        select(QueryEvent)
+        .where(QueryEvent.query_id == query_id, QueryEvent.id > after_id)
+        .order_by(QueryEvent.id)
+    )
+    return list(result.scalars().all())
 
 
 async def fail_query(db: AsyncSession, query_id: int, error: str) -> None:

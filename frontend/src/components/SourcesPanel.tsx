@@ -98,7 +98,7 @@ export function StateCard({ kind, error, onRetry }: StateCardProps) {
     <div className="state-card empty">
       <div className="sic">{I.empty}</div>
       <h3>No sources found</h3>
-      <p>The agents ran successfully but couldn't find evidence to answer this question. That's a valid result — try rewording it, or narrowing the scope.</p>
+      <p>The agents ran successfully but couldn't find evidence to answer this question. That's a valid result. Try rewording it, or narrowing the scope.</p>
       <button className="btn btn-primary" onClick={onRetry}>Edit & retry</button>
     </div>
   );

@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -17,6 +18,16 @@ class QueryResponse(BaseSchema):
     id: int
     prompt: str
     status: QueryStatus
+    created_at: datetime
+
+
+class QueryEventResponse(BaseSchema):
+    """One agent progress event for the live feed; ``id`` is the poll cursor."""
+
+    id: int
+    type: str
+    message: str
+    data: dict[str, Any] | None = None
     created_at: datetime
 
 

@@ -15,9 +15,27 @@ from app.research import repository
 logger = logging.getLogger(__name__)
 
 
-async def _log_emit(event: AgentEvent) -> None:
-    # v1 sink: just log. Swapping this for an event-log/SSE feed is additive.
-    logger.info("agent[%s] %s", event.type, event.message)
+class _EventSink:
+    """The emit sink: persists each agent event so a polling client can tail the
+    live feed (``GET /research/query/{id}/events``).
+
+    Each event is written in its own short-lived session — the job's own session
+    is single-threaded and not safe for the concurrent emits a researcher fan-out
+    produces, and a fresh session per event sidesteps that entirely. A feed write
+    must never sink the run, so any failure here is logged and swallowed."""
+
+    def __init__(self, query_id: int) -> None:
+        self.query_id = query_id
+
+    async def __call__(self, event: AgentEvent) -> None:
+        logger.info("agent[%s] %s", event.type, event.message)
+        try:
+            async with db_session.SessionLocal() as db:
+                await repository.add_event(db, self.query_id, event)
+        except Exception:
+            logger.exception(
+                "failed to persist agent event for query %s", self.query_id
+            )
 
 
 async def run_research_job(
@@ -40,7 +58,7 @@ async def run_research_job(
                         prompt,
                         provider=provider,
                         tools=tools,
-                        emit=_log_emit,
+                        emit=_EventSink(query_id),
                         cap=settings.cap,
                         max_iters=settings.max_iters,
                         max_concurrency=settings.max_concurrency,

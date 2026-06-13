@@ -1,31 +1,67 @@
 import { Fragment, useEffect, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 
+import { Conversation } from "./components/Conversation";
 import { Hero } from "./components/Hero";
+import { History } from "./components/History";
 import { Nav } from "./components/Nav";
-import { RunScreen } from "./components/RunScreen";
-import { ComingSoon, FeatureLiveFeed, FeatureSources, Footer, HowItWorks } from "./components/Sections";
+import { About, Engineering, Footer, HowItWorks } from "./components/Sections";
+import { openQuery } from "./lib/api";
+import { t } from "./lib/i18n";
+import {
+  applyBackground,
+  applyFont,
+  applyPalette,
+  getStoredBloom,
+  getStoredDarkLevel,
+  getStoredFont,
+  getStoredPalette,
+} from "./lib/design";
 import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
 import { LIVE_MODE, runResearch } from "./lib/research";
-import type { Outcome, Result, Status, Theme, TimelineEvent, View } from "./types";
+import type { LayoutMode, Outcome, Theme, Turn, View } from "./types";
 
-const FEED_TAG = LIVE_MODE ? "Live run · streaming-ready" : "Simulated run · streaming-ready";
+const FEED_TAG = LIVE_MODE ? t.feed.liveTag : t.feed.simTag;
 
 export default function App() {
   const [theme, setTheme] = useState<Theme>(
     () => (document.documentElement.getAttribute("data-theme") as Theme) || "dark",
   );
   const [view, setView] = useState<View>("home");
-  const [query, setQuery] = useState("");
-  const [events, setEvents] = useState<TimelineEvent[]>([]);
-  const [status, setStatus] = useState<Status>("pending");
-  const [result, setResult] = useState<Result | null>(null);
-  const [outcome, setOutcome] = useState<Outcome>("ok");
-  const [error, setError] = useState<string | null>(null);
-  const [elapsed, setElapsed] = useState(0);
+  const [turns, setTurns] = useState<Turn[]>([]);
+  const [layout, setLayout] = useState<LayoutMode>("thread");
+  const [focusedId, setFocusedId] = useState<number | null>(null);
+  const [now, setNow] = useState(0);
   const [scrolled, setScrolled] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  // Locked design (the live Design Lab was removed): one accent palette for both
+  // themes, a font, the dark-mode glow and background level. Applied once on mount.
+  const [palette] = useState(getStoredPalette);
+  const [font] = useState(getStoredFont);
+  const [bloom] = useState(getStoredBloom);
+  const [darkLevel] = useState(getStoredDarkLevel);
+  // The Recent column is hidden by default; the user's open/closed choice is
+  // remembered across sessions.
+  const [chatHistoryOpen, setChatHistoryOpen] = useState(() => {
+    try {
+      return localStorage.getItem("nexus-history-open") === "true";
+    } catch {
+      return false;
+    }
+  });
+  const toggleChatHistory = () =>
+    setChatHistoryOpen((open) => {
+      const next = !open;
+      try {
+        localStorage.setItem("nexus-history-open", String(next));
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
 
-  const runId = useRef(0);
-  const startRef = useRef(0);
+  const turnSeq = useRef(0);
+  const cancelled = useRef<Set<number>>(new Set());
   const fluidRef = useRef<FluidHandle | null>(null);
 
   // Mount the WebGL fluid background on the canvas declared in index.html.
@@ -44,77 +80,202 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
     try {
-      localStorage.setItem("nexus-theme", theme);
+      localStorage.setItem("nexus-theme-2", theme);
     } catch {
       /* ignore */
     }
     fluidRef.current?.setTheme(theme);
   }, [theme]);
 
+  // Apply the locked palette (CSS accent vars + the fluid blob colors) and font.
+  // Runs after the theme effect so the fluid override wins.
+  useEffect(() => {
+    applyPalette(palette);
+    fluidRef.current?.setPalette(palette.fluidA, palette.fluidB);
+  }, [palette]);
+  // Adaptive backdrop: dark bg is derived from the accent; the same color drives
+  // the fluid's clear color. Re-runs on theme so it tracks dark/light.
+  useEffect(() => {
+    const clear = applyBackground(palette, theme, darkLevel);
+    fluidRef.current?.setBackground(clear);
+  }, [palette, theme, darkLevel]);
+  useEffect(() => {
+    fluidRef.current?.setBloom(bloom);
+  }, [bloom]);
+  useEffect(() => {
+    applyFont(font);
+  }, [font]);
+
   // Body stage dims the fluid behind dense content.
   useEffect(() => {
-    document.body.dataset.stage = view === "home" ? "home" : status === "complete" ? "report" : "run";
-  }, [view, status]);
+    document.body.dataset.stage = view === "home" ? "home" : "chat";
+  }, [view]);
 
-  // Elapsed timer while running.
+  // A shared clock that ticks only while a run is in flight, so every running
+  // turn's elapsed timer advances without a per-turn interval.
+  const anyRunning = turns.some((t) => t.status === "running" || t.status === "pending");
   useEffect(() => {
-    if (status !== "running" && status !== "pending") return;
-    const id = setInterval(() => setElapsed((performance.now() - startRef.current) / 1000), 100);
+    if (!anyRunning) return;
+    const id = setInterval(() => setNow(performance.now()), 150);
     return () => clearInterval(id);
-  }, [status]);
+  }, [anyRunning]);
 
-  // Nav shadow on scroll.
+  // Nav shadow on scroll + hero-focal fluid fade: the blob is full behind the
+  // hero and fades out over the first ~70vh as the sections rise. On chat stages
+  // the body pins --fluid-op low (CSS), which wins over this since it's closer.
   useEffect(() => {
-    const onScroll = () => setScrolled(window.scrollY > 16);
-    window.addEventListener("scroll", onScroll);
+    const onScroll = () => {
+      const y = window.scrollY;
+      setScrolled(y > 16);
+      const fade = Math.max(0.12, 1 - y / (window.innerHeight * 0.7));
+      document.documentElement.style.setProperty("--fluid-op", fade.toFixed(3));
+    };
+    onScroll();
+    window.addEventListener("scroll", onScroll, { passive: true });
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
   async function startResearch(prompt: string) {
-    const myId = ++runId.current;
-    setView("run");
-    setQuery(prompt);
-    setEvents([]);
-    setResult(null);
-    setOutcome("ok");
-    setError(null);
-    setElapsed(0);
-    startRef.current = performance.now();
-    setStatus("running");
-    window.scrollTo(0, 0);
+    // One run at a time: ignore a new submission while another is in flight.
+    if (turns.some((t) => t.status === "running" || t.status === "pending")) return;
+    const id = ++turnSeq.current;
+    const turn: Turn = {
+      id,
+      query: prompt,
+      status: "running",
+      events: [],
+      result: null,
+      outcome: "ok",
+      error: null,
+      startedAt: performance.now(),
+      endedAt: null,
+    };
+    setNow(turn.startedAt);
+    setView("chat");
+    setTurns((prev) => [...prev, turn]);
+    // Don't touch the preview selection on submit: if the user is reading an
+    // earlier report it stays put until this run produces its own artifact.
 
-    let res;
+    // Update only this turn; turns run independently and never clobber each other.
+    const patch = (fn: (t: Turn) => Turn) =>
+      setTurns((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
+
     try {
-      res = await runResearch(prompt, {
-        onEvent: (e) => setEvents((prev) => (runId.current === myId ? [...prev, e] : prev)),
-        onStatus: (s) => {
-          if (runId.current === myId) setStatus(s);
+      const res = await runResearch(prompt, {
+        onEvent: (e) => {
+          if (!cancelled.current.has(id)) patch((t) => ({ ...t, events: [...t.events, e] }));
         },
-        isCancelled: () => runId.current !== myId,
+        onStatus: (s) => {
+          if (!cancelled.current.has(id)) patch((t) => ({ ...t, status: s }));
+        },
+        isCancelled: () => cancelled.current.has(id),
       });
+      if (cancelled.current.has(id)) return;
+      if (!res) {
+        patch((t) => ({ ...t, endedAt: performance.now() }));
+        return;
+      }
+      patch((t) => ({
+        ...t,
+        result: res.result,
+        outcome: res.outcome,
+        error: res.error ?? null,
+        status: res.outcome === "failed" ? "failed" : "complete",
+        endedAt: performance.now(),
+      }));
+      // A finished report opens directly in the wide preview, exactly as if the
+      // user had opened the panel and clicked it.
+      if (res.outcome === "ok" && res.result) {
+        setLayout("split");
+        setFocusedId(id);
+      }
     } catch (err) {
-      if (runId.current !== myId) return;
-      setOutcome("failed");
-      setError(err instanceof Error ? err.message : "The research run failed.");
-      setStatus("failed");
-      return;
+      if (cancelled.current.has(id)) return;
+      patch((t) => ({
+        ...t,
+        status: "failed",
+        outcome: "failed",
+        error: err instanceof Error ? err.message : "The research run failed.",
+        endedAt: performance.now(),
+      }));
     }
-
-    if (!res || runId.current !== myId) return;
-    setResult(res.result);
-    setOutcome(res.outcome);
-    setError(res.error ?? null);
-    setStatus(res.outcome === "failed" ? "failed" : "complete");
   }
+
+  function stopResearch() {
+    setTurns((prev) =>
+      prev.map((t) => {
+        if (t.status === "running" || t.status === "pending") {
+          cancelled.current.add(t.id); // the run loop bails at its next checkpoint
+          return { ...t, status: "failed", stopped: true, endedAt: performance.now() };
+        }
+        return t;
+      }),
+    );
+  }
+
+  const chooseLayout = (m: LayoutMode) => setLayout(m);
 
   function goHome() {
-    runId.current++;
     setView("home");
-    setStatus("pending");
-    window.scrollTo(0, 0);
+    window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  const toggleTheme = () => setTheme((t) => (t === "dark" ? "light" : "dark"));
+  async function openHistory(id: number) {
+    setHistoryOpen(false);
+    const data = await openQuery(id);
+    if (!data) return;
+    // Opening a past query navigates to *that* chat: a stored query is its own
+    // conversation, so we replace the thread rather than appending to the current
+    // one. Anything still running in the current chat is cancelled as we leave.
+    turns.forEach((t) => {
+      if (t.status === "running" || t.status === "pending") cancelled.current.add(t.id);
+    });
+    let outcome: Outcome = "ok";
+    if (data.status === "failed") outcome = "failed";
+    else if (!data.result.report.trim() && data.result.sources.length === 0) outcome = "empty";
+    const tid = ++turnSeq.current;
+    const loaded: Turn = {
+      id: tid,
+      query: data.prompt,
+      status: data.status,
+      events: data.events,
+      result: data.result,
+      outcome,
+      error: data.error,
+      startedAt: performance.now(),
+      endedAt: performance.now(),
+    };
+    setTurns([loaded]);
+    // Loading a past chat does not pop the report: the panel stays closed, so the
+    // artifact button lands on the Artifacts list when the user opens it.
+    setFocusedId(null);
+    setView("chat");
+    setLayout("thread");
+  }
+
+  function newChat() {
+    turns.forEach((t) => cancelled.current.add(t.id));
+    setTurns([]);
+    setFocusedId(null);
+    setLayout("thread");
+    goHome();
+  }
+
+  // Cross-fade between themes. The View Transitions API snapshots the whole
+  // viewport (CSS chrome + the fluid canvas) and fades old into new; flushSync
+  // commits the theme synchronously so the "after" snapshot is the new theme.
+  // Browsers without the API just switch instantly.
+  const toggleTheme = () => {
+    const next: Theme = theme === "dark" ? "light" : "dark";
+    const start = (
+      document as Document & { startViewTransition?: (cb: () => void) => void }
+    ).startViewTransition?.bind(document);
+    if (start) {
+      start(() => flushSync(() => setTheme(next)));
+    } else {
+      setTheme(next);
+    }
+  };
 
   return (
     <Fragment>
@@ -122,36 +283,49 @@ export default function App() {
         theme={theme}
         toggleTheme={toggleTheme}
         onLogo={goHome}
-        scrolled={scrolled || view === "run"}
+        scrolled={scrolled || view === "chat"}
+        showLinks={view === "home"}
+        onHistory={
+          // Home: the nav rail opens the history drawer. In chat the Recent column
+          // owns its own slim-rail toggle, so the nav control drops away there.
+          LIVE_MODE && view !== "chat" ? () => setHistoryOpen(true) : undefined
+        }
         onStart={() => {
-          if (view === "run") goHome();
+          if (view === "chat") document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus();
           else document.querySelector<HTMLTextAreaElement>(".prompt textarea")?.focus();
         }}
       />
 
+      {LIVE_MODE && (
+        <History open={historyOpen} onClose={() => setHistoryOpen(false)} onOpen={openHistory} />
+      )}
+
       {view === "home" && (
         <Fragment>
           <Hero onSubmit={startResearch} />
+          <About />
           <HowItWorks />
-          <FeatureLiveFeed onChip={startResearch} />
-          <FeatureSources />
-          <ComingSoon />
+          <Engineering />
           <Footer />
         </Fragment>
       )}
 
-      {view === "run" && (
-        <RunScreen
-          query={query}
-          status={status}
-          events={events}
-          result={result}
-          outcome={outcome}
-          error={error}
-          elapsed={elapsed}
+      {view === "chat" && (
+        <Conversation
+          turns={turns}
+          now={now}
+          layout={layout}
+          onLayout={chooseLayout}
+          focusedId={focusedId}
+          onFocus={setFocusedId}
+          onSubmit={startResearch}
+          onStop={stopResearch}
+          running={anyRunning}
+          onNewChat={newChat}
           feedTag={FEED_TAG}
-          onBack={goHome}
-          onNew={goHome}
+          historyOpen={chatHistoryOpen}
+          onToggleHistory={toggleChatHistory}
+          onOpenHistory={LIVE_MODE ? openHistory : undefined}
         />
       )}
     </Fragment>

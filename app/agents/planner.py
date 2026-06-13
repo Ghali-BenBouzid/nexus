@@ -60,6 +60,12 @@ async def plan(
                 AgentEvent(
                     type="planner_done",
                     message=f"{len(sub_questions)} sub-questions",
+                    # the feed shows the plan up front and learns how many
+                    # researchers are about to run
+                    data={
+                        "total": len(sub_questions),
+                        "sub_questions": sub_questions,
+                    },
                 )
             )
             return sub_questions
