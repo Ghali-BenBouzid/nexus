@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.auth.router import router as auth_router
+from app.conversations.router import router as conversations_router
 from app.core.config import settings
 from app.db import session as db_session
 from app.research import repository
@@ -40,6 +41,7 @@ if settings.cors_origin_list:
 
 app.include_router(auth_router)
 app.include_router(research_router)
+app.include_router(conversations_router)
 
 
 @app.get("/health")
