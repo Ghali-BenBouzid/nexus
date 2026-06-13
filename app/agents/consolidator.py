@@ -1,4 +1,4 @@
-from app.agents.schemas import Finding, ResearchPoint, ResearchResult, Source
+from app.agents.schemas import Claim, Finding, ResearchPoint, ResearchResult, Source
 
 
 def consolidate(
@@ -7,9 +7,10 @@ def consolidate(
 ) -> ResearchResult:
     """Deterministically merge findings into a ResearchResult (no LLM).
 
-    Dedupes every finding's cited sources by URL into one global, numbered list,
-    remaps each finding's citations to those global numbers, and collects gaps
-    (soft no-answers plus the sub-questions whose researchers hard-failed).
+    Dedupes every claim's cited sources by URL into one global, numbered list,
+    remaps each claim's citations to those global numbers (so attribution stays
+    per claim, not per whole answer), and collects gaps (soft no-answers plus the
+    sub-questions whose researchers hard-failed).
     """
     failed_subquestions = failed_subquestions or []
     sources: list[Source] = []
@@ -18,6 +19,14 @@ def consolidate(
     gaps: list[str] = list(failed_subquestions)
     consulted: list[Source] = []  # provenance: everything looked at, deduped
     consulted_urls: set[str] = set()
+
+    def global_number(source: Source) -> int:
+        number = number_by_url.get(source.url)
+        if number is None:
+            sources.append(source)
+            number = len(sources)  # 1-based
+            number_by_url[source.url] = number
+        return number
 
     for finding in findings:
         # Record provenance even for findings that became gaps: "what we looked
@@ -28,26 +37,22 @@ def consolidate(
                 consulted_urls.add(source.url)
                 consulted.append(source)
 
-        if not finding.found_info or not finding.answer.strip():
+        claims = [claim for claim in finding.claims if claim.text.strip()]
+        if not finding.found_info or not claims:
             gaps.append(finding.sub_question)
             continue
 
-        source_ids: list[int] = []
-        for source in finding.cited_sources:
-            number = number_by_url.get(source.url)
-            if number is None:
-                sources.append(source)
-                number = len(sources)  # 1-based
-                number_by_url[source.url] = number
-            if number not in source_ids:
-                source_ids.append(number)
+        point_claims: list[Claim] = []
+        for finding_claim in claims:
+            claim_ids: list[int] = []
+            for source in finding_claim.sources:
+                number = global_number(source)
+                if number not in claim_ids:
+                    claim_ids.append(number)
+            point_claims.append(Claim(text=finding_claim.text, source_ids=claim_ids))
 
         points.append(
-            ResearchPoint(
-                sub_question=finding.sub_question,
-                answer=finding.answer,
-                source_ids=source_ids,
-            )
+            ResearchPoint(sub_question=finding.sub_question, claims=point_claims)
         )
 
     return ResearchResult(

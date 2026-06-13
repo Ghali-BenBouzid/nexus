@@ -4,7 +4,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.agents.provider import LLMProvider, LLMResponse, Message
-from app.agents.schemas import AgentEvent, Finding, Source
+from app.agents.schemas import AgentEvent, Finding, FindingClaim, Source
 from app.agents.tools import (
     RetrievalResult,
     SubmitFinding,
@@ -17,11 +17,16 @@ Emit = Callable[[AgentEvent], Awaitable[None]]
 
 _SYSTEM_PROMPT = (
     "You are a research agent answering a single sub-question.\n"
-    "- Use web_search to find sources and fetch_page to read a promising page in "
-    "full.\n"
-    "- Each tool result lists its sources with an id like [0]. Track those ids.\n"
-    "- When you have enough information, call submit_finding with your answer and "
-    "the cited_source_ids that back it.\n"
+    "- Use web_search to find sources, and fetch_page to read a promising page "
+    "in full when a snippet is not enough; prefer reading a source to guessing "
+    "from a snippet.\n"
+    "- If the first results are thin or off-target, search again with different "
+    "terms before settling.\n"
+    "- Each tool result lists its sources with an id like [0]. Track those ids "
+    "and cite the specific sources that support each part of your answer.\n"
+    "- When you have enough to answer well, call submit_finding. Break your "
+    "answer into individual claims, and give each claim the ids of the sources "
+    "that back it (use only the ids shown in the tool results).\n"
     "- If you cannot find relevant information, call submit_finding with "
     "found_info=false and say so plainly. Never invent facts or sources."
 )
@@ -31,12 +36,17 @@ async def _noop(event: AgentEvent) -> None:
     return None
 
 
+def _never_cancel() -> bool:
+    return False
+
+
 async def research(
     sub_question: str,
     *,
     provider: LLMProvider,
     tools: list[Tool],
     emit: Emit = _noop,
+    should_cancel: Callable[[], bool] = _never_cancel,
     max_iters: int,
 ) -> Finding:
     """Run the ReAct tool-use loop for one sub-question and return a Finding.
@@ -58,6 +68,16 @@ async def research(
     # knows this researcher's index and the total. The leaf emits only its own
     # internal steps (tool calls, errors, forced finish).
     for _ in range(max_iters):
+        # Cooperative cancel: bail before the next (expensive) model/tool round so a
+        # stopped run stops spending quota. The empty finding becomes a gap, and the
+        # orchestrator surfaces the cancellation after the fan-out.
+        if should_cancel():
+            return Finding(
+                sub_question=sub_question,
+                claims=[],
+                consulted_sources=consulted,
+                found_info=False,
+            )
         response = await provider.generate(messages, tools=specs, tool_choice="auto")
         messages.append(_assistant_message(response))
 
@@ -120,7 +140,7 @@ async def research(
             pass
     return Finding(
         sub_question=sub_question,
-        answer="No relevant information found.",
+        claims=[],
         consulted_sources=consulted,
         found_info=False,
     )
@@ -177,11 +197,18 @@ def _build_finding(
     consulted: list[Source],
 ) -> Finding:
     parsed = SubmitFindingArgs(**args)
-    cited = [consulted[i] for i in parsed.cited_source_ids if 0 <= i < len(consulted)]
+    claims = [
+        FindingClaim(
+            text=claim.text,
+            sources=[
+                consulted[i] for i in claim.cited_source_ids if 0 <= i < len(consulted)
+            ],
+        )
+        for claim in parsed.claims
+    ]
     return Finding(
         sub_question=sub_question,
-        answer=parsed.answer,
-        cited_sources=cited,
+        claims=claims,
         consulted_sources=consulted,
         found_info=parsed.found_info,
     )

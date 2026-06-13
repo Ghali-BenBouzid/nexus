@@ -83,18 +83,29 @@ class SubmitPlan(BaseToolSpec):
     args_model = SubmitPlanArgs
 
 
-class SubmitFindingArgs(BaseModel):
-    answer: str = Field(description="The answer to the sub-question")
+class SubmitFindingClaim(BaseModel):
+    text: str = Field(description="A single, self-contained factual statement")
     cited_source_ids: list[int] = Field(
-        description="IDs of sources that back the answer; "
-        "empty list if no relevant info was found"
+        default_factory=list,
+        description="ids of the sources that back THIS statement (empty if none)",
+    )
+
+
+class SubmitFindingArgs(BaseModel):
+    claims: list[SubmitFindingClaim] = Field(
+        default_factory=list,
+        description="the answer broken into individual claims, each with the "
+        "source ids that support it; empty if no relevant info was found",
     )
     found_info: bool = Field(description="False if no relevant info was found")
 
 
 class SubmitFinding(BaseToolSpec):
     name = "submit_finding"
-    description = "Use this tool to submit your findings with cited sources."
+    description = (
+        "Submit your findings as a list of claims, each with the ids of the "
+        "sources that back it."
+    )
     args_model = SubmitFindingArgs
 
 

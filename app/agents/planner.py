@@ -19,10 +19,15 @@ async def _noop(event: AgentEvent) -> None:
 
 def _system_prompt(cap: int) -> str:
     return (
-        "You are a research planner. Decompose the user's question into a small "
-        "set of complementary, non-overlapping sub-questions that together cover "
-        f"it exhaustively. Use at most {cap} sub-questions. Call submit_plan with "
-        "the list."
+        "You are a research planner. Break the user's question into a small set "
+        "of sub-questions that together cover it thoroughly without overlapping.\n"
+        "- Each sub-question must be self-contained: a researcher sees only that "
+        "one sentence, with no access to the original question, so carry the "
+        "needed context (subject, scope, timeframe) into each one.\n"
+        "- Target distinct facets of the question (for example definitions, "
+        "causes, effects, comparisons, current state), not rephrasings of the "
+        "same ask.\n"
+        f"- Use at most {cap} sub-questions. Call submit_plan with the list."
     )
 
 
@@ -33,6 +38,7 @@ async def plan(
     emit: Emit = _noop,
     cap: int,
     retry_cap: int,
+    feedback: str | None = None,
 ) -> list[str]:
     """Decompose a prompt into <=cap sub-questions via a forced submit_plan call.
 
@@ -40,11 +46,20 @@ async def plan(
     so the model can fix it within the retry budget (mirrors how the researcher
     handles a malformed submit_finding). After retries: clamp an over-cap plan to
     the floor, or raise PlannerError if nothing usable ever came back.
+
+    ``feedback`` carries the user's reason for rejecting a previous plan (the
+    human-in-the-loop revise loop), so the planner produces a different plan.
     """
+    user = prompt
+    if feedback and feedback.strip():
+        user = (
+            f"{prompt}\n\nYour previous plan was rejected. Revise it based on this "
+            f"feedback from the user: {feedback.strip()}"
+        )
     submit = SubmitPlan()
     messages = [
         Message(role="system", content=_system_prompt(cap)),
-        Message(role="user", content=prompt),
+        Message(role="user", content=user),
     ]
     await emit(AgentEvent(type="planner_start", message=f"Planning: {prompt}"))
 

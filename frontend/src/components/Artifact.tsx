@@ -74,25 +74,24 @@ function Sources({
 
 type ArtifactProps = {
   turn: Turn;
-  onRerun: (query: string) => void;
+  onRefresh: (turn: Turn) => void;
   onBack?: () => void; // return to the artifact list (reader view)
   onClose?: () => void; // collapse the whole panel
 };
 
 // The output panel: the rendered report and its sources, presented as a single
 // coherent document (the chat thread carries the live agent activity instead).
-export function Artifact({ turn, onRerun, onBack, onClose }: ArtifactProps) {
+export function Artifact({ turn, onRefresh, onBack, onClose }: ArtifactProps) {
   const [activeCite, setActiveCite] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const result = turn.result;
 
   const onCite = (n: number) => {
     setActiveCite(n);
-    const c = listRef.current;
-    if (c) {
-      const el = c.querySelector<HTMLElement>(`[data-n="${n}"]`);
-      if (el) c.scrollTop += el.getBoundingClientRect().top - c.getBoundingClientRect().top - 8;
-    }
+    // The source list isn't its own scroll container (the report body is), so
+    // scrollIntoView is what actually moves the source into view.
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-n="${n}"]`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   if (!result || (!result.report.trim() && result.sources.length === 0)) {
@@ -135,7 +134,7 @@ export function Artifact({ turn, onRerun, onBack, onClose }: ArtifactProps) {
           <button className="icon-btn" title={t.artifact.copy} onClick={() => navigator.clipboard?.writeText(result.report)}>
             {I.copy}
           </button>
-          <button className="icon-btn" title={t.artifact.rerun} onClick={() => onRerun(turn.query)}>
+          <button className="icon-btn" title={t.artifact.refresh} onClick={() => onRefresh(turn)}>
             {I.refresh}
           </button>
           {onClose && (

@@ -54,6 +54,16 @@ async def set_status(db: AsyncSession, query_id: int, status: QueryStatus) -> No
     await db.commit()
 
 
+async def set_plan(db: AsyncSession, query_id: int, plan: list[str]) -> None:
+    """Store a proposed plan and pause for confirmation (human-in-the-loop)."""
+    query = await db.get(Query, query_id)
+    if query is None:
+        return
+    query.plan = plan
+    query.status = QueryStatus.awaiting_plan
+    await db.commit()
+
+
 async def complete_query(
     db: AsyncSession,
     query_id: int,

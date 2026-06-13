@@ -597,11 +597,26 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .report .doc h2:first-child { margin-top: 0; }
 .report .doc h3 { font-family: var(--font-display); font-weight: 600; font-size: 19px; margin: 26px 0 10px; }
 .report .doc p { margin: 0 0 16px; }
-.report .doc ul { margin: 0 0 16px; padding-left: 22px; display: grid; gap: 7px; }
+.report .doc ul, .report .doc ol { margin: 0 0 16px; padding-left: 22px; display: grid; gap: 7px; }
+.report .doc ol { list-style: decimal; }
 .report .doc li { line-height: 1.6; }
+.report .doc li::marker { color: var(--faint); }
 .report .doc strong { font-weight: 600; }
+.report .doc em { font-style: italic; }
+.report .doc a { color: var(--accent-2); text-decoration: underline; text-underline-offset: 2px; }
 .report .doc blockquote { margin: 22px 0; padding: 16px 20px; border: 1px solid var(--line); background: var(--accent-soft); border-radius: 12px; font-size: 15px; color: var(--fg); line-height: 1.6; }
+.report .doc blockquote p:last-child { margin-bottom: 0; }
 .report .doc .lead { font-size: 18.5px; line-height: 1.6; color: var(--fg); }
+/* Inline + fenced code */
+.report .doc code { font-family: var(--font-mono); font-size: 0.88em; background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 5px; }
+.report .doc pre { margin: 0 0 18px; padding: 15px 17px; background: var(--surface-solid); border: 1px solid var(--line); border-radius: 12px; overflow-x: auto; }
+.report .doc pre code { background: none; border: none; padding: 0; font-size: 13px; line-height: 1.6; }
+/* GFM tables: a scroll wrapper so a wide comparison never overflows the column */
+.report .doc .md-table { margin: 0 0 20px; overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+.report .doc table { width: 100%; border-collapse: collapse; font-size: 14.5px; }
+.report .doc th, .report .doc td { padding: 10px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+.report .doc th { font-weight: 600; background: var(--surface); white-space: nowrap; }
+.report .doc tr:last-child td { border-bottom: none; }
 .cite {
   font-family: var(--font-mono); font-size: 0.72em; font-weight: 600;
   color: var(--accent); cursor: pointer; vertical-align: super;
@@ -748,6 +763,12 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .ch-title { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display);
   font-weight: 600; font-size: 14px; white-space: nowrap; }
 .ch-title svg { width: 16px; height: 16px; color: var(--accent-2); }
+.ch-newchat { flex: none; display: flex; align-items: center; gap: 9px; margin: 10px; padding: 10px 12px;
+  font-family: var(--font-display); font-weight: 500; font-size: 13.5px; color: var(--fg); cursor: pointer;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+  transition: border-color 0.18s, background 0.18s; }
+.ch-newchat:hover { border-color: var(--accent); background: var(--surface-2); }
+.ch-newchat svg { width: 16px; height: 16px; color: var(--accent-2); }
 .ch-body { flex: 1; min-height: 0; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 3px; }
 .ch-body::-webkit-scrollbar { width: 9px; }
 .ch-body::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px; }
@@ -776,6 +797,23 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .activity-reply .feed { padding: 2px 0 0; max-height: none; }
 
 .reply-status { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.03em; color: var(--faint); }
+/* A supervisor answer (no research): the reply rendered as prose in the thread. */
+.reply-text { font-size: 15px; line-height: 1.65; color: var(--fg); }
+.reply-text .doc > :first-child { margin-top: 0; }
+.reply-text .doc > :last-child { margin-bottom: 0; }
+.reply-text .doc h2 { font-size: 18px; margin: 18px 0 8px; }
+.reply-text .doc h3 { font-size: 16px; margin: 14px 0 6px; }
+.reply-text .doc p { margin: 0 0 10px; }
+/* Human-in-the-loop: the proposed plan with confirm / revise actions. */
+.plan-confirm { border: 1px solid var(--line); border-radius: 14px; padding: 15px 17px; background: var(--surface); display: flex; flex-direction: column; gap: 12px; }
+.plan-head { font-size: 13.5px; font-weight: 500; color: var(--muted); }
+.plan-list { margin: 0; padding-left: 22px; display: grid; gap: 6px; font-size: 14.5px; line-height: 1.5; color: var(--fg); list-style: decimal; }
+.plan-list li::marker { color: var(--accent-2); font-family: var(--font-mono); font-size: 12px; }
+.plan-actions { display: flex; gap: 9px; flex-wrap: wrap; }
+.plan-actions .btn { padding: 8px 16px; font-size: 13.5px; }
+.plan-revise { display: flex; flex-direction: column; gap: 9px; }
+.plan-feedback { width: 100%; resize: vertical; font-family: var(--font-sans); font-size: 14px; line-height: 1.5; color: var(--fg); background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; }
+.plan-feedback:focus { outline: none; border-color: var(--accent); }
 
 .report-ready { display: flex; align-items: center; gap: 13px; width: 100%; text-align: left; cursor: pointer;
   padding: 13px 15px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2);

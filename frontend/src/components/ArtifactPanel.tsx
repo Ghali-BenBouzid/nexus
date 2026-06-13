@@ -9,7 +9,7 @@ type ArtifactPanelProps = {
   selectedId: number | null; // which artifact is open in the reader (null = list)
   onSelect: (id: number | null) => void;
   onClose: () => void; // collapse the whole panel
-  onRerun: (query: string) => void;
+  onRefresh: (turn: Turn) => void; // re-sync the open report from the backend
 };
 
 // A turn becomes a readable artifact once it carries a result with something to
@@ -29,14 +29,14 @@ function meta(turn: Turn): string {
 // conversation has produced (newest first), and a reader for the chosen one. The
 // reader's back/close chevrons live in the Artifact header, so there is no second
 // title bar stacked on top of the report.
-export function ArtifactPanel({ turns, width, selectedId, onSelect, onClose, onRerun }: ArtifactPanelProps) {
+export function ArtifactPanel({ turns, width, selectedId, onSelect, onClose, onRefresh }: ArtifactPanelProps) {
   const artifacts = turns.filter(isArtifactTurn);
   const selected = selectedId != null ? artifacts.find((t) => t.id === selectedId) : undefined;
 
   if (selected) {
     return (
       <aside className="artifact-panel" style={{ width }}>
-        <Artifact turn={selected} onRerun={onRerun} onBack={() => onSelect(null)} onClose={onClose} />
+        <Artifact turn={selected} onRefresh={onRefresh} onBack={() => onSelect(null)} onClose={onClose} />
       </aside>
     );
   }

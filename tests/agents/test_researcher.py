@@ -35,8 +35,7 @@ async def test_research_searches_then_submits() -> None:
                 tool_calls=[
                     _call(
                         "submit_finding",
-                        answer="the answer",
-                        cited_source_ids=[0],
+                        claims=[{"text": "the answer", "cited_source_ids": [0]}],
                         found_info=True,
                     )
                 ]
@@ -54,14 +53,48 @@ async def test_research_searches_then_submits() -> None:
     assert [s.url for s in finding.cited_sources] == ["http://a"]
 
 
+async def test_research_builds_claim_level_sources() -> None:
+    # Two claims, each citing a different source id, become two claims with their
+    # own sources (claim-level attribution).
+    provider = FakeLLMProvider(
+        responses=[
+            LLMResponse(tool_calls=[_call("web_search", query="q", max_results=5)]),
+            LLMResponse(
+                tool_calls=[
+                    _call(
+                        "submit_finding",
+                        claims=[
+                            {"text": "claim one", "cited_source_ids": [0]},
+                            {"text": "claim two", "cited_source_ids": [1]},
+                        ],
+                        found_info=True,
+                    )
+                ]
+            ),
+        ]
+    )
+
+    finding = await research(
+        "sub q", provider=provider, tools=[_web_search_tool()], max_iters=5
+    )
+
+    assert [c.text for c in finding.claims] == ["claim one", "claim two"]
+    assert [s.url for s in finding.claims[0].sources] == ["http://a"]
+    assert [s.url for s in finding.claims[1].sources] == ["http://b"]
+
+
 async def test_research_recovers_from_malformed_submit() -> None:
-    # first submit_finding omits the required 'answer' -> fed back; model recovers
+    # first submit_finding omits the required 'found_info' -> fed back; recovers
     malformed = LLMResponse(
-        tool_calls=[ToolCall(id="b", name="submit_finding", args={"found_info": True})]
+        tool_calls=[ToolCall(id="b", name="submit_finding", args={"claims": []})]
     )
     good = LLMResponse(
         tool_calls=[
-            _call("submit_finding", answer="ok", cited_source_ids=[], found_info=True)
+            _call(
+                "submit_finding",
+                claims=[{"text": "ok", "cited_source_ids": []}],
+                found_info=True,
+            )
         ]
     )
     provider = FakeLLMProvider(responses=[malformed, good])
@@ -81,8 +114,9 @@ async def test_research_soft_no_answer() -> None:
                 tool_calls=[
                     _call(
                         "submit_finding",
-                        answer="couldn't find anything",
-                        cited_source_ids=[],
+                        claims=[
+                            {"text": "couldn't find anything", "cited_source_ids": []}
+                        ],
                         found_info=False,
                     )
                 ]
@@ -103,7 +137,9 @@ async def test_research_forces_finding_on_cap() -> None:
     forced = LLMResponse(
         tool_calls=[
             _call(
-                "submit_finding", answer="forced", cited_source_ids=[], found_info=False
+                "submit_finding",
+                claims=[{"text": "forced", "cited_source_ids": []}],
+                found_info=False,
             )
         ]
     )
@@ -133,8 +169,7 @@ async def test_research_emits_events() -> None:
                 tool_calls=[
                     _call(
                         "submit_finding",
-                        answer="a",
-                        cited_source_ids=[],
+                        claims=[{"text": "a", "cited_source_ids": []}],
                         found_info=True,
                     )
                 ]
@@ -160,3 +195,21 @@ async def test_research_emits_events() -> None:
         "tool": "web_search",
         "args": {"query": "q", "max_results": 5},
     }
+
+
+async def test_research_bails_when_cancelled() -> None:
+    # should_cancel is true from the start, so the researcher returns a no-info
+    # finding without ever calling the provider (no quota spent).
+    provider = FakeLLMProvider(responses=[])
+
+    finding = await research(
+        "sub q",
+        provider=provider,
+        tools=[_web_search_tool()],
+        should_cancel=lambda: True,
+        max_iters=5,
+    )
+
+    assert finding.found_info is False
+    assert finding.claims == []
+    assert provider.calls == []

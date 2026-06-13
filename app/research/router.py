@@ -9,6 +9,7 @@ from app.agents.schemas import ResearchResult
 from app.agents.tools import SearchBackend
 from app.auth.dependencies import get_current_user
 from app.db.session import get_db
+from app.models.query import QueryStatus
 from app.models.user import User
 from app.research import repository, service
 from app.research.dependencies import get_provider, get_search_backend
@@ -17,6 +18,7 @@ from app.research.schemas import (
     QueryDetail,
     QueryEventResponse,
     QueryResponse,
+    ReviseRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -86,9 +88,29 @@ async def get_query_events(
     return await repository.list_events(db=db, query_id=query_id, after_id=after)
 
 
+@router.post("/query/{query_id}/cancel", status_code=204)
+async def cancel_query(
+    query_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Stop a run the user halted. Requests cooperative cancellation of the job
+    (so it stops spending quota) and marks the query failed. Same ownership 404 as
+    the detail endpoint. A terminal query is left untouched (idempotent)."""
+    query = await repository.get_query(
+        db=db, query_id=query_id, user_id=current_user.id
+    )
+    if query is None:
+        raise HTTPException(status_code=404, detail="Query not found")
+    if query.status in (QueryStatus.pending, QueryStatus.running):
+        service.request_cancel(query_id)
+        await repository.fail_query(db, query_id, "Research was stopped.")
+
+
 @router.get("/query/{query_id}", response_model=QueryDetail)
 async def get_query(
     query_id: int,
+    include_provenance: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -102,15 +124,80 @@ async def get_query(
     # Rehydrate the stored dump back into a ResearchResult (closes the
     # model_dump round-trip); null until the job completes.
     result = _load_result(query.result, query.id)
+    # The full provenance trail is an opt-in extra (?include_provenance=true): it
+    # is heavy and most callers only want the cited sources. When asked for, it is
+    # the sources that were looked at but NOT cited, so it never duplicates the
+    # cited list shown alongside it.
+    consulted: list = []
+    if result and include_provenance:
+        cited_urls = {s.url for s in result.sources}
+        consulted = [s for s in result.consulted_sources if s.url not in cited_urls]
     return QueryDetail(
         id=query.id,
         prompt=query.prompt,
         status=query.status,
         report=query.report,
         error=query.error,
+        plan=query.plan,
         sources=result.sources if result else [],
-        consulted_sources=result.consulted_sources if result else [],
+        consulted_sources=consulted,
         gaps=result.gaps if result else [],
         created_at=query.created_at,
         completed_at=query.completed_at,
+    )
+
+
+@router.post("/query/{query_id}/confirm", status_code=204)
+async def confirm_plan(
+    query_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    provider: LLMProvider = Depends(get_provider),
+    backend: SearchBackend = Depends(get_search_backend),
+):
+    """Approve the proposed plan and run the research (phase 2). Only valid while
+    the query is awaiting_plan; same ownership 404 as the detail endpoint."""
+    query = await repository.get_query(
+        db=db, query_id=query_id, user_id=current_user.id
+    )
+    if query is None:
+        raise HTTPException(status_code=404, detail="Query not found")
+    if query.status != QueryStatus.awaiting_plan or not query.plan:
+        raise HTTPException(status_code=409, detail="No plan is awaiting confirmation.")
+    await repository.set_status(db, query_id, QueryStatus.running)
+    background_tasks.add_task(
+        service.run_research_from_plan_job,
+        query_id,
+        query.plan,
+        provider=provider,
+        backend=backend,
+    )
+
+
+@router.post("/query/{query_id}/revise", status_code=204)
+async def revise_plan(
+    query_id: int,
+    payload: ReviseRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    provider: LLMProvider = Depends(get_provider),
+):
+    """Reject the plan (optionally with feedback) and re-plan. Loops back to
+    awaiting_plan. Only valid while the query is awaiting_plan."""
+    query = await repository.get_query(
+        db=db, query_id=query_id, user_id=current_user.id
+    )
+    if query is None:
+        raise HTTPException(status_code=404, detail="Query not found")
+    if query.status != QueryStatus.awaiting_plan:
+        raise HTTPException(status_code=409, detail="No plan is awaiting revision.")
+    await repository.set_status(db, query_id, QueryStatus.running)
+    background_tasks.add_task(
+        service.run_plan_job,
+        query_id,
+        query.prompt,
+        provider=provider,
+        feedback=payload.feedback,
     )

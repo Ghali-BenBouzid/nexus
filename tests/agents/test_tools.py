@@ -104,8 +104,4 @@ def test_control_schemas_expose_parameters() -> None:
 
     finding = SubmitFinding()
     assert finding.name == "submit_finding"
-    assert set(finding.parameters["properties"]) == {
-        "answer",
-        "cited_source_ids",
-        "found_info",
-    }
+    assert set(finding.parameters["properties"]) == {"claims", "found_info"}
