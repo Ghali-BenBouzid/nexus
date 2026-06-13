@@ -68,6 +68,29 @@ async def test_write_strips_unbacked_citation_markers() -> None:
     assert [s.url for s in report.sources] == ["http://a"]
 
 
+async def test_write_splits_comma_grouped_citations() -> None:
+    # The model groups citations as [1, 2][3]; the renderer needs one number per
+    # bracket, so they are split into [1][2][3].
+    result = ResearchResult(
+        points=[
+            ResearchPoint(
+                sub_question="q", claims=[Claim(text="a", source_ids=[1, 2, 3])]
+            )
+        ],
+        sources=[
+            Source(title="A", url="http://a"),
+            Source(title="B", url="http://b"),
+            Source(title="C", url="http://c"),
+        ],
+        gaps=[],
+    )
+    provider = FakeLLMProvider(responses=[LLMResponse(text="A fact[1, 2][3].")])
+
+    report = await write(result, provider=provider)
+
+    assert report.content == "A fact[1][2][3]."
+
+
 async def test_write_prunes_uncited_sources_and_renumbers() -> None:
     # Three sources exist, but the prose only cites the 1st and 3rd. The report's
     # source list is pruned to those, renumbered in order of first appearance.

@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 Emit = Callable[[AgentEvent], Awaitable[None]]
 
 _CITATION = re.compile(r"\[(\d+)\]")
+# A comma-grouped citation the model sometimes emits despite the prompt, e.g.
+# "[2, 4, 5]" or "[2,4,5]"; the renderer only understands one number per bracket.
+_CITATION_GROUP = re.compile(r"\[(\d+(?:\s*,\s*\d+)+)\]")
 
 # The writer is the final, UX-critical step: the polished prose report is the whole
 # point, so retry its one LLM call generously (on top of the provider's own per-call
@@ -57,6 +60,12 @@ things, use a Markdown table with clear headers instead. Prefer unordered lists;
 use ordered lists only for ranks or genuine sequences. Never mix ordered and \
 unordered lists, and never write a list with a single item.
 
+Write every fact in your own words from the findings. NEVER copy raw text, \
+section headers, navigation, or table fragments out of the source material into \
+the report. When you use a Markdown table, format it correctly: a header row, a \
+separator row (| --- | --- |), and every data row on its own line. NEVER put a \
+whole table on a single line.
+
 Use bold sparingly for emphasis and italics for softer emphasis. Use fenced code \
 blocks with a language identifier for any code. Wrap math in LaTeX; never use \
 Unicode or dollar signs for math. Use blockquotes for direct quotations.
@@ -70,8 +79,9 @@ Citation numbers are assigned upstream by Nexus, not by you. Each point comes wi
 the exact source numbers that back it.
 
 Attach those numbers to the specific sentences they support, at the end of the \
-sentence, with no space before the bracket and each number in its own brackets \
-(for example, "...denser than ice[1][3].").
+sentence, with no space before the bracket and each number in its own brackets. \
+Write [1][3], never [1, 3] or [1,3]: NEVER put more than one number inside a \
+single pair of brackets.
 
 Use ONLY the numbers provided with a given point. NEVER invent a number, change \
 one, renumber, or cite a source a point did not provide. If a point carries no \
@@ -166,6 +176,8 @@ def _finalize_citations(
 ) -> tuple[str, list[Source], list[int]]:
     """Reconcile the prose with the source list, deterministically:
 
+    0. Split any comma-grouped marker ([2, 4, 5]) into separate ones
+       ([2][4][5]), the only form the report renderer understands.
     1. Strip any ``[n]`` the writer invented that no source can back (a missing
        citation beats a fabricated one).
     2. Keep only the sources the prose actually cites and renumber them in order
@@ -175,6 +187,7 @@ def _finalize_citations(
     Returns the rewritten prose, the pruned+renumbered sources, and the stripped
     out-of-range numbers (for logging/telemetry).
     """
+    content = _split_citation_groups(content)
     content, stripped = _strip_unbacked(content, len(sources))
 
     order: list[int] = []
@@ -187,6 +200,17 @@ def _finalize_citations(
     kept = [sources[old - 1] for old in order]
     content = _CITATION.sub(lambda m: f"[{remap[int(m.group(1))]}]", content)
     return content, kept, stripped
+
+
+def _split_citation_groups(content: str) -> str:
+    """Rewrite a comma-grouped citation ([2, 4, 5]) into separate markers
+    ([2][4][5]) so each number renders as its own citation."""
+
+    def replace(match: re.Match[str]) -> str:
+        numbers = (n.strip() for n in match.group(1).split(","))
+        return "".join(f"[{n}]" for n in numbers)
+
+    return _CITATION_GROUP.sub(replace, content)
 
 
 def _strip_unbacked(content: str, n_sources: int) -> tuple[str, list[int]]:
