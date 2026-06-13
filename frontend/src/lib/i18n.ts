@@ -157,8 +157,6 @@ const en = {
     nextTitle: "What's next",
     nextIntro: "A few of these are already in progress.",
     next: [
-      "Streaming the agent events to the screen live as they happen.",
-      "Letting you review and adjust the plan before the research runs.",
       "Researching your own documents alongside the web.",
       "An opt-in deep-research mode that trades speed for a stronger model.",
     ],
@@ -368,8 +366,6 @@ const fr: Dict = {
     nextTitle: "La suite",
     nextIntro: "Certaines de ces fonctionnalités sont déjà en cours de développement.",
     next: [
-      "Diffuser les événements des agents à l'écran en direct, au fil de l'eau.",
-      "Vous laisser revoir et ajuster le plan avant que la recherche ne se lance.",
       "Chercher dans vos propres documents en parallèle du web.",
       "Un mode recherche approfondie optionnel, qui troque la vitesse contre un modèle plus puissant.",
     ],
