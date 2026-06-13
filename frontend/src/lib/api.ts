@@ -5,6 +5,8 @@
 // backend persists every emitted AgentEvent, so the feed shows the actual
 // planner/researcher/writer progress (real "researcher k/N"), not a placeholder.
 import type { AgentEvent, Result, Source, Status, TimelineEvent } from "../types";
+import { t } from "./i18n";
+import { outcomeFor } from "./outcome";
 import type { ResearchCallbacks, ResearchOutcome } from "./research";
 
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -14,6 +16,7 @@ const CREDS_KEY = "nexus-demo-creds";
 type QueryDetail = {
   id: number;
   prompt: string;
+  title: string | null;
   status: Status;
   report: string | null;
   error: string | null;
@@ -89,6 +92,29 @@ async function authedGet(path: string): Promise<Response | null> {
   return res;
 }
 
+// Authenticated POST with the same 401 self-heal as authedGet, and it throws on a
+// non-OK response so callers can't silently proceed against a request that never
+// took effect (e.g. a 409 confirm/revise on a query no longer awaiting a plan).
+async function authedPost(path: string, body?: object): Promise<Response> {
+  const init = (token: string): RequestInit => ({
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+  let token = await ensureToken();
+  let res = await fetch(`${BASE}${path}`, init(token));
+  if (res.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    token = await ensureToken();
+    res = await fetch(`${BASE}${path}`, init(token));
+  }
+  if (!res.ok) throw new Error(`Request failed (${res.status}).`);
+  return res;
+}
+
 async function getQuery(id: number, token: string): Promise<QueryDetail> {
   const res = await fetch(`${BASE}/research/query/${id}?include_provenance=true`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -132,7 +158,7 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
   const d = e.data ?? {};
   switch (e.type) {
     case "planner_start":
-      return { kind: "planner", state: "start", title: "Planning your research", sub: e.message };
+      return { kind: "planner", state: "start", title: t.feed.planning, sub: t.feed.planningSub };
     case "planner_done":
       return { kind: "plan", items: (d.sub_questions as string[]) ?? [] };
     case "researcher_start":
@@ -161,7 +187,7 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
         state: "done",
         index: (d.index as number) ?? 1,
         question: (d.sub_question as string) ?? "",
-        sub: d.found_info === false ? "No information found." : "Findings gathered.",
+        sub: d.found_info === false ? t.feed.noInfo : t.feed.findings,
         hasGap: d.found_info === false,
       };
     case "researcher_failed":
@@ -170,13 +196,13 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
         state: "done",
         index: (d.index as number) ?? 1,
         question: (d.sub_question as string) ?? "",
-        sub: "Could not research this area.",
+        sub: t.feed.couldNotResearch,
         hasGap: true,
       };
     case "writer_start":
-      return { kind: "writer", state: "start", title: "Writing report", sub: e.message };
+      return { kind: "writer", state: "start", title: t.feed.writing, sub: t.feed.writingSub };
     case "writer_done":
-      return { kind: "writer", state: "done", title: "Report ready", sub: "Citations linked to sources." };
+      return { kind: "writer", state: "done", title: t.feed.reportReady, sub: t.feed.citationsLinked };
     default:
       return null;
   }
@@ -189,6 +215,7 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
 
 type ConvMessageQuery = {
   status: Status;
+  title: string | null;
   report: string | null;
   error: string | null;
   plan: string[] | null;
@@ -263,17 +290,24 @@ export async function runLiveResearch(
     throw new Error("The message did not produce a response.");
   }
   cb.onQueryId?.(assistant.query_id);
+  // The supervisor named the report when it created the query, so the title is
+  // already on the assistant message: surface it before polling for the result.
+  if (assistant.query?.title) cb.onTitle?.(assistant.query.title);
   return pollQuery(assistant.query_id, token, cb);
 }
 
 // Poll a query to its terminal state, draining the agent event feed as it goes.
+// `sinceEventId` seeds the event cursor: a resumed poll (after confirm/revise)
+// passes the last id it already showed, so the planner events from phase 1 are not
+// re-fetched and duplicated into the feed.
 async function pollQuery(
   id: number,
   token: string,
   cb: ResearchCallbacks,
+  sinceEventId = 0,
 ): Promise<ResearchOutcome | null> {
   // The backend event id is a monotonic cursor and a stable, unique timeline id.
-  let lastEventId = 0;
+  let lastEventId = sinceEventId;
   const drainEvents = async () => {
     const events = await getEvents(id, lastEventId, token);
     for (const e of events) {
@@ -307,8 +341,11 @@ async function pollQuery(
         consulted: detail.consulted_sources,
         gaps: detail.gaps,
       };
-      const empty = !result.report.trim() && result.sources.length === 0;
-      return { result, outcome: empty ? "empty" : "ok" };
+      return {
+        result,
+        outcome: outcomeFor(detail.status, result.report, result.sources.length),
+        title: detail.title ?? undefined,
+      };
     }
 
     if (detail.status === "failed") {
@@ -329,35 +366,30 @@ async function pollQuery(
 }
 
 // Approve the proposed plan (POST /research/query/{id}/confirm): the backend runs
-// the research. Resume polling afterwards to track it to completion.
+// the research. Throws on a non-OK response so the caller surfaces the failure
+// instead of polling a query that never started.
 export async function confirmPlan(queryId: number): Promise<void> {
-  const token = await ensureToken();
-  await fetch(`${BASE}/research/query/${queryId}/confirm`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  await authedPost(`/research/query/${queryId}/confirm`);
 }
 
 // Reject the plan with optional feedback (POST .../revise): the backend re-plans
-// and pauses again at awaiting_plan.
+// and pauses again at awaiting_plan. Throws on a non-OK response.
 export async function revisePlan(queryId: number, feedback: string): Promise<void> {
-  const token = await ensureToken();
-  await fetch(`${BASE}/research/query/${queryId}/revise`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ feedback }),
-  });
+  await authedPost(`/research/query/${queryId}/revise`, { feedback });
 }
 
 // Resume polling an existing query (after confirm/revise) without posting a new
 // message. Reuses the same poll loop, so it handles awaiting_plan again on revise.
+// `sinceEventId` is the last feed event already shown, so the resumed poll appends
+// only new events instead of re-draining the phase-1 planner events.
 export async function resumeRun(
   queryId: number,
   cb: ResearchCallbacks,
+  sinceEventId = 0,
 ): Promise<ResearchOutcome | null> {
   cb.onStatus("running");
   const token = await ensureToken();
-  return pollQuery(queryId, token, cb);
+  return pollQuery(queryId, token, cb, sinceEventId);
 }
 
 // Ask the backend to stop a run (POST /research/query/{id}/cancel). Best-effort
@@ -380,6 +412,7 @@ export async function cancelQuery(id: number): Promise<void> {
 
 export type LoadedQuery = {
   prompt: string;
+  title?: string;
   status: Status;
   error: string | null;
   result: Result;
@@ -403,6 +436,7 @@ export async function openQuery(id: number): Promise<LoadedQuery | null> {
   }
   return {
     prompt: detail.prompt,
+    title: detail.title ?? undefined,
     status: detail.status,
     error: detail.error,
     result: {
@@ -433,6 +467,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
 export type LoadedTurn = {
   queryId: number | null;
   query: string;
+  title?: string; // the supervisor-given report title
   status: Status;
   error: string | null;
   result: Result;
@@ -472,6 +507,7 @@ export async function loadConversation(id: number): Promise<LoadedConversation |
     turns.push({
       queryId: m.query_id,
       query: prompt,
+      title: q?.title ?? undefined,
       status: q?.status ?? "complete",
       error: q?.error ?? null,
       plan: q?.plan ?? undefined,

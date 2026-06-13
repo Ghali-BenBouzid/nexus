@@ -1,16 +1,21 @@
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 
-from app.agents import orchestrator
+from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.agents import orchestrator, writer
+from app.agents.consolidator import merge_results
 from app.agents.orchestrator import OrchestratorCancelledError, OrchestratorError
 from app.agents.planner import PlannerError, plan
 from app.agents.provider import LLMProvider
-from app.agents.schemas import AgentEvent
+from app.agents.schemas import AgentEvent, Report, ResearchResult
 from app.agents.search_cache import CachingSearchBackend
 from app.agents.tools import FetchPage, SearchBackend, WebSearch
 from app.core.config import settings
 from app.db import session as db_session
-from app.models.query import QueryStatus
+from app.models.query import Query, QueryStatus
 from app.research import repository
 
 logger = logging.getLogger(__name__)
@@ -49,16 +54,19 @@ def request_cancel(query_id: int) -> None:
     _cancel_requested.add(query_id)
 
 
-async def run_research_job(
+async def _run_research_pipeline(
     query_id: int,
-    prompt: str,
     *,
     provider: LLMProvider,
     backend: SearchBackend,
+    make_coro: Callable[..., Awaitable[tuple[Report, ResearchResult]]],
 ) -> None:
-    """Background job for one query. Owns its own session (the request's closed
-    when the 202 was sent), drives the orchestrator under a global timeout, and
-    always resolves the status to complete or failed."""
+    """Shared body for the two research-running jobs. Owns its own session (the
+    request's is closed once the 202 is sent), drives the given orchestrator
+    coroutine under the global timeout, and always resolves the status to complete
+    or failed. ``make_coro`` receives the live provider/tools/emit/should_cancel
+    and returns the orchestrator coroutine to run (full ``run`` or the
+    plan-confirmed ``research_from_plan``)."""
     async with db_session.SessionLocal() as db:
         await repository.set_status(db, query_id, QueryStatus.running)
         try:
@@ -66,20 +74,20 @@ async def run_research_job(
             async with provider, backend:
                 tools = [WebSearch(backend=backend), FetchPage(backend=backend)]
                 report, research_result = await asyncio.wait_for(
-                    orchestrator.run(
-                        prompt,
+                    make_coro(
                         provider=provider,
                         tools=tools,
                         emit=_EventSink(query_id),
                         should_cancel=lambda: query_id in _cancel_requested,
-                        cap=settings.cap,
-                        max_iters=settings.max_iters,
-                        max_concurrency=settings.max_concurrency,
-                        per_researcher_timeout=settings.per_researcher_timeout,
-                        retry_cap=settings.planner_retry_cap,
                     ),
                     timeout=settings.global_timeout,
                 )
+            # A stop that lands during the uncancellable consolidate/write tail (after
+            # the orchestrator's last checkpoint) must still prevent the run from being
+            # saved as a finished report. The in-process set is the authoritative
+            # cancel signal, so re-check it right before the terminal write.
+            if query_id in _cancel_requested:
+                raise OrchestratorCancelledError("stopped after the work finished")
             await repository.complete_query(db, query_id, report, research_result)
         except TimeoutError:
             # global_timeout fired (asyncio.wait_for raises TimeoutError)
@@ -100,6 +108,30 @@ async def run_research_job(
             )
         finally:
             _cancel_requested.discard(query_id)
+
+
+async def run_research_job(
+    query_id: int,
+    prompt: str,
+    *,
+    provider: LLMProvider,
+    backend: SearchBackend,
+) -> None:
+    """One-shot background job: plan, research, consolidate, write."""
+    await _run_research_pipeline(
+        query_id,
+        provider=provider,
+        backend=backend,
+        make_coro=lambda **kw: orchestrator.run(
+            prompt,
+            cap=settings.cap,
+            max_iters=settings.max_iters,
+            max_concurrency=settings.max_concurrency,
+            per_researcher_timeout=settings.per_researcher_timeout,
+            retry_cap=settings.planner_retry_cap,
+            **kw,
+        ),
+    )
 
 
 async def run_plan_job(
@@ -124,7 +156,12 @@ async def run_plan_job(
                     retry_cap=settings.planner_retry_cap,
                     feedback=feedback,
                 )
-            await repository.set_plan(db, query_id, sub_questions)
+            # A stop requested during planning wins over the proposed plan, so the
+            # paused query never re-surfaces as awaiting confirmation.
+            if query_id in _cancel_requested:
+                await repository.fail_query(db, query_id, "Research was stopped.")
+            else:
+                await repository.set_plan(db, query_id, sub_questions)
         except PlannerError as exc:
             logger.warning("plan job failed for query %s: %s", query_id, exc)
             await repository.fail_query(db, query_id, str(exc))
@@ -133,6 +170,72 @@ async def run_plan_job(
             await repository.fail_query(
                 db, query_id, "Planning failed due to an internal error."
             )
+        finally:
+            # Like the research jobs: never leave a stale cancel request behind, or a
+            # later confirmed run for this id would abort the moment it starts.
+            _cancel_requested.discard(query_id)
+
+
+async def run_compose_job(
+    query_id: int,
+    instructions: str,
+    *,
+    source_query_ids: list[int],
+    provider: LLMProvider,
+) -> None:
+    """Compose a new report by merging the structured results of the conversation's
+    existing reports and re-rendering them (guided by ``instructions``) into one
+    longer report. No web search: it reuses the sources already gathered, so
+    citations stay code-owned. Resolves the status to complete or failed."""
+    async with db_session.SessionLocal() as db:
+        await repository.set_status(db, query_id, QueryStatus.running)
+        try:
+            results = await _load_results(db, source_query_ids)
+            if not results:
+                await repository.fail_query(
+                    db, query_id, "There were no reports to compose."
+                )
+                return
+            merged = merge_results(results)
+            emit = _EventSink(query_id)
+            async with provider:
+                report = await asyncio.wait_for(
+                    writer.write(
+                        merged, provider=provider, emit=emit, guidance=instructions
+                    ),
+                    timeout=settings.global_timeout,
+                )
+            # A stop during the (uncancellable) write tail must still prevent the
+            # composed report from being saved as finished.
+            if query_id in _cancel_requested:
+                await repository.fail_query(db, query_id, "Research was stopped.")
+                return
+            await repository.complete_query(db, query_id, report, merged)
+        except TimeoutError:
+            logger.warning("compose job timed out for query %s", query_id)
+            await repository.fail_query(db, query_id, "Composing the report timed out.")
+        except Exception:
+            logger.exception("compose job crashed for query %s", query_id)
+            await repository.fail_query(
+                db, query_id, "Composing the report failed due to an internal error."
+            )
+        finally:
+            _cancel_requested.discard(query_id)
+
+
+async def _load_results(db: AsyncSession, query_ids: list[int]) -> list[ResearchResult]:
+    """Rehydrate the stored ResearchResult of each source query, skipping any with
+    no result or a malformed blob."""
+    results: list[ResearchResult] = []
+    for query_id in query_ids:
+        query = await db.get(Query, query_id)
+        if query is None or not query.result:
+            continue
+        try:
+            results.append(ResearchResult(**query.result))
+        except ValidationError:
+            logger.warning("skipping unreadable result blob for query %s", query_id)
+    return results
 
 
 async def run_research_from_plan_job(
@@ -142,41 +245,16 @@ async def run_research_from_plan_job(
     provider: LLMProvider,
     backend: SearchBackend,
 ) -> None:
-    """Phase 2: execute a confirmed plan (research -> consolidate -> write). Same
-    resolution + hang-safety as the one-shot job, minus the planning."""
-    async with db_session.SessionLocal() as db:
-        await repository.set_status(db, query_id, QueryStatus.running)
-        try:
-            backend = CachingSearchBackend(backend)
-            async with provider, backend:
-                tools = [WebSearch(backend=backend), FetchPage(backend=backend)]
-                report, research_result = await asyncio.wait_for(
-                    orchestrator.research_from_plan(
-                        sub_questions,
-                        provider=provider,
-                        tools=tools,
-                        emit=_EventSink(query_id),
-                        should_cancel=lambda: query_id in _cancel_requested,
-                        max_iters=settings.max_iters,
-                        max_concurrency=settings.max_concurrency,
-                        per_researcher_timeout=settings.per_researcher_timeout,
-                    ),
-                    timeout=settings.global_timeout,
-                )
-            await repository.complete_query(db, query_id, report, research_result)
-        except TimeoutError:
-            logger.warning("research job timed out for query %s", query_id)
-            await repository.fail_query(db, query_id, "Research timed out.")
-        except OrchestratorCancelledError:
-            logger.info("research job %s stopped by the user", query_id)
-            await repository.fail_query(db, query_id, "Research was stopped.")
-        except OrchestratorError as exc:
-            logger.warning("research job failed for query %s: %s", query_id, exc)
-            await repository.fail_query(db, query_id, str(exc))
-        except Exception:
-            logger.exception("research job crashed for query %s", query_id)
-            await repository.fail_query(
-                db, query_id, "Research failed due to an internal error."
-            )
-        finally:
-            _cancel_requested.discard(query_id)
+    """Phase 2: execute a confirmed plan (research -> consolidate -> write)."""
+    await _run_research_pipeline(
+        query_id,
+        provider=provider,
+        backend=backend,
+        make_coro=lambda **kw: orchestrator.research_from_plan(
+            sub_questions,
+            max_iters=settings.max_iters,
+            max_concurrency=settings.max_concurrency,
+            per_researcher_timeout=settings.per_researcher_timeout,
+            **kw,
+        ),
+    )

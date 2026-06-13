@@ -105,6 +105,11 @@ async def cancel_query(
     if query.status in (QueryStatus.pending, QueryStatus.running):
         service.request_cancel(query_id)
         await repository.fail_query(db, query_id, "Research was stopped.")
+    elif query.status == QueryStatus.awaiting_plan:
+        # Paused for plan confirmation: the plan job has already finished, so there
+        # is no running job to signal. Just resolve the status, otherwise a reload
+        # would rehydrate the query as still awaiting confirmation.
+        await repository.fail_query(db, query_id, "Research was stopped.")
 
 
 @router.get("/query/{query_id}", response_model=QueryDetail)
@@ -135,6 +140,7 @@ async def get_query(
     return QueryDetail(
         id=query.id,
         prompt=query.prompt,
+        title=query.title,
         status=query.status,
         report=query.report,
         error=query.error,

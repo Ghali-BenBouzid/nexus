@@ -16,6 +16,7 @@ import {
   type LoadedTurn,
 } from "./lib/api";
 import { t } from "./lib/i18n";
+import { outcomeFor } from "./lib/outcome";
 import {
   applyBackground,
   applyFont,
@@ -27,7 +28,7 @@ import {
 } from "./lib/design";
 import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
 import { LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
-import type { LayoutMode, Outcome, Theme, Turn, View } from "./types";
+import type { LayoutMode, Theme, Turn, View } from "./types";
 
 const FEED_TAG = LIVE_MODE ? t.feed.liveTag : t.feed.simTag;
 
@@ -78,26 +79,45 @@ export default function App() {
   const cancelled = useRef<Set<number>>(new Set());
   const fluidRef = useRef<FluidHandle | null>(null);
 
-  // Map a rehydrated backend turn into the conversation's Turn shape.
+  // Map a rehydrated backend turn into the conversation's Turn shape. A turn that
+  // was still in flight when the snapshot was taken keeps a null endedAt so its
+  // timer runs (and a resumed poll, below, drives it to completion).
   const turnFromLoaded = (lt: LoadedTurn): Turn => {
-    let outcome: Outcome = "ok";
-    if (lt.status === "failed") outcome = "failed";
-    else if (!lt.result.report.trim() && lt.result.sources.length === 0)
-      outcome = "empty";
+    const inFlight = lt.status === "running" || lt.status === "pending";
     return {
       id: ++turnSeq.current,
       queryId: lt.queryId ?? undefined,
       query: lt.query,
+      title: lt.title,
       status: lt.status,
       events: [],
       reply: lt.reply,
       plan: lt.plan,
       result: lt.reply ? null : lt.result, // an answer turn carries no report
-      outcome,
+      outcome: outcomeFor(lt.status, lt.result.report, lt.result.sources.length),
       error: lt.error,
       startedAt: performance.now(),
-      endedAt: performance.now(),
+      endedAt: inFlight ? null : performance.now(),
     };
+  };
+
+  // Re-attach a poll to any turn that was still running when its conversation was
+  // snapshotted (e.g. reopened mid-planning), so it keeps progressing to the plan
+  // prompt or the report instead of sticking on "running" with nothing driving it.
+  const resumeInFlight = (loaded: Turn[]) => {
+    loaded.forEach((turn) => {
+      if (turn.queryId == null) return;
+      if (turn.status !== "running" && turn.status !== "pending") return;
+      const id = turn.id;
+      setNow(performance.now());
+      resumeRun(turn.queryId, callbacksFor(id))
+        .then((res) => {
+          if (!cancelled.current.has(id)) applyOutcome(id, res);
+        })
+        .catch((err) => {
+          if (!cancelled.current.has(id)) failTurn(id, err);
+        });
+    });
   };
 
   // Mount the WebGL fluid background on the canvas declared in index.html.
@@ -186,6 +206,7 @@ export default function App() {
     isCancelled: () => cancelled.current.has(id),
     onQueryId: (qid) => patchTurn(id, (t) => ({ ...t, queryId: qid })),
     onConversation: (cid) => setActiveConversation(cid),
+    onTitle: (title) => patchTurn(id, (t) => ({ ...t, title })),
   });
 
   // Apply a finished run's outcome to its turn: a paused plan awaiting confirmation,
@@ -207,6 +228,7 @@ export default function App() {
       ...t,
       result: res.result,
       outcome: res.outcome,
+      title: res.title ?? t.title,
       error: res.error ?? null,
       status: res.outcome === "failed" ? "failed" : "complete",
       endedAt: performance.now(),
@@ -226,9 +248,29 @@ export default function App() {
       endedAt: performance.now(),
     }));
 
-  async function startResearch(prompt: string) {
-    // One run at a time: ignore a new submission while another is in flight.
-    if (turns.some((t) => t.status === "running" || t.status === "pending")) return;
+  // The hero always opens a brand-new conversation: launching from the landing
+  // page starts a fresh chat rather than appending to whatever was open last.
+  function heroSubmit(prompt: string) {
+    turns.forEach((t) => cancelled.current.add(t.id));
+    setActiveConversation(null);
+    startResearch(prompt, { fresh: true });
+  }
+
+  async function startResearch(prompt: string, opts?: { fresh?: boolean }) {
+    const fresh = opts?.fresh ?? false;
+    // One run at a time: ignore a follow-up while another is in flight. A fresh
+    // hero submission replaces the workspace, so it is never blocked this way.
+    if (!fresh && turns.some((t) => t.status === "running" || t.status === "pending")) return;
+    // A new question supersedes any plan still waiting for confirmation: cancel it
+    // on the backend and mark it stopped, rather than orphaning the paused query.
+    if (!fresh) {
+      turns.forEach((tn) => {
+        if (tn.status === "awaiting_plan") {
+          if (tn.queryId != null) cancelQuery(tn.queryId);
+          patchTurn(tn.id, (t) => ({ ...t, status: "failed", stopped: true, plan: undefined, endedAt: performance.now() }));
+        }
+      });
+    }
     const id = ++turnSeq.current;
     const turn: Turn = {
       id,
@@ -243,10 +285,19 @@ export default function App() {
     };
     setNow(turn.startedAt);
     setView("chat");
-    setTurns((prev) => [...prev, turn]);
+    // Fresh: drop the previous thread and start a new conversation; the explicit
+    // null below means this run never appends to the prior conversation.
+    if (fresh) {
+      setFocusedId(null);
+      setLayout("thread");
+      setTurns([turn]);
+    } else {
+      setTurns((prev) => [...prev, turn]);
+    }
+    const conversationId = fresh ? null : activeConversationId;
 
     try {
-      const res = await runResearch(prompt, callbacksFor(id), activeConversationId);
+      const res = await runResearch(prompt, callbacksFor(id), conversationId);
       if (cancelled.current.has(id)) return;
       applyOutcome(id, res);
     } catch (err) {
@@ -258,11 +309,14 @@ export default function App() {
   async function confirmPlan(turn: Turn) {
     if (turn.queryId == null) return;
     const id = turn.id;
+    // Resume the feed after the events already shown, so the phase-1 planner events
+    // are not re-drained and duplicated when the research run streams in.
+    const sinceEventId = turn.events.reduce((m, e) => Math.max(m, e.id), 0);
     patchTurn(id, (t) => ({ ...t, status: "running", plan: undefined, startedAt: performance.now(), endedAt: null }));
     setNow(performance.now());
     try {
       await confirmPlanApi(turn.queryId);
-      const res = await resumeRun(turn.queryId, callbacksFor(id));
+      const res = await resumeRun(turn.queryId, callbacksFor(id), sinceEventId);
       if (cancelled.current.has(id)) return;
       applyOutcome(id, res);
     } catch (err) {
@@ -274,16 +328,25 @@ export default function App() {
   async function revisePlan(turn: Turn, feedback: string) {
     if (turn.queryId == null) return;
     const id = turn.id;
+    const sinceEventId = turn.events.reduce((m, e) => Math.max(m, e.id), 0);
     patchTurn(id, (t) => ({ ...t, status: "running", plan: undefined, startedAt: performance.now(), endedAt: null }));
     setNow(performance.now());
     try {
       await revisePlanApi(turn.queryId, feedback);
-      const res = await resumeRun(turn.queryId, callbacksFor(id));
+      const res = await resumeRun(turn.queryId, callbacksFor(id), sinceEventId);
       if (cancelled.current.has(id)) return;
       applyOutcome(id, res);
     } catch (err) {
       if (!cancelled.current.has(id)) failTurn(id, err);
     }
+  }
+
+  // Discard a plan awaiting confirmation: stop it server-side and mark the turn
+  // stopped, so it does not linger as a paused query (and is not rehydrated as
+  // still awaiting confirmation on reload).
+  function discardPlan(turn: Turn) {
+    if (turn.queryId != null) cancelQuery(turn.queryId);
+    patchTurn(turn.id, (t) => ({ ...t, status: "failed", stopped: true, plan: undefined, endedAt: performance.now() }));
   }
 
   function stopResearch() {
@@ -308,10 +371,7 @@ export default function App() {
     if (turn.queryId == null) return;
     const data = await openQuery(turn.queryId);
     if (!data) return;
-    let outcome: Outcome = "ok";
-    if (data.status === "failed") outcome = "failed";
-    else if (!data.result.report.trim() && data.result.sources.length === 0)
-      outcome = "empty";
+    const outcome = outcomeFor(data.status, data.result.report, data.result.sources.length);
     setTurns((prev) =>
       prev.map((t) =>
         t.id === turn.id
@@ -321,6 +381,7 @@ export default function App() {
               result: data.result,
               events: data.events,
               outcome,
+              title: data.title ?? t.title,
               error: data.error,
             }
           : t,
@@ -344,11 +405,13 @@ export default function App() {
     turns.forEach((t) => {
       if (t.status === "running" || t.status === "pending") cancelled.current.add(t.id);
     });
-    setTurns(conv.turns.map(turnFromLoaded));
+    const loaded = conv.turns.map(turnFromLoaded);
+    setTurns(loaded);
     setActiveConversation(conv.id);
     setFocusedId(null);
     setView("chat");
     setLayout("thread");
+    resumeInFlight(loaded);
   }
 
   function newChat() {
@@ -401,7 +464,7 @@ export default function App() {
 
       {view === "home" && (
         <Fragment>
-          <Hero onSubmit={startResearch} />
+          <Hero onSubmit={heroSubmit} />
           <About />
           <HowItWorks />
           <Engineering />
@@ -419,9 +482,11 @@ export default function App() {
           onFocus={setFocusedId}
           onSubmit={startResearch}
           onStop={stopResearch}
+          onExit={goHome}
           onRefresh={refreshArtifact}
           onConfirmPlan={confirmPlan}
           onRevisePlan={revisePlan}
+          onDiscardPlan={discardPlan}
           running={anyRunning}
           onNewChat={newChat}
           feedTag={FEED_TAG}

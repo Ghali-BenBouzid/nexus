@@ -100,3 +100,48 @@ def test_consolidate_all_empty() -> None:
     assert result.points == []
     assert result.sources == []
     assert result.gaps == ["x"]
+
+
+def _result(sub_q, text, sources, source_ids, gaps=None, consulted=None):
+    from app.agents.schemas import Claim, ResearchPoint, ResearchResult
+
+    claim = Claim(text=text, source_ids=source_ids)
+    return ResearchResult(
+        points=[ResearchPoint(sub_question=sub_q, claims=[claim])],
+        sources=sources,
+        gaps=gaps or [],
+        consulted_sources=consulted if consulted is not None else sources,
+    )
+
+
+def test_merge_results_renumbers_and_dedupes_across_reports() -> None:
+    from app.agents.consolidator import merge_results
+
+    shared = Source(title="Shared", url="http://shared")
+    a = Source(title="A", url="http://a")
+    b = Source(title="B", url="http://b")
+
+    # Two prior reports, each with its own local 1-based numbering.
+    r1 = _result("q1", "one", [shared, a], [1, 2])
+    r2 = _result("q2", "two", [b, shared], [1, 2])  # local [1]=b, [2]=shared
+
+    merged = merge_results([r1, r2])
+
+    # one global, deduped source list
+    assert [s.url for s in merged.sources] == ["http://shared", "http://a", "http://b"]
+    # each report's local citations remapped onto the global list
+    assert merged.points[0].claims[0].source_ids == [1, 2]  # shared, a
+    assert merged.points[1].claims[0].source_ids == [3, 1]  # b, shared
+    assert len(merged.points) == 2
+
+
+def test_merge_results_unions_gaps_without_duplicates() -> None:
+    from app.agents.consolidator import merge_results
+
+    a = Source(title="A", url="http://a")
+    r1 = _result("q1", "one", [a], [1], gaps=["unknown thing"])
+    r2 = _result("q2", "two", [a], [1], gaps=["unknown thing", "other gap"])
+
+    merged = merge_results([r1, r2])
+
+    assert merged.gaps == ["unknown thing", "other gap"]

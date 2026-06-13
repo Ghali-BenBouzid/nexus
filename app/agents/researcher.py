@@ -28,7 +28,9 @@ _SYSTEM_PROMPT = (
     "answer into individual claims, and give each claim the ids of the sources "
     "that back it (use only the ids shown in the tool results).\n"
     "- If you cannot find relevant information, call submit_finding with "
-    "found_info=false and say so plainly. Never invent facts or sources."
+    "found_info=false and say so plainly. Never invent facts or sources.\n"
+    "- Write your answer in the same language as the sub-question (a French "
+    "sub-question gets a French answer)."
 )
 
 

@@ -41,6 +41,7 @@ class QueryDetail(BaseSchema):
 
     id: int
     prompt: str
+    title: str | None = None  # the supervisor-given report title
     status: QueryStatus
     report: str | None
     error: str | None

@@ -17,9 +17,11 @@ type ConversationProps = {
   onFocus: (id: number | null) => void;
   onSubmit: (prompt: string) => void;
   onStop: () => void;
+  onExit: () => void;
   onRefresh: (turn: Turn) => void;
   onConfirmPlan: (turn: Turn) => void;
   onRevisePlan: (turn: Turn, feedback: string) => void;
+  onDiscardPlan: (turn: Turn) => void;
   running: boolean;
   onNewChat: () => void;
   feedTag: string;
@@ -38,9 +40,11 @@ export function Conversation({
   onFocus,
   onSubmit,
   onStop,
+  onExit,
   onRefresh,
   onConfirmPlan,
   onRevisePlan,
+  onDiscardPlan,
   running,
   onNewChat,
   feedTag,
@@ -102,15 +106,17 @@ export function Conversation({
     onSubmit(prompt);
   };
 
-  // Esc is the universal "stop" while a run is in flight.
+  // Esc stops a run while one is in flight, and otherwise leaves the chat back to
+  // the landing page (the conversation stays saved and reopenable from Recent).
   useEffect(() => {
-    if (!running) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onStop();
+      if (e.key !== "Escape") return;
+      if (running) onStop();
+      else onExit();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [running, onStop]);
+  }, [running, onStop, onExit]);
 
   // Cmd/Ctrl+K jumps to the composer from anywhere in the workspace.
   useEffect(() => {
@@ -178,6 +184,7 @@ export function Conversation({
             onRerun={submit}
             onConfirmPlan={onConfirmPlan}
             onRevisePlan={onRevisePlan}
+            onDiscardPlan={onDiscardPlan}
           />
         ))}
       </div>
@@ -193,7 +200,9 @@ export function Conversation({
             onToggle={onToggleHistory}
             onOpen={onOpenHistory}
             onNewChat={onNewChat}
-            refreshKey={turns.length}
+            // Reload the list when a turn is added and again once a title lands, so
+            // a freshly named conversation shows its title instead of "Untitled".
+            refreshKey={turns.length + turns.filter((t) => t.title).length}
           />
         )}
 
@@ -219,11 +228,6 @@ export function Conversation({
                 autoFocus
                 placeholder={running ? t.chat.runningPlaceholder : t.chat.idlePlaceholder}
               />
-              {running ? (
-                <div className="composer-note">{t.chat.runningNote}</div>
-              ) : (
-                <div className="composer-note">{t.chat.idleNote}</div>
-              )}
             </div>
           </div>
         </div>

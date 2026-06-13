@@ -31,6 +31,7 @@ class MessageQuery(BaseModel):
     """The research run a message carries, rendered for the thread view."""
 
     status: QueryStatus
+    title: str | None = None  # the supervisor-given report title
     report: str | None
     error: str | None
     plan: list[str] | None = None  # proposed sub-questions while awaiting_plan

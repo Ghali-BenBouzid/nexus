@@ -26,6 +26,8 @@ class Query(Base):
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    # A short, human title for the report artifact, named by the supervisor.
+    title: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[QueryStatus] = mapped_column(
         Enum(QueryStatus, name="query_status"),
         default=QueryStatus.pending,
