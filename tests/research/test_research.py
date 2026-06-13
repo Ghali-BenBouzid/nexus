@@ -345,3 +345,47 @@ async def test_cancel_endpoint_idempotent_on_terminal_query(
         f"/research/query/{query_id}/cancel", headers=auth_headers
     )
     assert response.status_code == 204
+
+
+# --- abuse / cost guard: per-user daily cap ---------------------------------
+
+
+async def test_research_query_enforces_daily_cap(client: AsyncClient) -> None:
+    # The public demo caps research runs per account so a single user cannot drain
+    # the Tavily / LLM budget. At the cap, the next submission is rejected with 429.
+    headers = await _register_and_headers(client, "capped@test.com")
+    _use_fake_pipeline(sub_questions=["q1"])
+    original = settings.daily_query_cap
+    settings.daily_query_cap = 2
+    try:
+        for i in range(2):
+            ok = await client.post(
+                "/research/query", headers=headers, json={"prompt": f"p{i}"}
+            )
+            assert ok.status_code == 202
+        blocked = await client.post(
+            "/research/query", headers=headers, json={"prompt": "one too many"}
+        )
+        assert blocked.status_code == 429
+    finally:
+        settings.daily_query_cap = original
+
+
+async def test_daily_cap_is_per_user(client: AsyncClient) -> None:
+    # The cap is scoped per account, so one user hitting it does not block another.
+    _use_fake_pipeline(sub_questions=["q1"])
+    original = settings.daily_query_cap
+    settings.daily_query_cap = 1
+    try:
+        first = await _register_and_headers(client, "cap-a@test.com")
+        await client.post("/research/query", headers=first, json={"prompt": "a"})
+        blocked = await client.post(
+            "/research/query", headers=first, json={"prompt": "a2"}
+        )
+        assert blocked.status_code == 429
+
+        second = await _register_and_headers(client, "cap-b@test.com")
+        ok = await client.post("/research/query", headers=second, json={"prompt": "b"})
+        assert ok.status_code == 202
+    finally:
+        settings.daily_query_cap = original

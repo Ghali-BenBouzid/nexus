@@ -1,6 +1,7 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime, timedelta
 
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,6 +20,15 @@ from app.models.query import Query, QueryStatus
 from app.research import repository
 
 logger = logging.getLogger(__name__)
+
+
+async def over_daily_cap(db: AsyncSession, user_id: int) -> bool:
+    """Whether this user has hit the per-account research cap in the last 24h. The
+    window rolls (rather than resetting at midnight) so it can't be doubled up
+    across the boundary. Cheap COUNT on indexed columns; safe to call per request."""
+    since = datetime.now(UTC) - timedelta(hours=24)
+    count = await repository.count_queries_since(db, user_id, since)
+    return count >= settings.daily_query_cap
 
 
 class _EventSink:

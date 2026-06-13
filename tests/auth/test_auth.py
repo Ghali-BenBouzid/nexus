@@ -4,6 +4,7 @@ from httpx import AsyncClient
 from jose import jwt
 
 from app.core.config import settings
+from app.core.limiter import limiter
 
 
 async def test_register_success(client: AsyncClient) -> None:
@@ -113,3 +114,42 @@ async def test_me_expired_token(client: AsyncClient) -> None:
     )
 
     assert response.status_code == 401
+
+
+# --- abuse guard: per-IP registration throttle ------------------------------
+
+
+async def test_register_is_rate_limited_per_ip(client: AsyncClient) -> None:
+    # The limiter is disabled for the rest of the suite (see conftest); enable it
+    # here to check that one IP can only register so many accounts before a 429,
+    # while a different IP keeps its own allowance. Distinct X-Forwarded-For values
+    # also exercise the proxy-aware key (the real client behind Cloudflare/Railway).
+    original = settings.register_rate_limit
+    settings.register_rate_limit = "2/hour"
+    limiter.enabled = True
+    try:
+        ip_a = {"X-Forwarded-For": "203.0.113.7"}
+        for i in range(2):
+            ok = await client.post(
+                "/auth/register",
+                headers=ip_a,
+                json={"email": f"a{i}@test.com", "password": "secret"},
+            )
+            assert ok.status_code == 201
+        blocked = await client.post(
+            "/auth/register",
+            headers=ip_a,
+            json={"email": "a2@test.com", "password": "secret"},
+        )
+        assert blocked.status_code == 429
+
+        # A different client IP has its own bucket and is unaffected.
+        other = await client.post(
+            "/auth/register",
+            headers={"X-Forwarded-For": "198.51.100.9"},
+            json={"email": "b@test.com", "password": "secret"},
+        )
+        assert other.status_code == 201
+    finally:
+        settings.register_rate_limit = original
+        limiter.enabled = False

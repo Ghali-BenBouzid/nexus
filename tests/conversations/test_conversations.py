@@ -1,6 +1,8 @@
 from httpx import AsyncClient
 
 from app.agents.provider import LLMResponse, ToolCall
+from app.conversations.service import _CAP_NOTICE
+from app.core.config import settings
 from app.research.dependencies import get_provider
 from main import app
 from tests.research.test_research import _register_and_headers, _use_fake_pipeline
@@ -244,3 +246,36 @@ async def test_conversation_hidden_from_other_users(client: AsyncClient) -> None
             json={"content": "x"},
         )
     ).status_code == 404
+
+
+async def test_capped_research_returns_notice_but_answers_stay_free(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    # When the user is over the daily cap, a follow-up that would launch a heavy
+    # run (research/compose) is held back with an in-chat notice instead of a job,
+    # while cheap answers from existing reports keep working.
+    original = settings.daily_query_cap
+    settings.daily_query_cap = 0  # everyone is "over cap"
+    try:
+        # The supervisor routes this to research, but the cap blocks the launch.
+        _use_fake_pipeline(sub_questions=["q1"])
+        created = await client.post(
+            "/conversations", headers=auth_headers, json={"prompt": "research this"}
+        )
+        blocked = created.json()["messages"][-1]
+        assert blocked["role"] == "assistant"
+        assert blocked["query_id"] is None  # no run was launched
+        assert blocked["content"] == _CAP_NOTICE
+
+        # An answer follow-up is still served even while capped.
+        app.dependency_overrides[get_provider] = _AnswerProvider
+        followed = await client.post(
+            f"/conversations/{created.json()['id']}/messages",
+            headers=auth_headers,
+            json={"content": "what did it say?"},
+        )
+        answer = followed.json()["messages"][-1]
+        assert answer["query_id"] is None
+        assert answer["content"] == "Answer from the report."
+    finally:
+        settings.daily_query_cap = original

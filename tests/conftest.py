@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
+from app.core.limiter import limiter
 from app.db import session as db_session
 from app.db.base import Base
 from app.db.session import get_db
@@ -35,6 +36,10 @@ async def client() -> AsyncGenerator[AsyncClient]:
     async def get_test_db() -> AsyncGenerator[AsyncSession]:
         async with session_local() as db:
             yield db
+
+    # Off by default: most tests register several users and would trip the per-IP
+    # cap (they share one client IP). The throttle test re-enables it explicitly.
+    limiter.enabled = False
 
     app.dependency_overrides[get_db] = get_test_db
     # The background research job creates its OWN session via db_session.SessionLocal
