@@ -20,6 +20,7 @@ type ConversationProps = {
   onRefresh: (turn: Turn) => void;
   onConfirmPlan: (turn: Turn) => void;
   onRevisePlan: (turn: Turn, feedback: string) => void;
+  onDiscardPlan: (turn: Turn) => void;
   running: boolean;
   onNewChat: () => void;
   feedTag: string;
@@ -41,6 +42,7 @@ export function Conversation({
   onRefresh,
   onConfirmPlan,
   onRevisePlan,
+  onDiscardPlan,
   running,
   onNewChat,
   feedTag,
@@ -178,6 +180,7 @@ export function Conversation({
             onRerun={submit}
             onConfirmPlan={onConfirmPlan}
             onRevisePlan={onRevisePlan}
+            onDiscardPlan={onDiscardPlan}
           />
         ))}
       </div>

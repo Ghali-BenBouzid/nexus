@@ -293,6 +293,14 @@ export default function App() {
     }
   }
 
+  // Discard a plan awaiting confirmation: stop it server-side and mark the turn
+  // stopped, so it does not linger as a paused query (and is not rehydrated as
+  // still awaiting confirmation on reload).
+  function discardPlan(turn: Turn) {
+    if (turn.queryId != null) cancelQuery(turn.queryId);
+    patchTurn(turn.id, (t) => ({ ...t, status: "failed", stopped: true, plan: undefined, endedAt: performance.now() }));
+  }
+
   function stopResearch() {
     setTurns((prev) =>
       prev.map((t) => {
@@ -426,6 +434,7 @@ export default function App() {
           onRefresh={refreshArtifact}
           onConfirmPlan={confirmPlan}
           onRevisePlan={revisePlan}
+          onDiscardPlan={discardPlan}
           running={anyRunning}
           onNewChat={newChat}
           feedTag={FEED_TAG}

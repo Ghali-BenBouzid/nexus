@@ -22,12 +22,13 @@ type TurnCardProps = {
   onRerun: (query: string) => void;
   onConfirmPlan: (turn: Turn) => void;
   onRevisePlan: (turn: Turn, feedback: string) => void;
+  onDiscardPlan: (turn: Turn) => void;
 };
 
 // One conversation turn rendered as chat: the user's query as a bubble, and the
 // agent's live activity log AS the assistant's reply. The finished report is not
 // shown here, it opens in the side panel (a "Report ready" card links to it).
-export function TurnCard({ turn, now, feedTag, inSplit, focused, onSelect, onOpenReport, onRerun, onConfirmPlan, onRevisePlan }: TurnCardProps) {
+export function TurnCard({ turn, now, feedTag, inSplit, focused, onSelect, onOpenReport, onRerun, onConfirmPlan, onRevisePlan, onDiscardPlan }: TurnCardProps) {
   const [revising, setRevising] = useState(false);
   const [feedback, setFeedback] = useState("");
   const awaitingPlan = turn.status === "awaiting_plan";
@@ -38,7 +39,11 @@ export function TurnCard({ turn, now, feedTag, inSplit, focused, onSelect, onOpe
   const isEmpty = turn.status === "complete" && turn.outcome === "empty";
   const isFailed = !turn.stopped && (turn.status === "failed" || turn.outcome === "failed");
 
-  const hasActivity = turn.events.length > 0;
+  // While the plan awaits confirmation the proposed sub-questions live only in the
+  // confirm card below; suppress the duplicate "plan" feed event until the user
+  // acts, after which it rejoins the timeline like any other event.
+  const feedEvents = awaitingPlan ? turn.events.filter((e) => e.kind !== "plan") : turn.events;
+  const hasActivity = feedEvents.length > 0;
 
   return (
     <div className={"msg-turn" + (focused && inSplit ? " focused" : "")} onClick={inSplit ? onSelect : undefined}>
@@ -62,6 +67,15 @@ export function TurnCard({ turn, now, feedTag, inSplit, focused, onSelect, onOpe
             </div>
           )}
 
+          {hasActivity && (
+            <div className="activity-reply">
+              <AgentFeed events={feedEvents} status={turn.status} compact tag={feedTag} />
+            </div>
+          )}
+
+          {/* The plan-confirmation prompt sits at the bottom of the timeline, like a
+              new message, and is the only place the proposed sub-questions appear
+              until the user acts. */}
           {awaitingPlan && turn.plan && (
             <div className="plan-confirm" onClick={(e) => e.stopPropagation()}>
               <div className="plan-head">{t.turn.planTitle}</div>
@@ -72,6 +86,7 @@ export function TurnCard({ turn, now, feedTag, inSplit, focused, onSelect, onOpe
                 <div className="plan-actions">
                   <button className="btn btn-primary" onClick={() => onConfirmPlan(turn)}>{t.turn.confirmPlan}</button>
                   <button className="btn btn-ghost" onClick={() => setRevising(true)}>{t.turn.revisePlan}</button>
+                  <button className="btn btn-ghost plan-discard" onClick={() => onDiscardPlan(turn)}>{t.turn.discardPlan}</button>
                 </div>
               ) : (
                 <div className="plan-revise">
@@ -88,12 +103,6 @@ export function TurnCard({ turn, now, feedTag, inSplit, focused, onSelect, onOpe
                   </div>
                 </div>
               )}
-            </div>
-          )}
-
-          {hasActivity && (
-            <div className="activity-reply">
-              <AgentFeed events={turn.events} status={turn.status} compact tag={feedTag} />
             </div>
           )}
 
