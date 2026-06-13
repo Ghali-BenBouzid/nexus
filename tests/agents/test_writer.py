@@ -2,7 +2,7 @@ import pytest
 
 from app.agents import writer as writer_module
 from app.agents.provider import FakeLLMProvider, LLMResponse, Message, ProviderError
-from app.agents.schemas import ResearchPoint, ResearchResult, Source
+from app.agents.schemas import Claim, ResearchPoint, ResearchResult, Source
 from app.agents.writer import write
 
 
@@ -29,7 +29,9 @@ class _FlakyProvider:
 
 async def test_write_renders_points_via_provider() -> None:
     result = ResearchResult(
-        points=[ResearchPoint(sub_question="q", answer="ans", source_ids=[1])],
+        points=[
+            ResearchPoint(sub_question="q", claims=[Claim(text="ans", source_ids=[1])])
+        ],
         sources=[Source(title="A", url="http://a")],
         gaps=["a gap"],
     )
@@ -49,7 +51,9 @@ async def test_write_strips_unbacked_citation_markers() -> None:
     # The writer slips in [2] and [5] though only one source exists. Code owns
     # citations, so the guard removes the fabricated markers and keeps the valid.
     result = ResearchResult(
-        points=[ResearchPoint(sub_question="q", answer="ans", source_ids=[1])],
+        points=[
+            ResearchPoint(sub_question="q", claims=[Claim(text="ans", source_ids=[1])])
+        ],
         sources=[Source(title="A", url="http://a")],
         gaps=[],
     )
@@ -68,7 +72,11 @@ async def test_write_prunes_uncited_sources_and_renumbers() -> None:
     # Three sources exist, but the prose only cites the 1st and 3rd. The report's
     # source list is pruned to those, renumbered in order of first appearance.
     result = ResearchResult(
-        points=[ResearchPoint(sub_question="q", answer="ans", source_ids=[1, 2, 3])],
+        points=[
+            ResearchPoint(
+                sub_question="q", claims=[Claim(text="ans", source_ids=[1, 2, 3])]
+            )
+        ],
         sources=[
             Source(title="A", url="http://a"),
             Source(title="B", url="http://b"),
@@ -100,7 +108,9 @@ async def test_write_retries_transient_writer_failures(monkeypatch) -> None:
     # provider fails twice, then succeeds, and we still get the real prose report.
     _no_sleep_writer(monkeypatch)
     result = ResearchResult(
-        points=[ResearchPoint(sub_question="q", answer="ans", source_ids=[1])],
+        points=[
+            ResearchPoint(sub_question="q", claims=[Claim(text="ans", source_ids=[1])])
+        ],
         sources=[Source(title="A", url="http://a")],
         gaps=[],
     )
@@ -117,7 +127,9 @@ async def test_write_raises_after_exhausting_writer_retries(monkeypatch) -> None
     # If the writer never recovers, surface the failure (don't emit a raw dump).
     _no_sleep_writer(monkeypatch)
     result = ResearchResult(
-        points=[ResearchPoint(sub_question="q", answer="ans", source_ids=[1])],
+        points=[
+            ResearchPoint(sub_question="q", claims=[Claim(text="ans", source_ids=[1])])
+        ],
         sources=[Source(title="A", url="http://a")],
         gaps=[],
     )

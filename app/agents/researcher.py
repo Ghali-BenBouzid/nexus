@@ -4,7 +4,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from app.agents.provider import LLMProvider, LLMResponse, Message
-from app.agents.schemas import AgentEvent, Finding, Source
+from app.agents.schemas import AgentEvent, Finding, FindingClaim, Source
 from app.agents.tools import (
     RetrievalResult,
     SubmitFinding,
@@ -24,8 +24,9 @@ _SYSTEM_PROMPT = (
     "terms before settling.\n"
     "- Each tool result lists its sources with an id like [0]. Track those ids "
     "and cite the specific sources that support each part of your answer.\n"
-    "- When you have enough to answer well, call submit_finding with your answer "
-    "and the cited_source_ids that back it.\n"
+    "- When you have enough to answer well, call submit_finding. Break your "
+    "answer into individual claims, and give each claim the ids of the sources "
+    "that back it (use only the ids shown in the tool results).\n"
     "- If you cannot find relevant information, call submit_finding with "
     "found_info=false and say so plainly. Never invent facts or sources."
 )
@@ -124,7 +125,7 @@ async def research(
             pass
     return Finding(
         sub_question=sub_question,
-        answer="No relevant information found.",
+        claims=[],
         consulted_sources=consulted,
         found_info=False,
     )
@@ -181,11 +182,18 @@ def _build_finding(
     consulted: list[Source],
 ) -> Finding:
     parsed = SubmitFindingArgs(**args)
-    cited = [consulted[i] for i in parsed.cited_source_ids if 0 <= i < len(consulted)]
+    claims = [
+        FindingClaim(
+            text=claim.text,
+            sources=[
+                consulted[i] for i in claim.cited_source_ids if 0 <= i < len(consulted)
+            ],
+        )
+        for claim in parsed.claims
+    ]
     return Finding(
         sub_question=sub_question,
-        answer=parsed.answer,
-        cited_sources=cited,
+        claims=claims,
         consulted_sources=consulted,
         found_info=parsed.found_info,
     )

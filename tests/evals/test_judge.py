@@ -1,5 +1,5 @@
 from app.agents.provider import LLMResponse, ToolCall
-from app.agents.schemas import Report, ResearchPoint, ResearchResult, Source
+from app.agents.schemas import Claim, Report, ResearchPoint, ResearchResult, Source
 from app.evals.judge import evaluate_full, judge
 
 
@@ -42,7 +42,9 @@ def _report() -> Report:
 
 def _result() -> ResearchResult:
     return ResearchResult(
-        points=[ResearchPoint(sub_question="q", answer="a", source_ids=[1])],
+        points=[
+            ResearchPoint(sub_question="q", claims=[Claim(text="a", source_ids=[1])])
+        ],
         sources=[Source(title="S1", url="http://s1")],
         gaps=[],
     )

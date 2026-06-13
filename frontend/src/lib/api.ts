@@ -103,7 +103,7 @@ async function authedGet(path: string): Promise<Response | null> {
 }
 
 async function getQuery(id: number, token: string): Promise<QueryDetail> {
-  const res = await fetch(`${BASE}/research/query/${id}`, {
+  const res = await fetch(`${BASE}/research/query/${id}?include_provenance=true`, {
     headers: { Authorization: `Bearer ${token}` },
   });
   if (!res.ok) throw new Error(`Could not read the query (${res.status}).`);
@@ -280,7 +280,7 @@ export type LoadedQuery = {
 // Rehydrate a past query into the shape a conversation turn needs: its final
 // result plus the full agent activity trace (so the log is browsable again).
 export async function openQuery(id: number): Promise<LoadedQuery | null> {
-  const detailRes = await authedGet(`/research/query/${id}`);
+  const detailRes = await authedGet(`/research/query/${id}?include_provenance=true`);
   if (!detailRes || !detailRes.ok) return null;
   const detail = (await detailRes.json()) as QueryDetail;
 

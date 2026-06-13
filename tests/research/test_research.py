@@ -4,6 +4,7 @@ from httpx import AsyncClient
 from jose import jwt
 
 from app.agents.provider import LLMResponse, Message, ToolCall
+from app.agents.tools import SearchHit
 from app.core.config import settings
 from app.research.dependencies import get_provider, get_search_backend
 from main import app
@@ -42,8 +43,7 @@ class RoleProvider:
                         id="f",
                         name="submit_finding",
                         args={
-                            "answer": "an answer",
-                            "cited_source_ids": [],
+                            "claims": [{"text": "an answer", "cited_source_ids": []}],
                             "found_info": True,
                         },
                     )
@@ -133,6 +133,99 @@ async def test_create_returns_202_pending_then_completes(
     assert detail.json()["gaps"] == []
     assert detail.json()["sources"] == []
     assert detail.json()["consulted_sources"] == []
+
+
+class _ProvenanceProvider:
+    """Searches once (consulting two sources) then cites only the first, so the
+    consulted set is a strict superset of the cited set."""
+
+    def __init__(self) -> None:
+        self.agent_calls = 0
+
+    async def __aenter__(self) -> "_ProvenanceProvider":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def generate(
+        self, messages: list[Message], tools: object = None, tool_choice: str = "auto"
+    ) -> LLMResponse:
+        system = messages[0].content or ""
+        if "research planner" in system:
+            return LLMResponse(
+                tool_calls=[
+                    ToolCall(id="p", name="submit_plan", args={"sub_questions": ["q1"]})
+                ]
+            )
+        if "research agent" in system:
+            self.agent_calls += 1
+            if self.agent_calls == 1:
+                return LLMResponse(
+                    tool_calls=[
+                        ToolCall(
+                            id="s",
+                            name="web_search",
+                            args={"query": "q", "max_results": 5},
+                        )
+                    ]
+                )
+            return LLMResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="f",
+                        name="submit_finding",
+                        args={
+                            "claims": [{"text": "ans", "cited_source_ids": [0]}],
+                            "found_info": True,
+                        },
+                    )
+                ]
+            )
+        return LLMResponse(text="REPORT [1]")
+
+
+class _ProvenanceBackend:
+    async def __aenter__(self) -> "_ProvenanceBackend":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def search(self, query: str, max_results: int) -> list[SearchHit]:
+        return [
+            SearchHit(title="Cited", url="http://cited", content="c"),
+            SearchHit(title="Extra", url="http://extra", content="e"),
+        ]
+
+    async def extract(self, url: str) -> str:
+        return ""
+
+
+async def test_detail_provenance_is_opt_in_and_excludes_cited(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    app.dependency_overrides[get_provider] = _ProvenanceProvider
+    app.dependency_overrides[get_search_backend] = _ProvenanceBackend
+
+    created = await client.post(
+        "/research/query", headers=auth_headers, json={"prompt": "p"}
+    )
+    query_id = created.json()["id"]
+
+    detail = await client.get(f"/research/query/{query_id}", headers=auth_headers)
+    body = detail.json()
+    assert body["status"] == "complete"
+    assert [s["url"] for s in body["sources"]] == ["http://cited"]
+    # default: provenance is withheld
+    assert body["consulted_sources"] == []
+
+    # opt-in: provenance is the consulted set MINUS the cited set, so the cited
+    # source never appears twice.
+    prov = await client.get(
+        f"/research/query/{query_id}?include_provenance=true", headers=auth_headers
+    )
+    assert [s["url"] for s in prov.json()["consulted_sources"]] == ["http://extra"]
 
 
 async def test_events_endpoint_tails_the_live_feed(

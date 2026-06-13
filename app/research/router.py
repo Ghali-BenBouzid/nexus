@@ -89,6 +89,7 @@ async def get_query_events(
 @router.get("/query/{query_id}", response_model=QueryDetail)
 async def get_query(
     query_id: int,
+    include_provenance: bool = False,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -102,6 +103,14 @@ async def get_query(
     # Rehydrate the stored dump back into a ResearchResult (closes the
     # model_dump round-trip); null until the job completes.
     result = _load_result(query.result, query.id)
+    # The full provenance trail is an opt-in extra (?include_provenance=true): it
+    # is heavy and most callers only want the cited sources. When asked for, it is
+    # the sources that were looked at but NOT cited, so it never duplicates the
+    # cited list shown alongside it.
+    consulted: list = []
+    if result and include_provenance:
+        cited_urls = {s.url for s in result.sources}
+        consulted = [s for s in result.consulted_sources if s.url not in cited_urls]
     return QueryDetail(
         id=query.id,
         prompt=query.prompt,
@@ -109,7 +118,7 @@ async def get_query(
         report=query.report,
         error=query.error,
         sources=result.sources if result else [],
-        consulted_sources=result.consulted_sources if result else [],
+        consulted_sources=consulted,
         gaps=result.gaps if result else [],
         created_at=query.created_at,
         completed_at=query.completed_at,

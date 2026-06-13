@@ -55,8 +55,12 @@ class RoleProvider:
                         id="f",
                         name="submit_finding",
                         args={
-                            "answer": f"answer to {sub_question}",
-                            "cited_source_ids": [],
+                            "claims": [
+                                {
+                                    "text": f"answer to {sub_question}",
+                                    "cited_source_ids": [],
+                                }
+                            ],
                             "found_info": True,
                         },
                     )

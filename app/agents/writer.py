@@ -206,9 +206,12 @@ def _strip_unbacked(content: str, n_sources: int) -> tuple[str, list[int]]:
 def _render(result: ResearchResult) -> str:
     lines = ["# Research points", ""]
     for point in result.points:
-        citations = "".join(f"[{number}]" for number in point.source_ids)
         lines.append(f"## {point.sub_question}")
-        lines.append(f"{point.answer} {citations}".strip())
+        # Render claim by claim so each statement carries its own citations,
+        # giving the writer claim-level attribution to preserve in the prose.
+        for claim in point.claims:
+            citations = "".join(f"[{number}]" for number in claim.source_ids)
+            lines.append(f"{claim.text} {citations}".strip())
         lines.append("")
 
     lines.append("# Sources")

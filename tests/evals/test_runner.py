@@ -1,4 +1,4 @@
-from app.agents.schemas import Report, ResearchPoint, ResearchResult, Source
+from app.agents.schemas import Claim, Report, ResearchPoint, ResearchResult, Source
 from app.evals.runner import Case, format_aggregate, run_cases
 
 
@@ -12,8 +12,12 @@ def _clean_case(name: str) -> Case:
         report=Report(content="A[1] B[2].", sources=_src(2), failed_subquestions=[]),
         result=ResearchResult(
             points=[
-                ResearchPoint(sub_question="q1", answer="a", source_ids=[1]),
-                ResearchPoint(sub_question="q2", answer="b", source_ids=[2]),
+                ResearchPoint(
+                    sub_question="q1", claims=[Claim(text="a", source_ids=[1])]
+                ),
+                ResearchPoint(
+                    sub_question="q2", claims=[Claim(text="b", source_ids=[2])]
+                ),
             ],
             sources=_src(2),
             gaps=[],
@@ -27,7 +31,11 @@ def _bad_citation_case(name: str) -> Case:
         name=name,
         report=Report(content="A[1] B[3].", sources=_src(2), failed_subquestions=[]),
         result=ResearchResult(
-            points=[ResearchPoint(sub_question="q1", answer="a", source_ids=[1])],
+            points=[
+                ResearchPoint(
+                    sub_question="q1", claims=[Claim(text="a", source_ids=[1])]
+                )
+            ],
             sources=_src(2),
             gaps=["q2"],
         ),

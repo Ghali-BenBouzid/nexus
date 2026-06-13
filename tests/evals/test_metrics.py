@@ -1,4 +1,4 @@
-from app.agents.schemas import Report, ResearchPoint, ResearchResult, Source
+from app.agents.schemas import Claim, Report, ResearchPoint, ResearchResult, Source
 from app.evals.metrics import (
     coverage,
     evaluate,
@@ -79,8 +79,10 @@ def test_source_utilization_passes_when_all_cited() -> None:
 def test_point_grounding_flags_out_of_range_source_id() -> None:
     result = ResearchResult(
         points=[
-            ResearchPoint(sub_question="q1", answer="a", source_ids=[1]),
-            ResearchPoint(sub_question="q2", answer="b", source_ids=[2, 5]),
+            ResearchPoint(sub_question="q1", claims=[Claim(text="a", source_ids=[1])]),
+            ResearchPoint(
+                sub_question="q2", claims=[Claim(text="b", source_ids=[2, 5])]
+            ),
         ],
         sources=_sources(2),
         gaps=[],
@@ -93,7 +95,9 @@ def test_point_grounding_flags_out_of_range_source_id() -> None:
 
 def test_point_grounding_passes_when_all_ids_in_range() -> None:
     result = ResearchResult(
-        points=[ResearchPoint(sub_question="q", answer="a", source_ids=[1, 2])],
+        points=[
+            ResearchPoint(sub_question="q", claims=[Claim(text="a", source_ids=[1, 2])])
+        ],
         sources=_sources(2),
         gaps=[],
     )
@@ -106,9 +110,9 @@ def test_point_grounding_passes_when_all_ids_in_range() -> None:
 def test_coverage_is_fraction_of_answered_subquestions() -> None:
     result = ResearchResult(
         points=[
-            ResearchPoint(sub_question="q1", answer="a", source_ids=[1]),
-            ResearchPoint(sub_question="q2", answer="b", source_ids=[1]),
-            ResearchPoint(sub_question="q3", answer="c", source_ids=[1]),
+            ResearchPoint(sub_question="q1", claims=[Claim(text="a", source_ids=[1])]),
+            ResearchPoint(sub_question="q2", claims=[Claim(text="b", source_ids=[1])]),
+            ResearchPoint(sub_question="q3", claims=[Claim(text="c", source_ids=[1])]),
         ],
         sources=_sources(1),
         gaps=["q4"],
@@ -140,7 +144,9 @@ def test_evaluate_report_only_runs_prose_checks() -> None:
 def test_evaluate_with_result_adds_structured_checks() -> None:
     report = Report(content="A[1].", sources=_sources(1), failed_subquestions=[])
     research = ResearchResult(
-        points=[ResearchPoint(sub_question="q", answer="a", source_ids=[1])],
+        points=[
+            ResearchPoint(sub_question="q", claims=[Claim(text="a", source_ids=[1])])
+        ],
         sources=_sources(1),
         gaps=[],
     )

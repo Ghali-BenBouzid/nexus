@@ -1,5 +1,5 @@
 from app.agents.consolidator import consolidate
-from app.agents.schemas import Finding, Source
+from app.agents.schemas import Finding, FindingClaim, Source
 
 
 def _finding(
@@ -9,10 +9,10 @@ def _finding(
     found: bool = True,
     consulted: list[Source] | None = None,
 ) -> Finding:
+    # A single-claim finding: the whole answer cites the given sources.
     return Finding(
         sub_question=sub_q,
-        answer=answer,
-        cited_sources=sources,
+        claims=[FindingClaim(text=answer, sources=sources)] if answer else [],
         consulted_sources=sources if consulted is None else consulted,
         found_info=found,
     )
@@ -71,6 +71,28 @@ def test_consolidate_collects_provenance_deduped_including_gaps() -> None:
         "http://extra",
         "http://gap",
     ]
+
+
+def test_consolidate_attributes_sources_per_claim() -> None:
+    # Each claim keeps its own sources, remapped to the global numbering.
+    a = Source(title="A", url="http://a")
+    b = Source(title="B", url="http://b")
+    finding = Finding(
+        sub_question="q",
+        claims=[
+            FindingClaim(text="first claim", sources=[a]),
+            FindingClaim(text="second claim", sources=[b, a]),
+        ],
+        consulted_sources=[a, b],
+    )
+
+    result = consolidate([finding])
+    point = result.points[0]
+
+    assert [c.text for c in point.claims] == ["first claim", "second claim"]
+    assert point.claims[0].source_ids == [1]  # a -> 1
+    assert point.claims[1].source_ids == [2, 1]  # b -> 2 (new), a -> 1 (reused)
+    assert [s.url for s in result.sources] == ["http://a", "http://b"]
 
 
 def test_consolidate_all_empty() -> None:
