@@ -17,6 +17,7 @@ type ConversationProps = {
   onFocus: (id: number | null) => void;
   onSubmit: (prompt: string) => void;
   onStop: () => void;
+  onRefresh: (turn: Turn) => void;
   running: boolean;
   onNewChat: () => void;
   feedTag: string;
@@ -35,6 +36,7 @@ export function Conversation({
   onFocus,
   onSubmit,
   onStop,
+  onRefresh,
   running,
   onNewChat,
   feedTag,
@@ -232,7 +234,7 @@ export function Conversation({
               selectedId={focusedId}
               onSelect={onFocus}
               onClose={() => onLayout("thread")}
-              onRerun={submit}
+              onRefresh={onRefresh}
             />
           </>
         ) : (

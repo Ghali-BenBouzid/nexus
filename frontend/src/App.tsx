@@ -6,7 +6,7 @@ import { Hero } from "./components/Hero";
 import { History } from "./components/History";
 import { Nav } from "./components/Nav";
 import { About, Engineering, Footer, HowItWorks } from "./components/Sections";
-import { openQuery } from "./lib/api";
+import { cancelQuery, openQuery } from "./lib/api";
 import { t } from "./lib/i18n";
 import {
   applyBackground,
@@ -169,6 +169,8 @@ export default function App() {
           if (!cancelled.current.has(id)) patch((t) => ({ ...t, status: s }));
         },
         isCancelled: () => cancelled.current.has(id),
+        // Remember the backend query id so this turn can refresh or cancel it.
+        onQueryId: (qid) => patch((t) => ({ ...t, queryId: qid })),
       });
       if (cancelled.current.has(id)) return;
       if (!res) {
@@ -206,10 +208,40 @@ export default function App() {
       prev.map((t) => {
         if (t.status === "running" || t.status === "pending") {
           cancelled.current.add(t.id); // the run loop bails at its next checkpoint
+          // Tell the backend to actually stop the job, so it stops spending quota
+          // instead of running on in the background after the user stops it.
+          if (t.queryId != null) cancelQuery(t.queryId);
           return { ...t, status: "failed", stopped: true, endedAt: performance.now() };
         }
         return t;
       }),
+    );
+  }
+
+  // Refresh the open report: re-fetch this turn's stored query from the backend
+  // and sync the artifact to it. This is NOT a re-run; it just pulls the latest
+  // persisted report/sources for the same query (no-op without a backend id).
+  async function refreshArtifact(turn: Turn) {
+    if (turn.queryId == null) return;
+    const data = await openQuery(turn.queryId);
+    if (!data) return;
+    let outcome: Outcome = "ok";
+    if (data.status === "failed") outcome = "failed";
+    else if (!data.result.report.trim() && data.result.sources.length === 0)
+      outcome = "empty";
+    setTurns((prev) =>
+      prev.map((t) =>
+        t.id === turn.id
+          ? {
+              ...t,
+              status: data.status,
+              result: data.result,
+              events: data.events,
+              outcome,
+              error: data.error,
+            }
+          : t,
+      ),
     );
   }
 
@@ -320,6 +352,7 @@ export default function App() {
           onFocus={setFocusedId}
           onSubmit={startResearch}
           onStop={stopResearch}
+          onRefresh={refreshArtifact}
           running={anyRunning}
           onNewChat={newChat}
           feedTag={FEED_TAG}

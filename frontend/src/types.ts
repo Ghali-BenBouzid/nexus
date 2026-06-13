@@ -46,6 +46,7 @@ export type TimelineEvent = AgentEvent & { id: number; delay: number };
 // produced. The thread is an ordered list of these; each runs independently.
 export type Turn = {
   id: number;
+  queryId?: number; // backend query id (live mode), for refresh + cancel
   query: string;
   status: Status;
   events: TimelineEvent[];

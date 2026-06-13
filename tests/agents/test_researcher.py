@@ -195,3 +195,21 @@ async def test_research_emits_events() -> None:
         "tool": "web_search",
         "args": {"query": "q", "max_results": 5},
     }
+
+
+async def test_research_bails_when_cancelled() -> None:
+    # should_cancel is true from the start, so the researcher returns a no-info
+    # finding without ever calling the provider (no quota spent).
+    provider = FakeLLMProvider(responses=[])
+
+    finding = await research(
+        "sub q",
+        provider=provider,
+        tools=[_web_search_tool()],
+        should_cancel=lambda: True,
+        max_iters=5,
+    )
+
+    assert finding.found_info is False
+    assert finding.claims == []
+    assert provider.calls == []

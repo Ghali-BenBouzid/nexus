@@ -2,7 +2,7 @@ import asyncio
 import logging
 
 from app.agents import orchestrator
-from app.agents.orchestrator import OrchestratorError
+from app.agents.orchestrator import OrchestratorCancelledError, OrchestratorError
 from app.agents.planner import PlannerError
 from app.agents.provider import LLMProvider
 from app.agents.schemas import AgentEvent
@@ -39,6 +39,16 @@ class _EventSink:
             )
 
 
+# Query ids the user has asked to stop. The job polls this (cooperatively) and
+# aborts; in-process is enough because the job runs in this same process (a real
+# task queue would move this to Redis/DB). Membership is cleared when the job ends.
+_cancel_requested: set[int] = set()
+
+
+def request_cancel(query_id: int) -> None:
+    _cancel_requested.add(query_id)
+
+
 async def run_research_job(
     query_id: int,
     prompt: str,
@@ -61,6 +71,7 @@ async def run_research_job(
                         provider=provider,
                         tools=tools,
                         emit=_EventSink(query_id),
+                        should_cancel=lambda: query_id in _cancel_requested,
                         cap=settings.cap,
                         max_iters=settings.max_iters,
                         max_concurrency=settings.max_concurrency,
@@ -74,6 +85,9 @@ async def run_research_job(
             # global_timeout fired (asyncio.wait_for raises TimeoutError)
             logger.warning("research job timed out for query %s", query_id)
             await repository.fail_query(db, query_id, "Research timed out.")
+        except OrchestratorCancelledError:
+            logger.info("research job %s stopped by the user", query_id)
+            await repository.fail_query(db, query_id, "Research was stopped.")
         except (PlannerError, OrchestratorError) as exc:
             # our own domain errors carry safe, user-meaningful messages
             logger.warning("research job failed for query %s: %s", query_id, exc)
@@ -84,3 +98,5 @@ async def run_research_job(
             await repository.fail_query(
                 db, query_id, "Research failed due to an internal error."
             )
+        finally:
+            _cancel_requested.discard(query_id)

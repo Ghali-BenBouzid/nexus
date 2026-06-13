@@ -74,14 +74,14 @@ function Sources({
 
 type ArtifactProps = {
   turn: Turn;
-  onRerun: (query: string) => void;
+  onRefresh: (turn: Turn) => void;
   onBack?: () => void; // return to the artifact list (reader view)
   onClose?: () => void; // collapse the whole panel
 };
 
 // The output panel: the rendered report and its sources, presented as a single
 // coherent document (the chat thread carries the live agent activity instead).
-export function Artifact({ turn, onRerun, onBack, onClose }: ArtifactProps) {
+export function Artifact({ turn, onRefresh, onBack, onClose }: ArtifactProps) {
   const [activeCite, setActiveCite] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const result = turn.result;
@@ -135,7 +135,7 @@ export function Artifact({ turn, onRerun, onBack, onClose }: ArtifactProps) {
           <button className="icon-btn" title={t.artifact.copy} onClick={() => navigator.clipboard?.writeText(result.report)}>
             {I.copy}
           </button>
-          <button className="icon-btn" title={t.artifact.rerun} onClick={() => onRerun(turn.query)}>
+          <button className="icon-btn" title={t.artifact.refresh} onClick={() => onRefresh(turn)}>
             {I.refresh}
           </button>
           {onClose && (

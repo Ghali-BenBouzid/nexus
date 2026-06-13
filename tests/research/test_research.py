@@ -305,3 +305,33 @@ async def test_list_returns_only_callers_queries(
     assert response.status_code == 200
     prompts = {q["prompt"] for q in response.json()}
     assert prompts == {"one", "two"}
+
+
+async def test_cancel_endpoint_hidden_from_other_users(client: AsyncClient) -> None:
+    owner = await _register_and_headers(client, "cancel-owner@test.com")
+    other = await _register_and_headers(client, "cancel-other@test.com")
+    _use_fake_pipeline(sub_questions=["q1"])
+
+    created = await client.post(
+        "/research/query", headers=owner, json={"prompt": "secret"}
+    )
+    query_id = created.json()["id"]
+
+    response = await client.post(f"/research/query/{query_id}/cancel", headers=other)
+    assert response.status_code == 404
+
+
+async def test_cancel_endpoint_idempotent_on_terminal_query(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    _use_fake_pipeline(sub_questions=["q1"])
+    created = await client.post(
+        "/research/query", headers=auth_headers, json={"prompt": "p"}
+    )
+    query_id = created.json()["id"]
+
+    # the job already completed in the request cycle, so cancel is a safe no-op
+    response = await client.post(
+        f"/research/query/{query_id}/cancel", headers=auth_headers
+    )
+    assert response.status_code == 204

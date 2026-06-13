@@ -210,6 +210,7 @@ export async function runLiveResearch(
     token = await ensureToken();
     id = await submitQuery(prompt, token);
   }
+  cb.onQueryId?.(id);
 
   // Drain any agent events emitted since the last poll into the feed, in order.
   // The backend event id is a monotonic cursor and a stable, unique timeline id.
@@ -255,6 +256,22 @@ export async function runLiveResearch(
     outcome: "failed",
     error: "The research run timed out.",
   };
+}
+
+// Ask the backend to stop a run (POST /research/query/{id}/cancel). Best-effort
+// and fire-and-forget: the UI has already marked the turn stopped, so a failure
+// here (network, expiry) must not surface. This is what actually halts the
+// server-side job so it stops spending quota after the user stops it.
+export async function cancelQuery(id: number): Promise<void> {
+  try {
+    const token = await ensureToken();
+    await fetch(`${BASE}/research/query/${id}/cancel`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch {
+    /* ignore */
+  }
 }
 
 // --- query history ----------------------------------------------------------

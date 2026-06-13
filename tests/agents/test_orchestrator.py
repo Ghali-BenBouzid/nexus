@@ -1,6 +1,6 @@
 import pytest
 
-from app.agents.orchestrator import OrchestratorError, run
+from app.agents.orchestrator import OrchestratorCancelledError, OrchestratorError, run
 from app.agents.provider import LLMResponse, Message, ToolCall
 from app.agents.schemas import AgentEvent
 
@@ -130,3 +130,18 @@ async def test_run_emits_indexed_researcher_lifecycle() -> None:
     failed = [e for e in events if e.type == "researcher_failed"]
     assert [e.data["sub_question"] for e in failed] == ["q2"]
     assert failed[0].data["index"] == 2 and failed[0].data["total"] == 2
+
+
+async def test_run_aborts_when_cancelled() -> None:
+    # should_cancel is checked right after planning, so the run stops before any
+    # researcher fan-out.
+    provider = RoleProvider(sub_questions=["q1", "q2"])
+
+    with pytest.raises(OrchestratorCancelledError):
+        await run(
+            "big question",
+            provider=provider,
+            tools=[],
+            should_cancel=lambda: True,
+            **_KNOBS,
+        )

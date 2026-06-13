@@ -11,6 +11,7 @@ from app.agents.tools import Tool
 from app.agents.writer import write
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
+ShouldCancel = Callable[[], bool]
 
 logger = logging.getLogger(__name__)
 
@@ -19,8 +20,17 @@ class OrchestratorError(Exception):
     """The run failed at the system level (every researcher hard-failed)."""
 
 
+class OrchestratorCancelledError(OrchestratorError):
+    """The run was cancelled (the user stopped it). A subclass of
+    OrchestratorError so the job's existing handling resolves the status."""
+
+
 async def _noop(event: AgentEvent) -> None:
     return None
+
+
+def _never_cancel() -> bool:
+    return False
 
 
 async def run(
@@ -29,6 +39,7 @@ async def run(
     provider: LLMProvider,
     tools: list[Tool],
     emit: Emit = _noop,
+    should_cancel: ShouldCancel = _never_cancel,
     cap: int,
     max_iters: int,
     max_concurrency: int,
@@ -47,6 +58,9 @@ async def run(
     sub_questions = await plan(
         prompt, provider=provider, emit=emit, cap=cap, retry_cap=retry_cap
     )
+
+    if should_cancel():
+        raise OrchestratorCancelledError("research was stopped")
 
     total = len(sub_questions)
     semaphore = asyncio.Semaphore(max_concurrency)
@@ -73,6 +87,7 @@ async def run(
                     provider=provider,
                     tools=tools,
                     emit=emit,
+                    should_cancel=should_cancel,
                     max_iters=max_iters,
                 ),
                 timeout=per_researcher_timeout,
@@ -98,6 +113,11 @@ async def run(
         ),
         return_exceptions=True,
     )
+
+    # Researchers bail early on cancel (each becomes a gap), so check here, before
+    # spending the consolidate + write stages on a run the user already stopped.
+    if should_cancel():
+        raise OrchestratorCancelledError("research was stopped")
 
     findings: list[Finding] = []
     failed: list[str] = []

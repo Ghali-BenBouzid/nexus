@@ -9,6 +9,7 @@ from app.agents.schemas import ResearchResult
 from app.agents.tools import SearchBackend
 from app.auth.dependencies import get_current_user
 from app.db.session import get_db
+from app.models.query import QueryStatus
 from app.models.user import User
 from app.research import repository, service
 from app.research.dependencies import get_provider, get_search_backend
@@ -84,6 +85,25 @@ async def get_query_events(
     if query is None:
         raise HTTPException(status_code=404, detail="Query not found")
     return await repository.list_events(db=db, query_id=query_id, after_id=after)
+
+
+@router.post("/query/{query_id}/cancel", status_code=204)
+async def cancel_query(
+    query_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Stop a run the user halted. Requests cooperative cancellation of the job
+    (so it stops spending quota) and marks the query failed. Same ownership 404 as
+    the detail endpoint. A terminal query is left untouched (idempotent)."""
+    query = await repository.get_query(
+        db=db, query_id=query_id, user_id=current_user.id
+    )
+    if query is None:
+        raise HTTPException(status_code=404, detail="Query not found")
+    if query.status in (QueryStatus.pending, QueryStatus.running):
+        service.request_cancel(query_id)
+        await repository.fail_query(db, query_id, "Research was stopped.")
 
 
 @router.get("/query/{query_id}", response_model=QueryDetail)

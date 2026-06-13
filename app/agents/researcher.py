@@ -36,12 +36,17 @@ async def _noop(event: AgentEvent) -> None:
     return None
 
 
+def _never_cancel() -> bool:
+    return False
+
+
 async def research(
     sub_question: str,
     *,
     provider: LLMProvider,
     tools: list[Tool],
     emit: Emit = _noop,
+    should_cancel: Callable[[], bool] = _never_cancel,
     max_iters: int,
 ) -> Finding:
     """Run the ReAct tool-use loop for one sub-question and return a Finding.
@@ -63,6 +68,16 @@ async def research(
     # knows this researcher's index and the total. The leaf emits only its own
     # internal steps (tool calls, errors, forced finish).
     for _ in range(max_iters):
+        # Cooperative cancel: bail before the next (expensive) model/tool round so a
+        # stopped run stops spending quota. The empty finding becomes a gap, and the
+        # orchestrator surfaces the cancellation after the fan-out.
+        if should_cancel():
+            return Finding(
+                sub_question=sub_question,
+                claims=[],
+                consulted_sources=consulted,
+                found_info=False,
+            )
         response = await provider.generate(messages, tools=specs, tool_choice="auto")
         messages.append(_assistant_message(response))
 

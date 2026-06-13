@@ -11,6 +11,9 @@ export type ResearchCallbacks = {
   onEvent: (e: TimelineEvent) => void;
   onStatus: (s: Status) => void;
   isCancelled: () => boolean;
+  // Live mode only: the backend query id, as soon as the run is submitted, so the
+  // turn can later refresh or cancel it. The simulated engine never calls it.
+  onQueryId?: (id: number) => void;
 };
 
 export type ResearchOutcome = { result: Result; outcome: Outcome; error?: string };
