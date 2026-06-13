@@ -12,3 +12,6 @@ wheels/
 
 # Claude session
 .claude
+
+# Live eval runner output (real reports, not for version control)
+evals_runs/
