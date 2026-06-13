@@ -75,7 +75,8 @@ sentence, with no space before the bracket and each number in its own brackets \
 
 Use ONLY the numbers provided with a given point. NEVER invent a number, change \
 one, renumber, or cite a source a point did not provide. If a point carries no \
-number, state its content without a citation rather than guessing one.
+number, state its content without a citation rather than guessing one. Source \
+numbers start at 1; there is no source [0].
 
 Do NOT add a References, Sources, or Further Reading section. The source list is \
 rendered separately from your prose.
