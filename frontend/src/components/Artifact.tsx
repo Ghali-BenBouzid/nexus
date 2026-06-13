@@ -128,7 +128,7 @@ export function Artifact({ turn, onRefresh, onBack, onClose }: ArtifactProps) {
           {onBack && (
             <button className="icon-btn" title={t.artifact.back} onClick={onBack}>{I.arrowLeft}</button>
           )}
-          {I.doc}<span>{t.artifact.report}</span>
+          {I.doc}<span>{turn.title ?? t.artifact.report}</span>
         </div>
         <div className="art-head-actions">
           <button className="icon-btn" title={t.artifact.copy} onClick={() => navigator.clipboard?.writeText(result.report)}>

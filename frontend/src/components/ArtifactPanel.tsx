@@ -58,7 +58,7 @@ export function ArtifactPanel({ turns, width, selectedId, onSelect, onClose, onR
           <button key={t.id} className="hist-item" onClick={() => onSelect(t.id)}>
             <span className={"hist-dot " + t.status} />
             <div className="hist-main">
-              <div className="hist-q">{t.query}</div>
+              <div className="hist-q">{t.title ?? t.query}</div>
               <div className="hist-meta">{meta(t)}</div>
             </div>
           </button>

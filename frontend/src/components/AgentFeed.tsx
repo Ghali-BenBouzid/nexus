@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
@@ -101,21 +101,37 @@ type AgentFeedProps = {
 
 export function AgentFeed({ events, status, compact, tag }: AgentFeedProps) {
   const ref = useRef<HTMLDivElement>(null);
+  // The timeline is open by default (this is a demo of the live workflow) but can
+  // be collapsed to keep a long thread tidy.
+  const [open, setOpen] = useState(true);
   useEffect(() => {
-    if (ref.current && !compact) ref.current.scrollTop = ref.current.scrollHeight;
-  }, [events, compact]);
+    if (ref.current && !compact && open) ref.current.scrollTop = ref.current.scrollHeight;
+  }, [events, compact, open]);
   const running = status === "running" || status === "pending";
   return (
     <div className="feed-shell">
-      <div className="feed-bar">
-        <span>{t.feed.activity}</span>
-        <span className="demo-tag"><span className="pip" />{tag}</span>
-      </div>
-      <div className="feed" ref={ref} style={compact ? { maxHeight: "none" } : undefined}>
-        {events.map((e, i) => (
-          <FeedEvent key={e.id} e={e} isLast={i === events.length - 1} running={running} />
-        ))}
-      </div>
+      <button
+        type="button"
+        className={"feed-bar" + (open ? "" : " collapsed")}
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+      >
+        <span className="feed-bar-main">
+          <span className="feed-chevron">{I.arrowDown}</span>
+          <span>{t.feed.activity}</span>
+          {!open && events.length > 0 && (
+            <span className="feed-count">{t.feed.steps(events.length)}</span>
+          )}
+        </span>
+        {!compact && <span className="demo-tag"><span className="pip" />{tag}</span>}
+      </button>
+      {open && (
+        <div className="feed" ref={ref} style={compact ? { maxHeight: "none" } : undefined}>
+          {events.map((e, i) => (
+            <FeedEvent key={e.id} e={e} isLast={i === events.length - 1} running={running} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }

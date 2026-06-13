@@ -88,6 +88,7 @@ export default function App() {
       id: ++turnSeq.current,
       queryId: lt.queryId ?? undefined,
       query: lt.query,
+      title: lt.title,
       status: lt.status,
       events: [],
       reply: lt.reply,
@@ -205,6 +206,7 @@ export default function App() {
     isCancelled: () => cancelled.current.has(id),
     onQueryId: (qid) => patchTurn(id, (t) => ({ ...t, queryId: qid })),
     onConversation: (cid) => setActiveConversation(cid),
+    onTitle: (title) => patchTurn(id, (t) => ({ ...t, title })),
   });
 
   // Apply a finished run's outcome to its turn: a paused plan awaiting confirmation,
@@ -226,6 +228,7 @@ export default function App() {
       ...t,
       result: res.result,
       outcome: res.outcome,
+      title: res.title ?? t.title,
       error: res.error ?? null,
       status: res.outcome === "failed" ? "failed" : "complete",
       endedAt: performance.now(),
@@ -245,17 +248,29 @@ export default function App() {
       endedAt: performance.now(),
     }));
 
-  async function startResearch(prompt: string) {
-    // One run at a time: ignore a new submission while another is in flight.
-    if (turns.some((t) => t.status === "running" || t.status === "pending")) return;
+  // The hero always opens a brand-new conversation: launching from the landing
+  // page starts a fresh chat rather than appending to whatever was open last.
+  function heroSubmit(prompt: string) {
+    turns.forEach((t) => cancelled.current.add(t.id));
+    setActiveConversation(null);
+    startResearch(prompt, { fresh: true });
+  }
+
+  async function startResearch(prompt: string, opts?: { fresh?: boolean }) {
+    const fresh = opts?.fresh ?? false;
+    // One run at a time: ignore a follow-up while another is in flight. A fresh
+    // hero submission replaces the workspace, so it is never blocked this way.
+    if (!fresh && turns.some((t) => t.status === "running" || t.status === "pending")) return;
     // A new question supersedes any plan still waiting for confirmation: cancel it
     // on the backend and mark it stopped, rather than orphaning the paused query.
-    turns.forEach((tn) => {
-      if (tn.status === "awaiting_plan") {
-        if (tn.queryId != null) cancelQuery(tn.queryId);
-        patchTurn(tn.id, (t) => ({ ...t, status: "failed", stopped: true, plan: undefined, endedAt: performance.now() }));
-      }
-    });
+    if (!fresh) {
+      turns.forEach((tn) => {
+        if (tn.status === "awaiting_plan") {
+          if (tn.queryId != null) cancelQuery(tn.queryId);
+          patchTurn(tn.id, (t) => ({ ...t, status: "failed", stopped: true, plan: undefined, endedAt: performance.now() }));
+        }
+      });
+    }
     const id = ++turnSeq.current;
     const turn: Turn = {
       id,
@@ -270,10 +285,19 @@ export default function App() {
     };
     setNow(turn.startedAt);
     setView("chat");
-    setTurns((prev) => [...prev, turn]);
+    // Fresh: drop the previous thread and start a new conversation; the explicit
+    // null below means this run never appends to the prior conversation.
+    if (fresh) {
+      setFocusedId(null);
+      setLayout("thread");
+      setTurns([turn]);
+    } else {
+      setTurns((prev) => [...prev, turn]);
+    }
+    const conversationId = fresh ? null : activeConversationId;
 
     try {
-      const res = await runResearch(prompt, callbacksFor(id), activeConversationId);
+      const res = await runResearch(prompt, callbacksFor(id), conversationId);
       if (cancelled.current.has(id)) return;
       applyOutcome(id, res);
     } catch (err) {
@@ -357,6 +381,7 @@ export default function App() {
               result: data.result,
               events: data.events,
               outcome,
+              title: data.title ?? t.title,
               error: data.error,
             }
           : t,
@@ -439,7 +464,7 @@ export default function App() {
 
       {view === "home" && (
         <Fragment>
-          <Hero onSubmit={startResearch} />
+          <Hero onSubmit={heroSubmit} />
           <About />
           <HowItWorks />
           <Engineering />
@@ -457,6 +482,7 @@ export default function App() {
           onFocus={setFocusedId}
           onSubmit={startResearch}
           onStop={stopResearch}
+          onExit={goHome}
           onRefresh={refreshArtifact}
           onConfirmPlan={confirmPlan}
           onRevisePlan={revisePlan}

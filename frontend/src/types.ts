@@ -48,6 +48,7 @@ export type Turn = {
   id: number;
   queryId?: number; // backend query id (live mode), for refresh + cancel
   query: string;
+  title?: string; // the supervisor-given report/artifact title
   status: Status;
   events: TimelineEvent[];
   // The supervisor answered from existing reports instead of researching: this is

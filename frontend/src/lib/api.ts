@@ -5,6 +5,7 @@
 // backend persists every emitted AgentEvent, so the feed shows the actual
 // planner/researcher/writer progress (real "researcher k/N"), not a placeholder.
 import type { AgentEvent, Result, Source, Status, TimelineEvent } from "../types";
+import { t } from "./i18n";
 import { outcomeFor } from "./outcome";
 import type { ResearchCallbacks, ResearchOutcome } from "./research";
 
@@ -15,6 +16,7 @@ const CREDS_KEY = "nexus-demo-creds";
 type QueryDetail = {
   id: number;
   prompt: string;
+  title: string | null;
   status: Status;
   report: string | null;
   error: string | null;
@@ -156,7 +158,7 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
   const d = e.data ?? {};
   switch (e.type) {
     case "planner_start":
-      return { kind: "planner", state: "start", title: "Planning your research", sub: e.message };
+      return { kind: "planner", state: "start", title: t.feed.planning, sub: t.feed.planningSub };
     case "planner_done":
       return { kind: "plan", items: (d.sub_questions as string[]) ?? [] };
     case "researcher_start":
@@ -185,7 +187,7 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
         state: "done",
         index: (d.index as number) ?? 1,
         question: (d.sub_question as string) ?? "",
-        sub: d.found_info === false ? "No information found." : "Findings gathered.",
+        sub: d.found_info === false ? t.feed.noInfo : t.feed.findings,
         hasGap: d.found_info === false,
       };
     case "researcher_failed":
@@ -194,13 +196,13 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
         state: "done",
         index: (d.index as number) ?? 1,
         question: (d.sub_question as string) ?? "",
-        sub: "Could not research this area.",
+        sub: t.feed.couldNotResearch,
         hasGap: true,
       };
     case "writer_start":
-      return { kind: "writer", state: "start", title: "Writing report", sub: e.message };
+      return { kind: "writer", state: "start", title: t.feed.writing, sub: t.feed.writingSub };
     case "writer_done":
-      return { kind: "writer", state: "done", title: "Report ready", sub: "Citations linked to sources." };
+      return { kind: "writer", state: "done", title: t.feed.reportReady, sub: t.feed.citationsLinked };
     default:
       return null;
   }
@@ -213,6 +215,7 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
 
 type ConvMessageQuery = {
   status: Status;
+  title: string | null;
   report: string | null;
   error: string | null;
   plan: string[] | null;
@@ -287,6 +290,9 @@ export async function runLiveResearch(
     throw new Error("The message did not produce a response.");
   }
   cb.onQueryId?.(assistant.query_id);
+  // The supervisor named the report when it created the query, so the title is
+  // already on the assistant message: surface it before polling for the result.
+  if (assistant.query?.title) cb.onTitle?.(assistant.query.title);
   return pollQuery(assistant.query_id, token, cb);
 }
 
@@ -335,7 +341,11 @@ async function pollQuery(
         consulted: detail.consulted_sources,
         gaps: detail.gaps,
       };
-      return { result, outcome: outcomeFor(detail.status, result.report, result.sources.length) };
+      return {
+        result,
+        outcome: outcomeFor(detail.status, result.report, result.sources.length),
+        title: detail.title ?? undefined,
+      };
     }
 
     if (detail.status === "failed") {
@@ -402,6 +412,7 @@ export async function cancelQuery(id: number): Promise<void> {
 
 export type LoadedQuery = {
   prompt: string;
+  title?: string;
   status: Status;
   error: string | null;
   result: Result;
@@ -425,6 +436,7 @@ export async function openQuery(id: number): Promise<LoadedQuery | null> {
   }
   return {
     prompt: detail.prompt,
+    title: detail.title ?? undefined,
     status: detail.status,
     error: detail.error,
     result: {
@@ -455,6 +467,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
 export type LoadedTurn = {
   queryId: number | null;
   query: string;
+  title?: string; // the supervisor-given report title
   status: Status;
   error: string | null;
   result: Result;
@@ -494,6 +507,7 @@ export async function loadConversation(id: number): Promise<LoadedConversation |
     turns.push({
       queryId: m.query_id,
       query: prompt,
+      title: q?.title ?? undefined,
       status: q?.status ?? "complete",
       error: q?.error ?? null,
       plan: q?.plan ?? undefined,

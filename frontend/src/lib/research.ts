@@ -17,11 +17,15 @@ export type ResearchCallbacks = {
   // Live mode only: the conversation this run belongs to (a new one on the first
   // message, the existing one on follow-ups), so the app can persist it.
   onConversation?: (id: number) => void;
+  // Live mode only: the supervisor-given report title, known as soon as the run is
+  // submitted, so the turn and its artifact can show a real name.
+  onTitle?: (title: string) => void;
 };
 
 export type ResearchOutcome = {
   result: Result;
   outcome: Outcome;
+  title?: string; // the supervisor-given report title
   error?: string;
   // Set when the supervisor answered from context instead of researching.
   reply?: string;
