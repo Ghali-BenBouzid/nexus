@@ -11,6 +11,8 @@ from app.db.base import Base
 
 class QueryStatus(enum.StrEnum):
     pending = "pending"
+    # Planned, paused for the user to confirm or revise the plan (human in the loop).
+    awaiting_plan = "awaiting_plan"
     running = "running"
     complete = "complete"
     failed = "failed"
@@ -30,6 +32,10 @@ class Query(Base):
         nullable=False,
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The proposed sub-questions, set while awaiting_plan (human-in-the-loop).
+    plan: Mapped[list[str] | None] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
+    )
     report: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Real JSONB in Postgres; plain JSON in the aiosqlite test suite.
     result: Mapped[dict[str, Any] | None] = mapped_column(

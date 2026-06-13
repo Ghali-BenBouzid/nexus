@@ -74,11 +74,13 @@ async def submit_message(
         content="",
         query_id=query.id,
     )
+    # Human-in-the-loop: plan first, then pause for the user to confirm the plan
+    # (POST /research/query/{id}/confirm) before the research runs. The backend is
+    # picked up again by the confirm endpoint for phase 2.
     background_tasks.add_task(
-        research_service.run_research_job,
+        research_service.run_plan_job,
         query.id,
         decision.query,
         provider=provider,
-        backend=backend,
     )
     return assistant

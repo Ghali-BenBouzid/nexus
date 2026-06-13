@@ -27,7 +27,7 @@ class _AnswerProvider:
         )
 
 
-async def test_create_conversation_starts_research(
+async def test_create_conversation_plans_then_confirms(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
     _use_fake_pipeline(sub_questions=["q1"])
@@ -42,15 +42,62 @@ async def test_create_conversation_starts_research(
     roles = [m["role"] for m in body["messages"]]
     assert roles == ["user", "assistant"]
     assert body["messages"][0]["content"] == "first question"
-    assistant = body["messages"][1]
-    assert assistant["query_id"] is not None
+    query_id = body["messages"][1]["query_id"]
+    assert query_id is not None
 
-    # the background job completes during the request cycle, so the thread now
-    # carries the finished report
+    # human-in-the-loop: the plan job ran and the turn is awaiting confirmation
     detail = await client.get(f"/conversations/{body['id']}", headers=auth_headers)
-    finished = detail.json()["messages"][1]
-    assert finished["query"]["status"] == "complete"
-    assert finished["query"]["report"] == "FINAL REPORT"
+    awaiting = detail.json()["messages"][1]["query"]
+    assert awaiting["status"] == "awaiting_plan"
+    assert awaiting["plan"] == ["q1"]
+
+    # confirm the plan -> the research runs -> complete
+    confirm = await client.post(
+        f"/research/query/{query_id}/confirm", headers=auth_headers
+    )
+    assert confirm.status_code == 204
+    final = await client.get(f"/conversations/{body['id']}", headers=auth_headers)
+    finished = final.json()["messages"][1]["query"]
+    assert finished["status"] == "complete"
+    assert finished["report"] == "FINAL REPORT"
+
+
+async def test_revise_replans_and_stays_awaiting(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    _use_fake_pipeline(sub_questions=["q1"])
+    created = await client.post(
+        "/conversations", headers=auth_headers, json={"prompt": "topic"}
+    )
+    query_id = created.json()["messages"][1]["query_id"]
+
+    revise = await client.post(
+        f"/research/query/{query_id}/revise",
+        headers=auth_headers,
+        json={"feedback": "go deeper on safety"},
+    )
+    assert revise.status_code == 204
+
+    detail = await client.get(f"/research/query/{query_id}", headers=auth_headers)
+    assert detail.json()["status"] == "awaiting_plan"
+    assert detail.json()["plan"] == ["q1"]
+
+
+async def test_confirm_rejected_when_not_awaiting_plan(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    _use_fake_pipeline(sub_questions=["q1"])
+    created = await client.post(
+        "/conversations", headers=auth_headers, json={"prompt": "topic"}
+    )
+    query_id = created.json()["messages"][1]["query_id"]
+    await client.post(f"/research/query/{query_id}/confirm", headers=auth_headers)
+
+    # already confirmed (running/complete) -> a second confirm is a 409
+    second = await client.post(
+        f"/research/query/{query_id}/confirm", headers=auth_headers
+    )
+    assert second.status_code == 409
 
 
 async def test_followup_message_appends_to_thread(

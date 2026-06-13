@@ -62,6 +62,32 @@ async def run(
     if should_cancel():
         raise OrchestratorCancelledError("research was stopped")
 
+    return await research_from_plan(
+        sub_questions,
+        provider=provider,
+        tools=tools,
+        emit=emit,
+        should_cancel=should_cancel,
+        max_iters=max_iters,
+        max_concurrency=max_concurrency,
+        per_researcher_timeout=per_researcher_timeout,
+    )
+
+
+async def research_from_plan(
+    sub_questions: list[str],
+    *,
+    provider: LLMProvider,
+    tools: list[Tool],
+    emit: Emit = _noop,
+    should_cancel: ShouldCancel = _never_cancel,
+    max_iters: int,
+    max_concurrency: int,
+    per_researcher_timeout: float,
+) -> tuple[Report, ResearchResult]:
+    """The post-plan half of the pipeline: fan out researchers over a given plan,
+    consolidate, write. Split out from ``run`` so a confirmed (human-in-the-loop)
+    plan can be executed without re-planning."""
     total = len(sub_questions)
     semaphore = asyncio.Semaphore(max_concurrency)
 

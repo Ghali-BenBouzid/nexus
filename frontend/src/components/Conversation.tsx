@@ -18,6 +18,8 @@ type ConversationProps = {
   onSubmit: (prompt: string) => void;
   onStop: () => void;
   onRefresh: (turn: Turn) => void;
+  onConfirmPlan: (turn: Turn) => void;
+  onRevisePlan: (turn: Turn, feedback: string) => void;
   running: boolean;
   onNewChat: () => void;
   feedTag: string;
@@ -37,6 +39,8 @@ export function Conversation({
   onSubmit,
   onStop,
   onRefresh,
+  onConfirmPlan,
+  onRevisePlan,
   running,
   onNewChat,
   feedTag,
@@ -172,6 +176,8 @@ export function Conversation({
             onSelect={() => onFocus(t.id)}
             onOpenReport={() => openReport(t.id)}
             onRerun={submit}
+            onConfirmPlan={onConfirmPlan}
+            onRevisePlan={onRevisePlan}
           />
         ))}
       </div>

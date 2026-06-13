@@ -31,6 +31,11 @@ class QueryEventResponse(BaseSchema):
     created_at: datetime
 
 
+class ReviseRequest(BaseModel):
+    # Optional reason for rejecting the plan; the planner revises accordingly.
+    feedback: str = ""
+
+
 class QueryDetail(BaseSchema):
     """Single-query view: the full result once terminal."""
 
@@ -39,6 +44,7 @@ class QueryDetail(BaseSchema):
     status: QueryStatus
     report: str | None
     error: str | None
+    plan: list[str] | None = None  # proposed sub-questions while awaiting_plan
     sources: list[Source]  # cited sources backing the report
     consulted_sources: list[Source] = []  # full provenance/audit trail
     gaps: list[str]

@@ -31,6 +31,7 @@ def _message_query(query: Query | None) -> MessageQuery | None:
         status=query.status,
         report=query.report,
         error=query.error,
+        plan=query.plan,
         sources=result.sources if result else [],
         gaps=result.gaps if result else [],
     )

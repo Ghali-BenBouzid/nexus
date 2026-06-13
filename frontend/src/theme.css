@@ -804,6 +804,16 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .reply-text .doc h2 { font-size: 18px; margin: 18px 0 8px; }
 .reply-text .doc h3 { font-size: 16px; margin: 14px 0 6px; }
 .reply-text .doc p { margin: 0 0 10px; }
+/* Human-in-the-loop: the proposed plan with confirm / revise actions. */
+.plan-confirm { border: 1px solid var(--line); border-radius: 14px; padding: 15px 17px; background: var(--surface); display: flex; flex-direction: column; gap: 12px; }
+.plan-head { font-size: 13.5px; font-weight: 500; color: var(--muted); }
+.plan-list { margin: 0; padding-left: 22px; display: grid; gap: 6px; font-size: 14.5px; line-height: 1.5; color: var(--fg); list-style: decimal; }
+.plan-list li::marker { color: var(--accent-2); font-family: var(--font-mono); font-size: 12px; }
+.plan-actions { display: flex; gap: 9px; flex-wrap: wrap; }
+.plan-actions .btn { padding: 8px 16px; font-size: 13.5px; }
+.plan-revise { display: flex; flex-direction: column; gap: 9px; }
+.plan-feedback { width: 100%; resize: vertical; font-family: var(--font-sans); font-size: 14px; line-height: 1.5; color: var(--fg); background: var(--surface-solid); border: 1px solid var(--line); border-radius: 10px; padding: 9px 11px; }
+.plan-feedback:focus { outline: none; border-color: var(--accent); }
 
 .report-ready { display: flex; align-items: center; gap: 13px; width: 100%; text-align: left; cursor: pointer;
   padding: 13px 15px; border-radius: 14px; border: 1px solid var(--line); background: var(--surface-2);

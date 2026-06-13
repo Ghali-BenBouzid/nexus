@@ -25,6 +25,9 @@ export type ResearchOutcome = {
   error?: string;
   // Set when the supervisor answered from context instead of researching.
   reply?: string;
+  // Set when the run paused for the user to confirm the plan (human in the loop).
+  awaitingPlan?: boolean;
+  plan?: string[];
 };
 
 const EMPTY_RESULT: Result = { report: "", sources: [], consulted: [], gaps: [] };

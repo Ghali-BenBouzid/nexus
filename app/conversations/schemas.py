@@ -33,6 +33,7 @@ class MessageQuery(BaseModel):
     status: QueryStatus
     report: str | None
     error: str | None
+    plan: list[str] | None = None  # proposed sub-questions while awaiting_plan
     sources: list[Source]
     gaps: list[str]
 

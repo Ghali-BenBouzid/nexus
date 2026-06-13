@@ -17,6 +17,7 @@ type QueryDetail = {
   status: Status;
   report: string | null;
   error: string | null;
+  plan: string[] | null;
   sources: Source[];
   consulted_sources: Source[];
   gaps: string[];
@@ -190,6 +191,7 @@ type ConvMessageQuery = {
   status: Status;
   report: string | null;
   error: string | null;
+  plan: string[] | null;
   sources: Source[];
   gaps: string[];
 };
@@ -287,6 +289,17 @@ async function pollQuery(
     const detail = await getQuery(id, token);
     await drainEvents();
 
+    // Human-in-the-loop: the run paused for the user to confirm the plan. End the
+    // poll and surface the plan; confirm/revise resumes a fresh poll.
+    if (detail.status === "awaiting_plan") {
+      return {
+        result: { report: "", sources: [], consulted: [], gaps: [] },
+        outcome: "ok",
+        awaitingPlan: true,
+        plan: detail.plan ?? [],
+      };
+    }
+
     if (detail.status === "complete") {
       const result: Result = {
         report: detail.report ?? "",
@@ -313,6 +326,38 @@ async function pollQuery(
     outcome: "failed",
     error: "The research run timed out.",
   };
+}
+
+// Approve the proposed plan (POST /research/query/{id}/confirm): the backend runs
+// the research. Resume polling afterwards to track it to completion.
+export async function confirmPlan(queryId: number): Promise<void> {
+  const token = await ensureToken();
+  await fetch(`${BASE}/research/query/${queryId}/confirm`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// Reject the plan with optional feedback (POST .../revise): the backend re-plans
+// and pauses again at awaiting_plan.
+export async function revisePlan(queryId: number, feedback: string): Promise<void> {
+  const token = await ensureToken();
+  await fetch(`${BASE}/research/query/${queryId}/revise`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ feedback }),
+  });
+}
+
+// Resume polling an existing query (after confirm/revise) without posting a new
+// message. Reuses the same poll loop, so it handles awaiting_plan again on revise.
+export async function resumeRun(
+  queryId: number,
+  cb: ResearchCallbacks,
+): Promise<ResearchOutcome | null> {
+  cb.onStatus("running");
+  const token = await ensureToken();
+  return pollQuery(queryId, token, cb);
 }
 
 // Ask the backend to stop a run (POST /research/query/{id}/cancel). Best-effort
@@ -392,6 +437,7 @@ export type LoadedTurn = {
   error: string | null;
   result: Result;
   reply?: string; // a supervisor answer instead of a research report
+  plan?: string[]; // proposed sub-questions, when the turn is awaiting_plan
 };
 export type LoadedConversation = { id: number; title: string | null; turns: LoadedTurn[] };
 
@@ -428,6 +474,7 @@ export async function loadConversation(id: number): Promise<LoadedConversation |
       query: prompt,
       status: q?.status ?? "complete",
       error: q?.error ?? null,
+      plan: q?.plan ?? undefined,
       result: {
         report: q?.report ?? "",
         sources: q?.sources ?? [],

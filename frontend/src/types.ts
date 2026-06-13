@@ -8,7 +8,7 @@ export type View = "home" | "chat";
 // split workspace (conversation on the left, the focused run's activity on the
 // right, the slot the future parallel-agent graph will live in).
 export type LayoutMode = "thread" | "split";
-export type Status = "pending" | "running" | "complete" | "failed";
+export type Status = "pending" | "awaiting_plan" | "running" | "complete" | "failed";
 export type Outcome = "ok" | "empty" | "failed";
 
 export type Source = { title: string; url: string };
@@ -53,6 +53,8 @@ export type Turn = {
   // The supervisor answered from existing reports instead of researching: this is
   // the chat reply, rendered in place of a report.
   reply?: string;
+  // The proposed sub-questions, shown for confirmation while status=awaiting_plan.
+  plan?: string[];
   result: Result | null;
   outcome: Outcome;
   error: string | null;

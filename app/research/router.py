@@ -18,6 +18,7 @@ from app.research.schemas import (
     QueryDetail,
     QueryEventResponse,
     QueryResponse,
+    ReviseRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -137,9 +138,66 @@ async def get_query(
         status=query.status,
         report=query.report,
         error=query.error,
+        plan=query.plan,
         sources=result.sources if result else [],
         consulted_sources=consulted,
         gaps=result.gaps if result else [],
         created_at=query.created_at,
         completed_at=query.completed_at,
+    )
+
+
+@router.post("/query/{query_id}/confirm", status_code=204)
+async def confirm_plan(
+    query_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    provider: LLMProvider = Depends(get_provider),
+    backend: SearchBackend = Depends(get_search_backend),
+):
+    """Approve the proposed plan and run the research (phase 2). Only valid while
+    the query is awaiting_plan; same ownership 404 as the detail endpoint."""
+    query = await repository.get_query(
+        db=db, query_id=query_id, user_id=current_user.id
+    )
+    if query is None:
+        raise HTTPException(status_code=404, detail="Query not found")
+    if query.status != QueryStatus.awaiting_plan or not query.plan:
+        raise HTTPException(status_code=409, detail="No plan is awaiting confirmation.")
+    await repository.set_status(db, query_id, QueryStatus.running)
+    background_tasks.add_task(
+        service.run_research_from_plan_job,
+        query_id,
+        query.plan,
+        provider=provider,
+        backend=backend,
+    )
+
+
+@router.post("/query/{query_id}/revise", status_code=204)
+async def revise_plan(
+    query_id: int,
+    payload: ReviseRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    provider: LLMProvider = Depends(get_provider),
+):
+    """Reject the plan (optionally with feedback) and re-plan. Loops back to
+    awaiting_plan. Only valid while the query is awaiting_plan."""
+    query = await repository.get_query(
+        db=db, query_id=query_id, user_id=current_user.id
+    )
+    if query is None:
+        raise HTTPException(status_code=404, detail="Query not found")
+    if query.status != QueryStatus.awaiting_plan:
+        raise HTTPException(status_code=409, detail="No plan is awaiting revision.")
+    await repository.set_status(db, query_id, QueryStatus.running)
+    background_tasks.add_task(
+        service.run_plan_job,
+        query_id,
+        query.prompt,
+        provider=provider,
+        feedback=payload.feedback,
     )

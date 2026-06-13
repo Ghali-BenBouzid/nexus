@@ -38,6 +38,7 @@ async def plan(
     emit: Emit = _noop,
     cap: int,
     retry_cap: int,
+    feedback: str | None = None,
 ) -> list[str]:
     """Decompose a prompt into <=cap sub-questions via a forced submit_plan call.
 
@@ -45,11 +46,20 @@ async def plan(
     so the model can fix it within the retry budget (mirrors how the researcher
     handles a malformed submit_finding). After retries: clamp an over-cap plan to
     the floor, or raise PlannerError if nothing usable ever came back.
+
+    ``feedback`` carries the user's reason for rejecting a previous plan (the
+    human-in-the-loop revise loop), so the planner produces a different plan.
     """
+    user = prompt
+    if feedback and feedback.strip():
+        user = (
+            f"{prompt}\n\nYour previous plan was rejected. Revise it based on this "
+            f"feedback from the user: {feedback.strip()}"
+        )
     submit = SubmitPlan()
     messages = [
         Message(role="system", content=_system_prompt(cap)),
-        Message(role="user", content=prompt),
+        Message(role="user", content=user),
     ]
     await emit(AgentEvent(type="planner_start", message=f"Planning: {prompt}"))
 

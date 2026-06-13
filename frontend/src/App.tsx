@@ -6,7 +6,15 @@ import { Hero } from "./components/Hero";
 import { History } from "./components/History";
 import { Nav } from "./components/Nav";
 import { About, Engineering, Footer, HowItWorks } from "./components/Sections";
-import { cancelQuery, loadConversation, openQuery, type LoadedTurn } from "./lib/api";
+import {
+  cancelQuery,
+  confirmPlan as confirmPlanApi,
+  loadConversation,
+  openQuery,
+  resumeRun,
+  revisePlan as revisePlanApi,
+  type LoadedTurn,
+} from "./lib/api";
 import { t } from "./lib/i18n";
 import {
   applyBackground,
@@ -18,7 +26,7 @@ import {
   getStoredPalette,
 } from "./lib/design";
 import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
-import { LIVE_MODE, runResearch } from "./lib/research";
+import { LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
 import type { LayoutMode, Outcome, Theme, Turn, View } from "./types";
 
 const FEED_TAG = LIVE_MODE ? t.feed.liveTag : t.feed.simTag;
@@ -97,6 +105,7 @@ export default function App() {
       status: lt.status,
       events: [],
       reply: lt.reply,
+      plan: lt.plan,
       result: lt.reply ? null : lt.result, // an answer turn carries no report
       outcome,
       error: lt.error,
@@ -192,6 +201,61 @@ export default function App() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Update only one turn; turns run independently and never clobber each other.
+  const patchTurn = (id: number, fn: (t: Turn) => Turn) =>
+    setTurns((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
+
+  // The live callbacks for a turn, shared by a fresh run and a resumed poll.
+  const callbacksFor = (id: number): ResearchCallbacks => ({
+    onEvent: (e) => {
+      if (!cancelled.current.has(id)) patchTurn(id, (t) => ({ ...t, events: [...t.events, e] }));
+    },
+    onStatus: (s) => {
+      if (!cancelled.current.has(id)) patchTurn(id, (t) => ({ ...t, status: s }));
+    },
+    isCancelled: () => cancelled.current.has(id),
+    onQueryId: (qid) => patchTurn(id, (t) => ({ ...t, queryId: qid })),
+    onConversation: (cid) => setActiveConversation(cid),
+  });
+
+  // Apply a finished run's outcome to its turn: a paused plan awaiting confirmation,
+  // a direct reply, a research report, or nothing if the run was superseded.
+  const applyOutcome = (id: number, res: Awaited<ReturnType<typeof runResearch>>) => {
+    if (!res) {
+      patchTurn(id, (t) => ({ ...t, endedAt: performance.now() }));
+      return;
+    }
+    if (res.awaitingPlan) {
+      patchTurn(id, (t) => ({ ...t, status: "awaiting_plan", plan: res.plan, endedAt: performance.now() }));
+      return;
+    }
+    if (res.reply != null) {
+      patchTurn(id, (t) => ({ ...t, reply: res.reply, result: null, outcome: "ok", status: "complete", endedAt: performance.now() }));
+      return;
+    }
+    patchTurn(id, (t) => ({
+      ...t,
+      result: res.result,
+      outcome: res.outcome,
+      error: res.error ?? null,
+      status: res.outcome === "failed" ? "failed" : "complete",
+      endedAt: performance.now(),
+    }));
+    if (res.outcome === "ok" && res.result) {
+      setLayout("split");
+      setFocusedId(id);
+    }
+  };
+
+  const failTurn = (id: number, err: unknown) =>
+    patchTurn(id, (t) => ({
+      ...t,
+      status: "failed",
+      outcome: "failed",
+      error: err instanceof Error ? err.message : "The research run failed.",
+      endedAt: performance.now(),
+    }));
+
   async function startResearch(prompt: string) {
     // One run at a time: ignore a new submission while another is in flight.
     if (turns.some((t) => t.status === "running" || t.status === "pending")) return;
@@ -210,71 +274,45 @@ export default function App() {
     setNow(turn.startedAt);
     setView("chat");
     setTurns((prev) => [...prev, turn]);
-    // Don't touch the preview selection on submit: if the user is reading an
-    // earlier report it stays put until this run produces its own artifact.
-
-    // Update only this turn; turns run independently and never clobber each other.
-    const patch = (fn: (t: Turn) => Turn) =>
-      setTurns((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
 
     try {
-      const res = await runResearch(
-        prompt,
-        {
-          onEvent: (e) => {
-            if (!cancelled.current.has(id)) patch((t) => ({ ...t, events: [...t.events, e] }));
-          },
-          onStatus: (s) => {
-            if (!cancelled.current.has(id)) patch((t) => ({ ...t, status: s }));
-          },
-          isCancelled: () => cancelled.current.has(id),
-          // Remember the backend query id so this turn can refresh or cancel it.
-          onQueryId: (qid) => patch((t) => ({ ...t, queryId: qid })),
-          // Persist the conversation (new on the first message, existing after).
-          onConversation: (cid) => setActiveConversation(cid),
-        },
-        activeConversationId,
-      );
+      const res = await runResearch(prompt, callbacksFor(id), activeConversationId);
       if (cancelled.current.has(id)) return;
-      if (!res) {
-        patch((t) => ({ ...t, endedAt: performance.now() }));
-        return;
-      }
-      // The supervisor answered from context: show the reply inline, no report.
-      if (res.reply != null) {
-        patch((t) => ({
-          ...t,
-          reply: res.reply,
-          result: null,
-          outcome: "ok",
-          status: "complete",
-          endedAt: performance.now(),
-        }));
-        return;
-      }
-      patch((t) => ({
-        ...t,
-        result: res.result,
-        outcome: res.outcome,
-        error: res.error ?? null,
-        status: res.outcome === "failed" ? "failed" : "complete",
-        endedAt: performance.now(),
-      }));
-      // A finished report opens directly in the wide preview, exactly as if the
-      // user had opened the panel and clicked it.
-      if (res.outcome === "ok" && res.result) {
-        setLayout("split");
-        setFocusedId(id);
-      }
+      applyOutcome(id, res);
     } catch (err) {
+      if (!cancelled.current.has(id)) failTurn(id, err);
+    }
+  }
+
+  // Approve the proposed plan: run the research, then resume polling to completion.
+  async function confirmPlan(turn: Turn) {
+    if (turn.queryId == null) return;
+    const id = turn.id;
+    patchTurn(id, (t) => ({ ...t, status: "running", plan: undefined, startedAt: performance.now(), endedAt: null }));
+    setNow(performance.now());
+    try {
+      await confirmPlanApi(turn.queryId);
+      const res = await resumeRun(turn.queryId, callbacksFor(id));
       if (cancelled.current.has(id)) return;
-      patch((t) => ({
-        ...t,
-        status: "failed",
-        outcome: "failed",
-        error: err instanceof Error ? err.message : "The research run failed.",
-        endedAt: performance.now(),
-      }));
+      applyOutcome(id, res);
+    } catch (err) {
+      if (!cancelled.current.has(id)) failTurn(id, err);
+    }
+  }
+
+  // Reject the plan with optional feedback: re-plan, then resume (pauses again).
+  async function revisePlan(turn: Turn, feedback: string) {
+    if (turn.queryId == null) return;
+    const id = turn.id;
+    patchTurn(id, (t) => ({ ...t, status: "running", plan: undefined, startedAt: performance.now(), endedAt: null }));
+    setNow(performance.now());
+    try {
+      await revisePlanApi(turn.queryId, feedback);
+      const res = await resumeRun(turn.queryId, callbacksFor(id));
+      if (cancelled.current.has(id)) return;
+      applyOutcome(id, res);
+    } catch (err) {
+      if (!cancelled.current.has(id)) failTurn(id, err);
     }
   }
 
@@ -412,6 +450,8 @@ export default function App() {
           onSubmit={startResearch}
           onStop={stopResearch}
           onRefresh={refreshArtifact}
+          onConfirmPlan={confirmPlan}
+          onRevisePlan={revisePlan}
           running={anyRunning}
           onNewChat={newChat}
           feedTag={FEED_TAG}
