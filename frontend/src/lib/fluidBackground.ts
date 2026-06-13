@@ -1,4 +1,4 @@
-// Living-fluid WebGL background — ported nearly verbatim from the handoff's
+// Living-fluid WebGL background, ported nearly verbatim from the handoff's
 // fluid-background.js. Simplex-noise displaced icosahedron, mouse-reactive,
 // fresnel rim, dark(violet)/light(amber) palettes, bloom in dark mode only.
 // Exposes init -> { setTheme, dispose } instead of window globals.
@@ -115,6 +115,13 @@ const fragmentShader = /* glsl */ `
 
 export type FluidHandle = {
   setTheme: (theme: Theme) => void;
+  // Override the blob's gradient colors (Design Lab): the theme still drives
+  // bloom/clear/blending, but the two blob colors come from the chosen palette.
+  setPalette: (a: string, b: string) => void;
+  // Adjust the dark-mode bloom (glow) strength. Light mode renders without bloom.
+  setBloom: (strength: number) => void;
+  // Override the renderer clear color, so the backdrop can adapt to the palette.
+  setBackground: (hex: string) => void;
   dispose: () => void;
 };
 
@@ -192,23 +199,55 @@ export function initFluidBackground(
   };
   window.addEventListener("resize", onResize);
 
-  const setTheme = (theme: Theme) => {
-    pal = PALETTE[theme] || PALETTE.dark;
-    currentTheme = PALETTE[theme] ? theme : "dark";
-    renderer.setClearColor(pal.clear, 1);
-    material.uniforms.uColorA.value.copy(pal.a);
-    material.uniforms.uColorB.value.copy(pal.b);
+  // Design Lab overrides: blob colors + an adjustable dark-mode glow strength.
+  let overrideA: THREE.Color | null = null;
+  let overrideB: THREE.Color | null = null;
+  let darkBloom = PALETTE.dark.bloom;
+
+  const applyVfx = () => {
     material.blending = pal.blending;
     material.transparent = pal.transparent;
     material.needsUpdate = true;
     if (bloomPass) {
-      bloomPass.strength = pal.bloom;
+      // Bloom only renders in dark mode; use the adjustable strength there.
+      bloomPass.strength = currentTheme === "dark" ? darkBloom : pal.bloom;
       bloomPass.threshold = pal.threshold;
     }
   };
 
+  const setTheme = (theme: Theme) => {
+    pal = PALETTE[theme] || PALETTE.dark;
+    currentTheme = PALETTE[theme] ? theme : "dark";
+    renderer.setClearColor(pal.clear, 1);
+    material.uniforms.uColorA.value.copy(overrideA ?? pal.a);
+    material.uniforms.uColorB.value.copy(overrideB ?? pal.b);
+    applyVfx();
+  };
+
+  const setPalette = (a: string, b: string) => {
+    overrideA = new THREE.Color(a);
+    overrideB = new THREE.Color(b);
+    material.uniforms.uColorA.value.copy(overrideA);
+    material.uniforms.uColorB.value.copy(overrideB);
+  };
+
+  const setBloom = (strength: number) => {
+    darkBloom = strength;
+    if (bloomPass && currentTheme === "dark") bloomPass.strength = strength;
+  };
+
+  const setBackground = (hex: string) => {
+    renderer.setClearColor(new THREE.Color(hex).getHex(), 1);
+  };
+
   const clock = new THREE.Clock();
   let raf = 0;
+  const renderFrame = () => {
+    // Bloom (the composer) renders in dark mode only; a bright background blooms
+    // itself and washes the scene.
+    if (composer && currentTheme === "dark") composer.render();
+    else renderer.render(scene, camera);
+  };
   const animate = () => {
     raf = requestAnimationFrame(animate);
     const t = clock.getElapsedTime();
@@ -217,11 +256,17 @@ export function initFluidBackground(
     material.uniforms.uMouse.value.copy(mouse);
     mesh.rotation.y += 0.0014;
     mesh.rotation.x = Math.sin(t * 0.12) * 0.12;
-    // Bloom only in dark mode — a bright background would bloom itself.
-    if (composer && currentTheme === "dark") composer.render();
-    else renderer.render(scene, camera);
+    // Bloom only in dark mode, a bright background would bloom itself.
+    renderFrame();
   };
-  animate();
+  // Respect reduced-motion: render one static frame instead of an endless loop.
+  const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  if (reduceMotion) {
+    material.uniforms.uTime.value = 1.2;
+    renderFrame();
+  } else {
+    animate();
+  }
 
   const dispose = () => {
     cancelAnimationFrame(raf);
@@ -233,5 +278,5 @@ export function initFluidBackground(
     renderer.dispose();
   };
 
-  return { setTheme, dispose };
+  return { setTheme, setPalette, setBloom, setBackground, dispose };
 }

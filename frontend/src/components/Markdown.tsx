@@ -12,7 +12,17 @@ function citeNodes(str: string, kp: string, { onCite, activeCite }: CiteProps): 
         <sup
           key={kp + "c" + i}
           className={"cite" + (activeCite === n ? " active" : "")}
+          role="button"
+          tabIndex={0}
+          aria-label={`Jump to source ${n}`}
+          title={`Jump to source ${n}`}
           onClick={() => onCite(n)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onCite(n);
+            }
+          }}
         >
           [{n}]
         </sup>
