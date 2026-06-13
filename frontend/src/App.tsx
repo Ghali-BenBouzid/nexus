@@ -69,24 +69,10 @@ export default function App() {
     });
 
   // The live conversation this chat belongs to (null = a fresh, unsaved chat).
-  // Persisted so a reload reopens the same thread.
-  const [activeConversationId, setActiveConversationId] = useState<number | null>(() => {
-    try {
-      const v = localStorage.getItem("nexus-active-conversation");
-      return v ? Number(v) : null;
-    } catch {
-      return null;
-    }
-  });
-  const setActiveConversation = (id: number | null) => {
-    setActiveConversationId(id);
-    try {
-      if (id == null) localStorage.removeItem("nexus-active-conversation");
-      else localStorage.setItem("nexus-active-conversation", String(id));
-    } catch {
-      /* ignore */
-    }
-  };
+  // A page refresh starts fresh and lands on home; the previous conversation
+  // stays saved server-side and is reopened on demand from Recent/history.
+  const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
+  const setActiveConversation = (id: number | null) => setActiveConversationId(id);
 
   const turnSeq = useRef(0);
   const cancelled = useRef<Set<number>>(new Set());
@@ -113,22 +99,6 @@ export default function App() {
       endedAt: performance.now(),
     };
   };
-
-  // On load, reopen the persisted conversation (live mode) so the chat survives a
-  // refresh. Runs once on mount.
-  useEffect(() => {
-    if (!LIVE_MODE || activeConversationId == null) return;
-    let stale = false;
-    loadConversation(activeConversationId).then((conv) => {
-      if (stale || !conv || conv.turns.length === 0) return;
-      setTurns(conv.turns.map(turnFromLoaded));
-      setView("chat");
-    });
-    return () => {
-      stale = true;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Mount the WebGL fluid background on the canvas declared in index.html.
   useEffect(() => {
