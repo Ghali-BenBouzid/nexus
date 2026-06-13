@@ -17,6 +17,14 @@ from app.research import service as research_service
 _MAX_CONTEXT_MESSAGES = 8
 _MAX_REPORT_CHARS = 1200
 
+# Shown in the chat when a follow-up would start a research or compose run but the
+# user has hit the daily cap. Answers from existing reports are not affected, so
+# the conversation stays usable; only new heavy runs are held back.
+_CAP_NOTICE = (
+    "You have reached today's research limit. You can still ask about the "
+    "reports already in this conversation. Please come back tomorrow for new runs."
+)
+
 
 def _render_context(messages: list[Message], queries: dict[int, Query]) -> str:
     """Render the tail of the thread for the supervisor: prior messages and a
@@ -83,6 +91,13 @@ async def submit_message(
     if decision.action == "answer":
         return await repository.add_message(
             db, conversation.id, MessageRole.assistant, content=decision.reply
+        )
+
+    # Compose and research both launch a heavy job, so they draw on the daily cap.
+    # Answers above are free (cheap, and they keep the chat usable once capped).
+    if await research_service.over_daily_cap(db, conversation.user_id):
+        return await repository.add_message(
+            db, conversation.id, MessageRole.assistant, content=_CAP_NOTICE
         )
 
     if decision.action == "compose" and completed:

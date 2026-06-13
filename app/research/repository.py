@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.schemas import AgentEvent, Report, ResearchResult
@@ -41,6 +41,18 @@ async def get_query(db: AsyncSession, query_id: int, user_id: int) -> Query | No
         select(Query).where(Query.id == query_id, Query.user_id == user_id)
     )
     return result.scalar_one_or_none()
+
+
+async def count_queries_since(db: AsyncSession, user_id: int, since: datetime) -> int:
+    """How many queries this user has created since ``since``. Backs the per-user
+    daily cap; counts every status (a failed run still spent a planner call) and
+    hits the indexed (user_id, created_at) columns, so it stays cheap."""
+    result = await db.execute(
+        select(func.count())
+        .select_from(Query)
+        .where(Query.user_id == user_id, Query.created_at >= since)
+    )
+    return result.scalar_one()
 
 
 async def list_queries(db: AsyncSession, user_id: int) -> list[Query]:

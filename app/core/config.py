@@ -16,6 +16,14 @@ class Settings(BaseSettings):
     # CORS: comma-separated allowed frontend origins (empty = no browser access)
     cors_origins: str = ""
 
+    # Abuse / cost guards for the public demo (the URL is gated only by open
+    # registration, so anyone could otherwise drain the Tavily + LLM budget).
+    # Per-account research jobs (research + compose) allowed per rolling 24h.
+    daily_query_cap: int = 5
+    # Per-IP cap on registrations, to stop bots farming throwaway accounts past
+    # the per-account cap. limits syntax, e.g. "5/hour", "100/day".
+    register_rate_limit: str = "5/hour"
+
     # agent / provider settings
     gemini_api_key: str | None = None
     tavily_api_key: str | None = None

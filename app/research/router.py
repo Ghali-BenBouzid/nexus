@@ -47,6 +47,11 @@ async def create_query(
     provider: LLMProvider = Depends(get_provider),
     backend: SearchBackend = Depends(get_search_backend),
 ):
+    if await service.over_daily_cap(db, current_user.id):
+        raise HTTPException(
+            status_code=429,
+            detail="Daily research limit reached. Please try again tomorrow.",
+        )
     query = await repository.create_pending_query(
         db=db, user_id=current_user.id, prompt=query_create.prompt
     )
