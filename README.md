@@ -111,8 +111,10 @@ The live stack is Railway (backend) + Neon (Postgres) + Cloudflare Pages
    from `.env.example` (`DATABASE_URL`, `DATABASE_SSL=true`, `SECRET_KEY`,
    `CORS_ORIGINS` = your frontend URL, `TAVILY_API_KEY`, `LLM_PROVIDER` and its
    key). `GET /health` is the health check.
-3. **Frontend (Cloudflare Pages):** build command `npm run build`, output
-   directory `dist`, with `VITE_API_BASE_URL` = the Railway URL and
+3. **Frontend (Cloudflare Pages):** the frontend lives in a subdirectory, so set
+   the project's **root directory** to `frontend`. Build command `npm run build`,
+   build output directory `dist` (Vite compiles the static site to
+   `frontend/dist`). Set `VITE_API_BASE_URL` = the Railway URL and
    `VITE_LIVE_MODE=true`.
 
 Set `CORS_ORIGINS` on the backend to the deployed frontend origin so the browser
