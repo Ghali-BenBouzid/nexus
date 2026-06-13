@@ -48,11 +48,26 @@ async def run(
         prompt, provider=provider, emit=emit, cap=cap, retry_cap=retry_cap
     )
 
+    total = len(sub_questions)
     semaphore = asyncio.Semaphore(max_concurrency)
 
-    async def run_one(sub_question: str) -> Finding:
+    async def run_one(index: int, sub_question: str) -> Finding:
+        # Emit the lifecycle here (not in the researcher leaf): this is the only
+        # place that knows the researcher's index and the total, which is what the
+        # live feed needs to render "researcher k/N" honestly.
         async with semaphore:
-            return await asyncio.wait_for(
+            await emit(
+                AgentEvent(
+                    type="researcher_start",
+                    message=f"Researching: {sub_question}",
+                    data={
+                        "index": index,
+                        "total": total,
+                        "sub_question": sub_question,
+                    },
+                )
+            )
+            finding = await asyncio.wait_for(
                 research(
                     sub_question,
                     provider=provider,
@@ -62,15 +77,33 @@ async def run(
                 ),
                 timeout=per_researcher_timeout,
             )
+            await emit(
+                AgentEvent(
+                    type="researcher_done",
+                    message=f"Done: {sub_question}",
+                    data={
+                        "index": index,
+                        "total": total,
+                        "sub_question": sub_question,
+                        "found_info": finding.found_info,
+                    },
+                )
+            )
+            return finding
 
     results = await asyncio.gather(
-        *(run_one(sub_question) for sub_question in sub_questions),
+        *(
+            run_one(index, sub_question)
+            for index, sub_question in enumerate(sub_questions, start=1)
+        ),
         return_exceptions=True,
     )
 
     findings: list[Finding] = []
     failed: list[str] = []
-    for sub_question, result in zip(sub_questions, results, strict=True):
+    for index, (sub_question, result) in enumerate(
+        zip(sub_questions, results, strict=True), start=1
+    ):
         if isinstance(result, Exception):
             failed.append(sub_question)
             # Log the real cause (type + message + traceback); the emit below is
@@ -86,6 +119,11 @@ async def run(
                 AgentEvent(
                     type="researcher_failed",
                     message=f"Could not research: {sub_question}",
+                    data={
+                        "index": index,
+                        "total": total,
+                        "sub_question": sub_question,
+                    },
                 )
             )
         else:

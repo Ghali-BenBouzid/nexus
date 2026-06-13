@@ -135,6 +135,57 @@ async def test_create_returns_202_pending_then_completes(
     assert detail.json()["consulted_sources"] == []
 
 
+async def test_events_endpoint_tails_the_live_feed(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    _use_fake_pipeline(sub_questions=["q1", "q2"])
+
+    created = await client.post(
+        "/research/query", headers=auth_headers, json={"prompt": "a prompt"}
+    )
+    query_id = created.json()["id"]
+
+    events = await client.get(
+        f"/research/query/{query_id}/events", headers=auth_headers
+    )
+    assert events.status_code == 200
+    body = events.json()
+
+    types = [e["type"] for e in body]
+    assert "planner_start" in types
+    assert "researcher_start" in types
+    assert "writer_done" in types
+
+    # the persisted events carry the structured index/total the feed renders
+    starts = [e for e in body if e["type"] == "researcher_start"]
+    indices = {(e["data"]["index"], e["data"]["total"]) for e in starts}
+    assert indices == {(1, 2), (2, 2)}
+
+    planner_done = next(e for e in body if e["type"] == "planner_done")
+    assert planner_done["data"]["total"] == 2
+
+    # ids are a monotonic cursor: asking for events after the last id yields none
+    last_id = body[-1]["id"]
+    tail = await client.get(
+        f"/research/query/{query_id}/events?after={last_id}", headers=auth_headers
+    )
+    assert tail.json() == []
+
+
+async def test_events_endpoint_hidden_from_other_users(client: AsyncClient) -> None:
+    owner = await _register_and_headers(client, "owner2@test.com")
+    other = await _register_and_headers(client, "other2@test.com")
+    _use_fake_pipeline(sub_questions=["q1"])
+
+    created = await client.post(
+        "/research/query", headers=owner, json={"prompt": "secret"}
+    )
+    query_id = created.json()["id"]
+
+    response = await client.get(f"/research/query/{query_id}/events", headers=other)
+    assert response.status_code == 404
+
+
 async def test_get_other_users_query_returns_404(client: AsyncClient) -> None:
     owner = await _register_and_headers(client, "owner@test.com")
     other = await _register_and_headers(client, "other@test.com")
