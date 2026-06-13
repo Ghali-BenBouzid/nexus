@@ -22,6 +22,7 @@ from pathlib import Path
 
 from app.agents import orchestrator
 from app.agents.provider import LLMProvider
+from app.agents.search_cache import CachingSearchBackend
 from app.agents.tools import FetchPage, SearchBackend, Tool, WebSearch
 from app.core.config import settings
 from app.evals.cases import EVAL_PROMPTS
@@ -91,7 +92,7 @@ def _write_reports(cases: list[Case]) -> Path:
 
 async def _amain(*, use_judge: bool) -> None:
     provider = get_provider()
-    backend: SearchBackend = get_search_backend()
+    backend: SearchBackend = CachingSearchBackend(get_search_backend())
     async with provider, backend:
         tools = [WebSearch(backend=backend), FetchPage(backend=backend)]
         cases, failures = await run_suite(

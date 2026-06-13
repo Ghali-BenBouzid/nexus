@@ -6,6 +6,7 @@ from app.agents.orchestrator import OrchestratorError
 from app.agents.planner import PlannerError
 from app.agents.provider import LLMProvider
 from app.agents.schemas import AgentEvent
+from app.agents.search_cache import CachingSearchBackend
 from app.agents.tools import FetchPage, SearchBackend, WebSearch
 from app.core.config import settings
 from app.db import session as db_session
@@ -51,6 +52,7 @@ async def run_research_job(
     async with db_session.SessionLocal() as db:
         await repository.set_status(db, query_id, QueryStatus.running)
         try:
+            backend = CachingSearchBackend(backend)
             async with provider, backend:
                 tools = [WebSearch(backend=backend), FetchPage(backend=backend)]
                 report, research_result = await asyncio.wait_for(
