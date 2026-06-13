@@ -19,10 +19,15 @@ async def _noop(event: AgentEvent) -> None:
 
 def _system_prompt(cap: int) -> str:
     return (
-        "You are a research planner. Decompose the user's question into a small "
-        "set of complementary, non-overlapping sub-questions that together cover "
-        f"it exhaustively. Use at most {cap} sub-questions. Call submit_plan with "
-        "the list."
+        "You are a research planner. Break the user's question into a small set "
+        "of sub-questions that together cover it thoroughly without overlapping.\n"
+        "- Each sub-question must be self-contained: a researcher sees only that "
+        "one sentence, with no access to the original question, so carry the "
+        "needed context (subject, scope, timeframe) into each one.\n"
+        "- Target distinct facets of the question (for example definitions, "
+        "causes, effects, comparisons, current state), not rephrasings of the "
+        "same ask.\n"
+        f"- Use at most {cap} sub-questions. Call submit_plan with the list."
     )
 
 
