@@ -1,11 +1,17 @@
+import logging
+import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from app.agents.provider import LLMProvider, Message, ProviderError
 from app.agents.retry import RetryPolicy, retry_async
-from app.agents.schemas import AgentEvent, Report, ResearchResult
+from app.agents.schemas import AgentEvent, Report, ResearchResult, Source
+
+logger = logging.getLogger(__name__)
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
+
+_CITATION = re.compile(r"\[(\d+)\]")
 
 # The writer is the final, UX-critical step: the polished prose report is the whole
 # point, so retry its one LLM call generously (on top of the provider's own per-call
@@ -132,11 +138,68 @@ async def write(
     )
     await emit(AgentEvent(type="writer_done", message="Report written"))
 
+    # Code owns the citations, so the report's prose and its source list are
+    # reconciled here rather than trusted from the model.
+    content, sources, stripped = _finalize_citations(
+        response.text or "", result.sources
+    )
+    if stripped:
+        logger.warning("stripped unbacked citation markers %s", stripped)
+        await emit(
+            AgentEvent(
+                type="citations_sanitized",
+                message=f"Removed {len(stripped)} unbacked citation(s)",
+                data={"stripped": stripped},
+            )
+        )
+
     return Report(
-        content=response.text or "",
-        sources=result.sources,
+        content=content,
+        sources=sources,
         failed_subquestions=result.gaps,
     )
+
+
+def _finalize_citations(
+    content: str, sources: list[Source]
+) -> tuple[str, list[Source], list[int]]:
+    """Reconcile the prose with the source list, deterministically:
+
+    1. Strip any ``[n]`` the writer invented that no source can back (a missing
+       citation beats a fabricated one).
+    2. Keep only the sources the prose actually cites and renumber them in order
+       of first appearance, so the source panel matches the report (no dangling
+       entries, citations read 1, 2, 3 ... down the page).
+
+    Returns the rewritten prose, the pruned+renumbered sources, and the stripped
+    out-of-range numbers (for logging/telemetry).
+    """
+    content, stripped = _strip_unbacked(content, len(sources))
+
+    order: list[int] = []
+    for match in _CITATION.finditer(content):
+        n = int(match.group(1))
+        if n not in order:
+            order.append(n)
+    remap = {old: new for new, old in enumerate(order, start=1)}
+
+    kept = [sources[old - 1] for old in order]
+    content = _CITATION.sub(lambda m: f"[{remap[int(m.group(1))]}]", content)
+    return content, kept, stripped
+
+
+def _strip_unbacked(content: str, n_sources: int) -> tuple[str, list[int]]:
+    """Remove any ``[n]`` marker that does not resolve to a real source."""
+    stripped: list[int] = []
+
+    def replace(match: re.Match[str]) -> str:
+        n = int(match.group(1))
+        if 1 <= n <= n_sources:
+            return match.group(0)
+        stripped.append(n)
+        return ""
+
+    return _CITATION.sub(replace, content), stripped
 
 
 def _render(result: ResearchResult) -> str:

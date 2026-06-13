@@ -45,6 +45,48 @@ async def test_write_renders_points_via_provider() -> None:
     assert "q" in rendered and "[1]" in rendered
 
 
+async def test_write_strips_unbacked_citation_markers() -> None:
+    # The writer slips in [2] and [5] though only one source exists. Code owns
+    # citations, so the guard removes the fabricated markers and keeps the valid.
+    result = ResearchResult(
+        points=[ResearchPoint(sub_question="q", answer="ans", source_ids=[1])],
+        sources=[Source(title="A", url="http://a")],
+        gaps=[],
+    )
+    provider = FakeLLMProvider(
+        responses=[LLMResponse(text="Real claim[1]. Fake claim[2]. Another[5].")]
+    )
+
+    report = await write(result, provider=provider)
+
+    assert report.content == "Real claim[1]. Fake claim. Another."
+    assert "[2]" not in report.content and "[5]" not in report.content
+    assert [s.url for s in report.sources] == ["http://a"]
+
+
+async def test_write_prunes_uncited_sources_and_renumbers() -> None:
+    # Three sources exist, but the prose only cites the 1st and 3rd. The report's
+    # source list is pruned to those, renumbered in order of first appearance.
+    result = ResearchResult(
+        points=[ResearchPoint(sub_question="q", answer="ans", source_ids=[1, 2, 3])],
+        sources=[
+            Source(title="A", url="http://a"),
+            Source(title="B", url="http://b"),
+            Source(title="C", url="http://c"),
+        ],
+        gaps=[],
+    )
+    provider = FakeLLMProvider(
+        responses=[LLMResponse(text="First fact[3]. Second fact[1].")]
+    )
+
+    report = await write(result, provider=provider)
+
+    # [3] cited first -> becomes [1]; [1] cited second -> becomes [2].
+    assert report.content == "First fact[1]. Second fact[2]."
+    assert [s.url for s in report.sources] == ["http://c", "http://a"]
+
+
 def _no_sleep_writer(monkeypatch) -> None:
     # Don't actually sleep through the writer's retry backoff in tests.
     async def fake_sleep(_d: float) -> None:
