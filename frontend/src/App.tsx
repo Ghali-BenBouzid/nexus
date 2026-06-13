@@ -16,6 +16,7 @@ import {
   type LoadedTurn,
 } from "./lib/api";
 import { t } from "./lib/i18n";
+import { outcomeFor } from "./lib/outcome";
 import {
   applyBackground,
   applyFont,
@@ -27,7 +28,7 @@ import {
 } from "./lib/design";
 import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
 import { LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
-import type { LayoutMode, Outcome, Theme, Turn, View } from "./types";
+import type { LayoutMode, Theme, Turn, View } from "./types";
 
 const FEED_TAG = LIVE_MODE ? t.feed.liveTag : t.feed.simTag;
 
@@ -79,26 +80,20 @@ export default function App() {
   const fluidRef = useRef<FluidHandle | null>(null);
 
   // Map a rehydrated backend turn into the conversation's Turn shape.
-  const turnFromLoaded = (lt: LoadedTurn): Turn => {
-    let outcome: Outcome = "ok";
-    if (lt.status === "failed") outcome = "failed";
-    else if (!lt.result.report.trim() && lt.result.sources.length === 0)
-      outcome = "empty";
-    return {
-      id: ++turnSeq.current,
-      queryId: lt.queryId ?? undefined,
-      query: lt.query,
-      status: lt.status,
-      events: [],
-      reply: lt.reply,
-      plan: lt.plan,
-      result: lt.reply ? null : lt.result, // an answer turn carries no report
-      outcome,
-      error: lt.error,
-      startedAt: performance.now(),
-      endedAt: performance.now(),
-    };
-  };
+  const turnFromLoaded = (lt: LoadedTurn): Turn => ({
+    id: ++turnSeq.current,
+    queryId: lt.queryId ?? undefined,
+    query: lt.query,
+    status: lt.status,
+    events: [],
+    reply: lt.reply,
+    plan: lt.plan,
+    result: lt.reply ? null : lt.result, // an answer turn carries no report
+    outcome: outcomeFor(lt.status, lt.result.report, lt.result.sources.length),
+    error: lt.error,
+    startedAt: performance.now(),
+    endedAt: performance.now(),
+  });
 
   // Mount the WebGL fluid background on the canvas declared in index.html.
   useEffect(() => {
@@ -229,6 +224,14 @@ export default function App() {
   async function startResearch(prompt: string) {
     // One run at a time: ignore a new submission while another is in flight.
     if (turns.some((t) => t.status === "running" || t.status === "pending")) return;
+    // A new question supersedes any plan still waiting for confirmation: cancel it
+    // on the backend and mark it stopped, rather than orphaning the paused query.
+    turns.forEach((tn) => {
+      if (tn.status === "awaiting_plan") {
+        if (tn.queryId != null) cancelQuery(tn.queryId);
+        patchTurn(tn.id, (t) => ({ ...t, status: "failed", stopped: true, plan: undefined, endedAt: performance.now() }));
+      }
+    });
     const id = ++turnSeq.current;
     const turn: Turn = {
       id,
@@ -258,11 +261,14 @@ export default function App() {
   async function confirmPlan(turn: Turn) {
     if (turn.queryId == null) return;
     const id = turn.id;
+    // Resume the feed after the events already shown, so the phase-1 planner events
+    // are not re-drained and duplicated when the research run streams in.
+    const sinceEventId = turn.events.reduce((m, e) => Math.max(m, e.id), 0);
     patchTurn(id, (t) => ({ ...t, status: "running", plan: undefined, startedAt: performance.now(), endedAt: null }));
     setNow(performance.now());
     try {
       await confirmPlanApi(turn.queryId);
-      const res = await resumeRun(turn.queryId, callbacksFor(id));
+      const res = await resumeRun(turn.queryId, callbacksFor(id), sinceEventId);
       if (cancelled.current.has(id)) return;
       applyOutcome(id, res);
     } catch (err) {
@@ -274,11 +280,12 @@ export default function App() {
   async function revisePlan(turn: Turn, feedback: string) {
     if (turn.queryId == null) return;
     const id = turn.id;
+    const sinceEventId = turn.events.reduce((m, e) => Math.max(m, e.id), 0);
     patchTurn(id, (t) => ({ ...t, status: "running", plan: undefined, startedAt: performance.now(), endedAt: null }));
     setNow(performance.now());
     try {
       await revisePlanApi(turn.queryId, feedback);
-      const res = await resumeRun(turn.queryId, callbacksFor(id));
+      const res = await resumeRun(turn.queryId, callbacksFor(id), sinceEventId);
       if (cancelled.current.has(id)) return;
       applyOutcome(id, res);
     } catch (err) {
@@ -308,10 +315,7 @@ export default function App() {
     if (turn.queryId == null) return;
     const data = await openQuery(turn.queryId);
     if (!data) return;
-    let outcome: Outcome = "ok";
-    if (data.status === "failed") outcome = "failed";
-    else if (!data.result.report.trim() && data.result.sources.length === 0)
-      outcome = "empty";
+    const outcome = outcomeFor(data.status, data.result.report, data.result.sources.length);
     setTurns((prev) =>
       prev.map((t) =>
         t.id === turn.id

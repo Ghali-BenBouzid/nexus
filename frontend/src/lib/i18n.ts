@@ -231,7 +231,7 @@ const en = {
     collapse: "Collapse",
     expand: "Recent",
     newChat: "New chat",
-    status: (s: string) => s,
+    status: (s: string) => (s === "awaiting_plan" ? "awaiting plan" : s),
   },
   feed: {
     activity: "Agent activity",
@@ -433,7 +433,13 @@ const fr: Dict = {
     expand: "Récent",
     newChat: "Nouvelle conversation",
     status: (s: string) =>
-      ({ pending: "en attente", running: "en cours", complete: "terminé", failed: "échec" })[s] ?? s,
+      ({
+        pending: "en attente",
+        running: "en cours",
+        awaiting_plan: "plan à valider",
+        complete: "terminé",
+        failed: "échec",
+      })[s] ?? s,
   },
   feed: {
     activity: "Activité des agents",

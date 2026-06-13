@@ -5,6 +5,7 @@
 // backend persists every emitted AgentEvent, so the feed shows the actual
 // planner/researcher/writer progress (real "researcher k/N"), not a placeholder.
 import type { AgentEvent, Result, Source, Status, TimelineEvent } from "../types";
+import { outcomeFor } from "./outcome";
 import type { ResearchCallbacks, ResearchOutcome } from "./research";
 
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
@@ -86,6 +87,29 @@ async function authedGet(path: string): Promise<Response | null> {
     token = await ensureToken();
     res = await fetch(`${BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
   }
+  return res;
+}
+
+// Authenticated POST with the same 401 self-heal as authedGet, and it throws on a
+// non-OK response so callers can't silently proceed against a request that never
+// took effect (e.g. a 409 confirm/revise on a query no longer awaiting a plan).
+async function authedPost(path: string, body?: object): Promise<Response> {
+  const init = (token: string): RequestInit => ({
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+    },
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+  });
+  let token = await ensureToken();
+  let res = await fetch(`${BASE}${path}`, init(token));
+  if (res.status === 401) {
+    localStorage.removeItem(TOKEN_KEY);
+    token = await ensureToken();
+    res = await fetch(`${BASE}${path}`, init(token));
+  }
+  if (!res.ok) throw new Error(`Request failed (${res.status}).`);
   return res;
 }
 
@@ -267,13 +291,17 @@ export async function runLiveResearch(
 }
 
 // Poll a query to its terminal state, draining the agent event feed as it goes.
+// `sinceEventId` seeds the event cursor: a resumed poll (after confirm/revise)
+// passes the last id it already showed, so the planner events from phase 1 are not
+// re-fetched and duplicated into the feed.
 async function pollQuery(
   id: number,
   token: string,
   cb: ResearchCallbacks,
+  sinceEventId = 0,
 ): Promise<ResearchOutcome | null> {
   // The backend event id is a monotonic cursor and a stable, unique timeline id.
-  let lastEventId = 0;
+  let lastEventId = sinceEventId;
   const drainEvents = async () => {
     const events = await getEvents(id, lastEventId, token);
     for (const e of events) {
@@ -307,8 +335,7 @@ async function pollQuery(
         consulted: detail.consulted_sources,
         gaps: detail.gaps,
       };
-      const empty = !result.report.trim() && result.sources.length === 0;
-      return { result, outcome: empty ? "empty" : "ok" };
+      return { result, outcome: outcomeFor(detail.status, result.report, result.sources.length) };
     }
 
     if (detail.status === "failed") {
@@ -329,35 +356,30 @@ async function pollQuery(
 }
 
 // Approve the proposed plan (POST /research/query/{id}/confirm): the backend runs
-// the research. Resume polling afterwards to track it to completion.
+// the research. Throws on a non-OK response so the caller surfaces the failure
+// instead of polling a query that never started.
 export async function confirmPlan(queryId: number): Promise<void> {
-  const token = await ensureToken();
-  await fetch(`${BASE}/research/query/${queryId}/confirm`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  });
+  await authedPost(`/research/query/${queryId}/confirm`);
 }
 
 // Reject the plan with optional feedback (POST .../revise): the backend re-plans
-// and pauses again at awaiting_plan.
+// and pauses again at awaiting_plan. Throws on a non-OK response.
 export async function revisePlan(queryId: number, feedback: string): Promise<void> {
-  const token = await ensureToken();
-  await fetch(`${BASE}/research/query/${queryId}/revise`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
-    body: JSON.stringify({ feedback }),
-  });
+  await authedPost(`/research/query/${queryId}/revise`, { feedback });
 }
 
 // Resume polling an existing query (after confirm/revise) without posting a new
 // message. Reuses the same poll loop, so it handles awaiting_plan again on revise.
+// `sinceEventId` is the last feed event already shown, so the resumed poll appends
+// only new events instead of re-draining the phase-1 planner events.
 export async function resumeRun(
   queryId: number,
   cb: ResearchCallbacks,
+  sinceEventId = 0,
 ): Promise<ResearchOutcome | null> {
   cb.onStatus("running");
   const token = await ensureToken();
-  return pollQuery(queryId, token, cb);
+  return pollQuery(queryId, token, cb, sinceEventId);
 }
 
 // Ask the backend to stop a run (POST /research/query/{id}/cancel). Best-effort
