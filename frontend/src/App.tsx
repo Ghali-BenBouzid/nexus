@@ -79,21 +79,45 @@ export default function App() {
   const cancelled = useRef<Set<number>>(new Set());
   const fluidRef = useRef<FluidHandle | null>(null);
 
-  // Map a rehydrated backend turn into the conversation's Turn shape.
-  const turnFromLoaded = (lt: LoadedTurn): Turn => ({
-    id: ++turnSeq.current,
-    queryId: lt.queryId ?? undefined,
-    query: lt.query,
-    status: lt.status,
-    events: [],
-    reply: lt.reply,
-    plan: lt.plan,
-    result: lt.reply ? null : lt.result, // an answer turn carries no report
-    outcome: outcomeFor(lt.status, lt.result.report, lt.result.sources.length),
-    error: lt.error,
-    startedAt: performance.now(),
-    endedAt: performance.now(),
-  });
+  // Map a rehydrated backend turn into the conversation's Turn shape. A turn that
+  // was still in flight when the snapshot was taken keeps a null endedAt so its
+  // timer runs (and a resumed poll, below, drives it to completion).
+  const turnFromLoaded = (lt: LoadedTurn): Turn => {
+    const inFlight = lt.status === "running" || lt.status === "pending";
+    return {
+      id: ++turnSeq.current,
+      queryId: lt.queryId ?? undefined,
+      query: lt.query,
+      status: lt.status,
+      events: [],
+      reply: lt.reply,
+      plan: lt.plan,
+      result: lt.reply ? null : lt.result, // an answer turn carries no report
+      outcome: outcomeFor(lt.status, lt.result.report, lt.result.sources.length),
+      error: lt.error,
+      startedAt: performance.now(),
+      endedAt: inFlight ? null : performance.now(),
+    };
+  };
+
+  // Re-attach a poll to any turn that was still running when its conversation was
+  // snapshotted (e.g. reopened mid-planning), so it keeps progressing to the plan
+  // prompt or the report instead of sticking on "running" with nothing driving it.
+  const resumeInFlight = (loaded: Turn[]) => {
+    loaded.forEach((turn) => {
+      if (turn.queryId == null) return;
+      if (turn.status !== "running" && turn.status !== "pending") return;
+      const id = turn.id;
+      setNow(performance.now());
+      resumeRun(turn.queryId, callbacksFor(id))
+        .then((res) => {
+          if (!cancelled.current.has(id)) applyOutcome(id, res);
+        })
+        .catch((err) => {
+          if (!cancelled.current.has(id)) failTurn(id, err);
+        });
+    });
+  };
 
   // Mount the WebGL fluid background on the canvas declared in index.html.
   useEffect(() => {
@@ -356,11 +380,13 @@ export default function App() {
     turns.forEach((t) => {
       if (t.status === "running" || t.status === "pending") cancelled.current.add(t.id);
     });
-    setTurns(conv.turns.map(turnFromLoaded));
+    const loaded = conv.turns.map(turnFromLoaded);
+    setTurns(loaded);
     setActiveConversation(conv.id);
     setFocusedId(null);
     setView("chat");
     setLayout("thread");
+    resumeInFlight(loaded);
   }
 
   function newChat() {
