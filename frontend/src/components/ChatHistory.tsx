@@ -44,6 +44,10 @@ export function ChatHistory({ open, onToggle, onOpen, onNewChat, refreshKey }: C
               {I.arrowLeft}
             </button>
           </div>
+          <button className="ch-newchat" onClick={onNewChat}>
+            {I.plus}
+            <span>{t.history.newChat}</span>
+          </button>
           <div className="ch-body">
             {sorted === null && <div className="drawer-empty">{t.history.loading}</div>}
             {sorted?.length === 0 && <div className="drawer-empty">{t.history.empty}</div>}

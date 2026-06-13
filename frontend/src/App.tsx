@@ -290,7 +290,7 @@ export default function App() {
     setTurns([]);
     setFocusedId(null);
     setLayout("thread");
-    goHome();
+    setView("chat"); // land on a fresh, empty conversation, not the hero
   }
 
   // Cross-fade between themes. The View Transitions API snapshots the whole

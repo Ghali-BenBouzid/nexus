@@ -88,11 +88,10 @@ export function Artifact({ turn, onRefresh, onBack, onClose }: ArtifactProps) {
 
   const onCite = (n: number) => {
     setActiveCite(n);
-    const c = listRef.current;
-    if (c) {
-      const el = c.querySelector<HTMLElement>(`[data-n="${n}"]`);
-      if (el) c.scrollTop += el.getBoundingClientRect().top - c.getBoundingClientRect().top - 8;
-    }
+    // The source list isn't its own scroll container (the report body is), so
+    // scrollIntoView is what actually moves the source into view.
+    const el = listRef.current?.querySelector<HTMLElement>(`[data-n="${n}"]`);
+    el?.scrollIntoView({ behavior: "smooth", block: "center" });
   };
 
   if (!result || (!result.report.trim() && result.sources.length === 0)) {
