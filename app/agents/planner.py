@@ -2,6 +2,7 @@ from collections.abc import Awaitable, Callable
 
 from pydantic import ValidationError
 
+from app.agents.language import language_directive
 from app.agents.provider import LLMProvider, LLMResponse, Message
 from app.agents.schemas import AgentEvent
 from app.agents.tools import SubmitPlan, SubmitPlanArgs
@@ -27,9 +28,8 @@ def _system_prompt(cap: int) -> str:
         "- Target distinct facets of the question (for example definitions, "
         "causes, effects, comparisons, current state), not rephrasings of the "
         "same ask.\n"
-        "- Write the sub-questions in the same language as the user's question "
-        "(French question -> French sub-questions), so the research runs in that "
-        "language.\n"
+        "- Write the sub-questions in the same language as the user's question, "
+        "so the research runs in that language.\n"
         f"- Use at most {cap} sub-questions. Call submit_plan with the list."
     )
 
@@ -61,7 +61,9 @@ async def plan(
         )
     submit = SubmitPlan()
     messages = [
-        Message(role="system", content=_system_prompt(cap)),
+        Message(
+            role="system", content=_system_prompt(cap) + language_directive(prompt)
+        ),
         Message(role="user", content=user),
     ]
     await emit(AgentEvent(type="planner_start", message=f"Planning: {prompt}"))

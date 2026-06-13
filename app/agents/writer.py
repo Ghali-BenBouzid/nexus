@@ -3,6 +3,7 @@ import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
+from app.agents.language import language_directive
 from app.agents.provider import LLMProvider, Message, ProviderError
 from app.agents.retry import RetryPolicy, retry_async
 from app.agents.schemas import AgentEvent, Report, ResearchResult, Source
@@ -47,9 +48,8 @@ Write thoroughly and in depth, with an unbiased, journalistic tone. Today's date
 is {current_date}; treat it as the present when findings refer to recent or \
 current events.
 
-Write the report in the same language as the points and the user's question. If \
-the findings are in French, write the entire report in French; if in English, in \
-English. Match the language of the research, not this instruction.
+Write the report in the same language as the points and the user's question. \
+Match the language of the research, not this instruction.
 </goal>
 
 <format_rules>
@@ -171,8 +171,11 @@ async def write(
             "Follow this shaping instruction, but add no facts beyond the points "
             "above."
         )
+    # Pin the language to the findings themselves (the sub-questions and claims),
+    # not the rendered scaffolding, whose headers ("# Research points") are English.
+    directive = language_directive(_content_text(result))
     messages = [
-        Message(role="system", content=_system_prompt()),
+        Message(role="system", content=_system_prompt() + directive),
         Message(role="user", content=user_content),
     ]
     response = await retry_async(
@@ -278,6 +281,16 @@ def _strip_unbacked(content: str, n_sources: int) -> tuple[str, list[int]]:
         return ""
 
     return _CITATION.sub(replace, content), stripped
+
+
+def _content_text(result: ResearchResult) -> str:
+    """The findings' own text (sub-questions + claims), for language detection.
+    Excludes the English render scaffolding so detection sees the real content."""
+    parts: list[str] = []
+    for point in result.points:
+        parts.append(point.sub_question)
+        parts.extend(claim.text for claim in point.claims)
+    return " ".join(parts)
 
 
 def _render(result: ResearchResult) -> str:
