@@ -62,10 +62,10 @@ export function HowItWorks() {
 
   // Researcher stack: three web agents plus a dashed "Documents (RAG)" slot.
   const rows = [
-    { cy: 100, rag: false },
-    { cy: 160, rag: false },
-    { cy: 220, rag: false },
-    { cy: 286, rag: true },
+    { cy: 148, rag: false },
+    { cy: 204, rag: false },
+    { cy: 260, rag: false },
+    { cy: 316, rag: true },
   ];
 
   const bind = (id: string, label: string) => ({
@@ -93,34 +93,61 @@ export function HowItWorks() {
         </div>
 
         <figure className="hiw" ref={figRef}>
-          <svg className="hiw-svg" viewBox="0 0 980 380" role="img" aria-label={t.hiw.aria}>
+          <svg className="hiw-svg" viewBox="0 0 1398 400" role="img" aria-label={t.hiw.aria}>
             <defs>
               <marker id="hiw-arrow" markerWidth="9" markerHeight="9" refX="5.5" refY="3" orient="auto">
                 <path d="M0,0 L6,3 L0,6" className="hiw-arrowhead" />
               </marker>
             </defs>
 
-            <rect className="hiw-orch" x="70" y="28" width="840" height="324" rx="18" />
-            <text className="hiw-orch-label" x="92" y="52">{L.orchestrator}</text>
+            <rect className="hiw-orch" x="244" y="84" width="998" height="300" rx="18" />
+            <text className="hiw-orch-label" x="266" y="108">{L.orchestrator}</text>
 
-            <path className="hiw-edge flow" d="M20,190 H104" markerEnd="url(#hiw-arrow)" pathLength={1} />
+            {/* In: a conversation message reaches the supervisor first. */}
+            <path className="hiw-edge flow" d="M10,232 H80" markerEnd="url(#hiw-arrow)" pathLength={1} />
+            {/* The two supervisor routes: a direct answer, or research into the box. */}
+            <path className="hiw-edge flow" d="M144,272 V320" markerEnd="url(#hiw-arrow)" pathLength={1} />
+            <path className="hiw-edge flow" d="M204,232 H264" markerEnd="url(#hiw-arrow)" pathLength={1} />
+            {/* Plan into your review; the revise arc loops it back to re-plan. */}
+            <path className="hiw-edge flow" d="M386,232 H428" markerEnd="url(#hiw-arrow)" pathLength={1} />
+            <path className="hiw-edge" d="M488,192 C 480,150 380,150 348,190" markerEnd="url(#hiw-arrow)" pathLength={1} />
+            {/* Confirm fans the approved plan out to the researchers, and back in.
+                The flat lead off the review node gives 'confirm' a clean line to
+                sit on before the edges curve out to the rows. */}
             {rows.map((r, i) => (
-              <path key={"fo" + i} className="hiw-edge" d={`M224,190 C292,190 292,${r.cy} 348,${r.cy}`} pathLength={1} />
+              <path key={"fo" + i} className="hiw-edge" d={`M566,232 H640 C 660,232 660,${r.cy} 700,${r.cy}`} pathLength={1} />
             ))}
             {rows.map((r, i) => (
-              <path key={"fi" + i} className="hiw-edge" d={`M524,${r.cy} C566,${r.cy} 566,190 600,190`} pathLength={1} />
+              <path key={"fi" + i} className="hiw-edge" d={`M876,${r.cy} C 914,${r.cy} 914,232 938,232`} pathLength={1} />
             ))}
-            <path className="hiw-edge flow" d="M730,190 H760" markerEnd="url(#hiw-arrow)" pathLength={1} />
-            <path className="hiw-edge flow" d="M870,190 H958" markerEnd="url(#hiw-arrow)" pathLength={1} />
+            <path className="hiw-edge flow" d="M1068,232 H1094" markerEnd="url(#hiw-arrow)" pathLength={1} />
+            <path className="hiw-edge flow" d="M1210,232 H1366" markerEnd="url(#hiw-arrow)" pathLength={1} />
 
-            <text className="hiw-io" x="20" y="176">{L.question}</text>
-            <text className="hiw-io" x="978" y="176" textAnchor="end">{L.citedReport}</text>
-            <text className="hiw-stack-label" x="436" y="58" textAnchor="middle">{L.fanout}</text>
+            <text className="hiw-io" x="8" y="218">{L.message}</text>
+            <text className="hiw-io" x="144" y="340" textAnchor="middle">{L.directAnswer}</text>
+            <text className="hiw-io" x="1392" y="218" textAnchor="end">{L.citedReport}</text>
+            <text className="hiw-stack-label" x="788" y="120" textAnchor="middle">{L.fanout}</text>
+            <text className="hiw-gate-label" x="416" y="140" textAnchor="middle">{L.revise}</text>
+            <text className="hiw-gate-label" x="606" y="221" textAnchor="middle">{L.confirm}</text>
+
+            {/* Supervisor: the controller the user talks to, outside the orchestrator. */}
+            <g className={"hiw-node" + (active === "supervisor" ? " active" : "")} {...bind("supervisor", L.supervisor)}>
+              <rect x="84" y="192" width="120" height="80" rx="12" />
+              <text className="hiw-title" x="144" y="228" textAnchor="middle">{L.supervisor}</text>
+              <text className="hiw-role" x="144" y="248" textAnchor="middle">{L.supervisorRole}</text>
+            </g>
 
             <g className={"hiw-node" + (active === "plan" ? " active" : "")} {...bind("plan", L.plan)}>
-              <rect x="104" y="150" width="120" height="80" rx="12" />
-              <text className="hiw-title" x="164" y="186" textAnchor="middle">{L.plan}</text>
-              <text className="hiw-role" x="164" y="206" textAnchor="middle">{L.planRole}</text>
+              <rect x="270" y="192" width="116" height="80" rx="12" />
+              <text className="hiw-title" x="328" y="228" textAnchor="middle">{L.plan}</text>
+              <text className="hiw-role" x="328" y="248" textAnchor="middle">{L.planRole}</text>
+            </g>
+
+            {/* Human-in-the-loop review: accent-styled, with a revise loop to Plan. */}
+            <g className={"hiw-node hiw-human" + (active === "review" ? " active" : "")} {...bind("review", L.review)}>
+              <rect x="434" y="192" width="132" height="80" rx="12" />
+              <text className="hiw-title" x="500" y="228" textAnchor="middle">{L.review}</text>
+              <text className="hiw-role" x="500" y="248" textAnchor="middle">{L.reviewRole}</text>
             </g>
 
             {rows.map((r, i) => {
@@ -131,12 +158,12 @@ export function HowItWorks() {
                   className={"hiw-node" + (r.rag ? " rag" : "") + (active === id ? " active" : "")}
                   {...bind(id, r.rag ? L.documents : L.researcher)}
                 >
-                  <rect x="348" y={r.cy - 22} width="176" height="44" rx="11" />
-                  <text className="hiw-title sm" x="436" y={r.cy + (r.rag ? -2 : 5)} textAnchor="middle">
+                  <rect x="700" y={r.cy - 22} width="176" height="44" rx="11" />
+                  <text className="hiw-title sm" x="788" y={r.cy + (r.rag ? -2 : 5)} textAnchor="middle">
                     {r.rag ? L.documents : L.researcher}
                   </text>
                   {r.rag && (
-                    <text className="hiw-role" x="436" y={r.cy + 13} textAnchor="middle">
+                    <text className="hiw-role" x="788" y={r.cy + 13} textAnchor="middle">
                       {L.docRole}
                     </text>
                   )}
@@ -145,15 +172,15 @@ export function HowItWorks() {
             })}
 
             <g className={"hiw-node" + (active === "consolidate" ? " active" : "")} {...bind("consolidate", L.consolidate)}>
-              <rect x="600" y="150" width="130" height="80" rx="12" />
-              <text className="hiw-title" x="665" y="186" textAnchor="middle">{L.consolidate}</text>
-              <text className="hiw-role" x="665" y="206" textAnchor="middle">{L.consolidateRole}</text>
+              <rect x="938" y="192" width="130" height="80" rx="12" />
+              <text className="hiw-title" x="1003" y="228" textAnchor="middle">{L.consolidate}</text>
+              <text className="hiw-role" x="1003" y="248" textAnchor="middle">{L.consolidateRole}</text>
             </g>
 
             <g className={"hiw-node" + (active === "write" ? " active" : "")} {...bind("write", L.write)}>
-              <rect x="760" y="150" width="110" height="80" rx="12" />
-              <text className="hiw-title" x="815" y="186" textAnchor="middle">{L.write}</text>
-              <text className="hiw-role" x="815" y="206" textAnchor="middle">{L.writeRole}</text>
+              <rect x="1098" y="192" width="112" height="80" rx="12" />
+              <text className="hiw-title" x="1154" y="228" textAnchor="middle">{L.write}</text>
+              <text className="hiw-role" x="1154" y="248" textAnchor="middle">{L.writeRole}</text>
             </g>
           </svg>
 
@@ -162,7 +189,7 @@ export function HowItWorks() {
             <span className="hiw-stack-orch">{L.orchestrator}</span>
             <ol className="hiw-stack">
               {t.hiw.stack.map((s, i) => (
-                <li key={i} className={i === 2 ? "rag" : undefined}>
+                <li key={i} className={i === 3 ? "rag" : undefined}>
                   <b>{s.lead}</b>
                   {s.rest}
                 </li>
