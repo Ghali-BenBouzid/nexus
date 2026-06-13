@@ -97,6 +97,11 @@ one, renumber, or cite a source a point did not provide. If a point carries no \
 number, state its content without a citation rather than guessing one. Source \
 numbers start at 1; there is no source [0].
 
+Square brackets are RESERVED for these citation markers. NEVER put anything else \
+in square brackets: not years, not list indices, not asides or placeholders. Use \
+parentheses for an aside, and write code spans in backticks so any brackets inside \
+them are clearly code.
+
 Do NOT add a References, Sources, or Further Reading section. The source list is \
 rendered separately from your prose.
 </citations>
