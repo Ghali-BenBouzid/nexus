@@ -410,7 +410,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 
 /* How it works: stepped pipeline diagram, revealed on scroll */
 .hiw { margin: 0; }
-.hiw-svg { display: block; width: 100%; height: auto; max-width: 940px; margin: 0 auto; overflow: visible; }
+.hiw-svg { display: block; width: 100%; height: auto; max-width: 1060px; margin: 0 auto; overflow: visible; }
 .hiw-orch { fill: none; stroke: var(--line-strong); stroke-dasharray: 5 6; }
 .hiw-orch-label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; fill: var(--accent-2); }
 .hiw-edge { fill: none; stroke: var(--line-strong); stroke-width: 1.6; }
@@ -426,6 +426,13 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .hiw-title { font-family: var(--font-display); font-size: 16px; font-weight: 600; fill: var(--fg); }
 .hiw-title.sm { font-size: 14px; }
 .hiw-role { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+/* Human-in-the-loop: the review step is you, not the machine, so it carries the
+   accent fill to stand out, with a 'revise' arc that loops it back to Plan. */
+.hiw-human rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.hiw-human:hover rect, .hiw-human.active rect { fill: var(--accent-soft); stroke: var(--accent); }
+/* Small mono labels riding the confirm / revise edges. */
+.hiw-gate-label { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; fill: var(--accent-2); }
 /* Fixed-height slot: the caption text changes on hover but the box never does,
    so the centered graph and section title above it never reflow (otherwise a tall
    caption pushes the hovered node out from under the cursor and it stutters). */
@@ -435,17 +442,17 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 /* mobile fallback stack (hidden on desktop) */
 .hiw-stack-wrap { display: none; }
 @media (prefers-reduced-motion: no-preference) {
-  .hiw .hiw-node, .hiw .hiw-io, .hiw .hiw-orch-label, .hiw .hiw-stack-label, .hiw .hiw-orch { opacity: 0; }
+  .hiw .hiw-node, .hiw .hiw-gate, .hiw .hiw-io, .hiw .hiw-orch-label, .hiw .hiw-stack-label, .hiw .hiw-gate-label, .hiw .hiw-orch { opacity: 0; }
   .hiw .hiw-edge { opacity: 0; stroke-dasharray: 1; stroke-dashoffset: 1; }
   .hiw.in .hiw-orch { animation: hiwFade 0.5s var(--ease) both; }
   .hiw.in .hiw-edge { animation: hiwDraw 0.8s var(--ease) both 0.15s; }
-  .hiw.in .hiw-node { animation: hiwUp 0.5s var(--ease) both 0.25s; }
-  .hiw.in .hiw-io, .hiw.in .hiw-orch-label, .hiw.in .hiw-stack-label { animation: hiwFade 0.5s var(--ease) both 0.45s; }
+  .hiw.in .hiw-node, .hiw.in .hiw-gate { animation: hiwUp 0.5s var(--ease) both 0.25s; }
+  .hiw.in .hiw-io, .hiw.in .hiw-orch-label, .hiw.in .hiw-stack-label, .hiw.in .hiw-gate-label { animation: hiwFade 0.5s var(--ease) both 0.45s; }
 }
 /* Safety net: if scripting is unavailable the IntersectionObserver never adds
    `.in`, so force the graph visible rather than shipping a blank figure. */
 @media (scripting: none) {
-  .hiw .hiw-node, .hiw .hiw-io, .hiw .hiw-orch-label, .hiw .hiw-stack-label, .hiw .hiw-orch, .hiw .hiw-edge {
+  .hiw .hiw-node, .hiw .hiw-gate, .hiw .hiw-io, .hiw .hiw-orch-label, .hiw .hiw-stack-label, .hiw .hiw-gate-label, .hiw .hiw-orch, .hiw .hiw-edge {
     opacity: 1 !important; stroke-dashoffset: 0 !important;
   }
 }
