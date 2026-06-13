@@ -2,7 +2,11 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 
-from app.agents import orchestrator
+from pydantic import ValidationError
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.agents import orchestrator, writer
+from app.agents.consolidator import merge_results
 from app.agents.orchestrator import OrchestratorCancelledError, OrchestratorError
 from app.agents.planner import PlannerError, plan
 from app.agents.provider import LLMProvider
@@ -11,7 +15,7 @@ from app.agents.search_cache import CachingSearchBackend
 from app.agents.tools import FetchPage, SearchBackend, WebSearch
 from app.core.config import settings
 from app.db import session as db_session
-from app.models.query import QueryStatus
+from app.models.query import Query, QueryStatus
 from app.research import repository
 
 logger = logging.getLogger(__name__)
@@ -170,6 +174,68 @@ async def run_plan_job(
             # Like the research jobs: never leave a stale cancel request behind, or a
             # later confirmed run for this id would abort the moment it starts.
             _cancel_requested.discard(query_id)
+
+
+async def run_compose_job(
+    query_id: int,
+    instructions: str,
+    *,
+    source_query_ids: list[int],
+    provider: LLMProvider,
+) -> None:
+    """Compose a new report by merging the structured results of the conversation's
+    existing reports and re-rendering them (guided by ``instructions``) into one
+    longer report. No web search: it reuses the sources already gathered, so
+    citations stay code-owned. Resolves the status to complete or failed."""
+    async with db_session.SessionLocal() as db:
+        await repository.set_status(db, query_id, QueryStatus.running)
+        try:
+            results = await _load_results(db, source_query_ids)
+            if not results:
+                await repository.fail_query(
+                    db, query_id, "There were no reports to compose."
+                )
+                return
+            merged = merge_results(results)
+            emit = _EventSink(query_id)
+            async with provider:
+                report = await asyncio.wait_for(
+                    writer.write(
+                        merged, provider=provider, emit=emit, guidance=instructions
+                    ),
+                    timeout=settings.global_timeout,
+                )
+            # A stop during the (uncancellable) write tail must still prevent the
+            # composed report from being saved as finished.
+            if query_id in _cancel_requested:
+                await repository.fail_query(db, query_id, "Research was stopped.")
+                return
+            await repository.complete_query(db, query_id, report, merged)
+        except TimeoutError:
+            logger.warning("compose job timed out for query %s", query_id)
+            await repository.fail_query(db, query_id, "Composing the report timed out.")
+        except Exception:
+            logger.exception("compose job crashed for query %s", query_id)
+            await repository.fail_query(
+                db, query_id, "Composing the report failed due to an internal error."
+            )
+        finally:
+            _cancel_requested.discard(query_id)
+
+
+async def _load_results(db: AsyncSession, query_ids: list[int]) -> list[ResearchResult]:
+    """Rehydrate the stored ResearchResult of each source query, skipping any with
+    no result or a malformed blob."""
+    results: list[ResearchResult] = []
+    for query_id in query_ids:
+        query = await db.get(Query, query_id)
+        if query is None or not query.result:
+            continue
+        try:
+            results.append(ResearchResult(**query.result))
+        except ValidationError:
+            logger.warning("skipping unreadable result blob for query %s", query_id)
+    return results
 
 
 async def run_research_from_plan_job(

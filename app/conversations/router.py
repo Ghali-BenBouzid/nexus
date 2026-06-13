@@ -29,6 +29,7 @@ def _message_query(query: Query | None) -> MessageQuery | None:
     result = _load_result(query.result, query.id)
     return MessageQuery(
         status=query.status,
+        title=query.title,
         report=query.report,
         error=query.error,
         plan=query.plan,

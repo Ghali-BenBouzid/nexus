@@ -43,6 +43,10 @@ class Settings(BaseSettings):
     planner_retry_cap: int = 2
     per_researcher_timeout: float = 150.0  # seconds
     global_timeout: float = 300.0  # seconds, whole-job backstop
+    # Supervisor tool-loop budget: how many gather-then-decide rounds it may take
+    # before it must commit. Kept low: it runs synchronously in the request, so a
+    # follow-up stays responsive; it usually decides in one round.
+    supervisor_max_iters: int = 4
 
     # transient-error retry/backoff for provider & search calls. Also re-rolls a
     # stochastic 400 tool_use_failed (a malformed tool call usually parses on a

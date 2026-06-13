@@ -140,6 +140,7 @@ async def get_query(
     return QueryDetail(
         id=query.id,
         prompt=query.prompt,
+        title=query.title,
         status=query.status,
         report=query.report,
         error=query.error,

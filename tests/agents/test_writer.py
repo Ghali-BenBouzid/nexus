@@ -212,3 +212,21 @@ async def test_write_short_circuits_when_no_points() -> None:
     assert "No relevant information" in report.content
     assert report.failed_subquestions == ["nothing found"]
     assert provider.calls == []
+
+
+async def test_write_includes_guidance_in_the_prompt() -> None:
+    # The compose path passes shaping guidance; it must reach the model's prompt.
+    result = ResearchResult(
+        points=[
+            ResearchPoint(sub_question="q", claims=[Claim(text="ans", source_ids=[1])])
+        ],
+        sources=[Source(title="A", url="http://a")],
+        gaps=[],
+    )
+    provider = FakeLLMProvider(responses=[LLMResponse(text="Merged report [1]")])
+
+    report = await write(result, provider=provider, guidance="merge both and go deeper")
+
+    assert report.content == "Merged report [1]"
+    rendered = provider.calls[0][0][1].content
+    assert "merge both and go deeper" in rendered

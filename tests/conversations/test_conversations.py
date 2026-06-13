@@ -20,8 +20,8 @@ class _AnswerProvider:
             tool_calls=[
                 ToolCall(
                     id="d",
-                    name="submit_decision",
-                    args={"action": "answer", "reply": "Answer from the report."},
+                    name="answer",
+                    args={"reply": "Answer from the report."},
                 )
             ]
         )
@@ -44,6 +44,10 @@ async def test_create_conversation_plans_then_confirms(
     assert body["messages"][0]["content"] == "first question"
     query_id = body["messages"][1]["query_id"]
     assert query_id is not None
+
+    # the supervisor named the report; the conversation takes that title too
+    assert body["title"] == "Research Topic"
+    assert body["messages"][1]["query"]["title"] == "Research Topic"
 
     # human-in-the-loop: the plan job ran and the turn is awaiting confirmation
     detail = await client.get(f"/conversations/{body['id']}", headers=auth_headers)
@@ -158,6 +162,66 @@ async def test_supervisor_answers_from_context_without_research(
     assert last["role"] == "assistant"
     assert last["query_id"] is None
     assert last["content"] == "Answer from the report."
+
+
+class _ComposeProvider:
+    """Supervisor that routes to compose_report; also answers the writer call the
+    compose job makes, with the merged report text."""
+
+    async def __aenter__(self) -> "_ComposeProvider":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def generate(self, messages, tools=None, tool_choice="auto") -> LLMResponse:
+        system = messages[0].content or ""
+        if "controller of a research assistant" in system:
+            return LLMResponse(
+                tool_calls=[
+                    ToolCall(
+                        id="c",
+                        name="compose_report",
+                        args={
+                            "instructions": "merge them into one",
+                            "title": "Combined Report",
+                        },
+                    )
+                ]
+            )
+        # the writer call inside the compose job
+        return LLMResponse(text="MERGED REPORT")
+
+
+async def test_supervisor_composes_a_merged_report(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    # First message researches and completes; the follow-up asks to merge, so the
+    # supervisor composes a NEW report artifact (no new research run).
+    _use_fake_pipeline(sub_questions=["q1"])
+    created = await client.post(
+        "/conversations", headers=auth_headers, json={"prompt": "first"}
+    )
+    conversation_id = created.json()["id"]
+    query_id = created.json()["messages"][1]["query_id"]
+    await client.post(f"/research/query/{query_id}/confirm", headers=auth_headers)
+
+    app.dependency_overrides[get_provider] = _ComposeProvider
+    followed = await client.post(
+        f"/conversations/{conversation_id}/messages",
+        headers=auth_headers,
+        json={"content": "merge the reports into a longer one"},
+    )
+    last = followed.json()["messages"][-1]
+    assert last["role"] == "assistant"
+    assert last["query_id"] is not None  # compose carries a report artifact
+
+    # the compose job ran during the request cycle and produced the merged report
+    detail = await client.get(f"/conversations/{conversation_id}", headers=auth_headers)
+    composed = detail.json()["messages"][-1]["query"]
+    assert composed["status"] == "complete"
+    assert composed["report"] == "MERGED REPORT"
+    assert composed["title"] == "Combined Report"
 
 
 async def test_conversation_hidden_from_other_users(client: AsyncClient) -> None:

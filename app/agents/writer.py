@@ -46,6 +46,10 @@ provided points. Do not add information, draw on outside knowledge, or speculate
 Write thoroughly and in depth, with an unbiased, journalistic tone. Today's date \
 is {current_date}; treat it as the present when findings refer to recent or \
 current events.
+
+Write the report in the same language as the points and the user's question. If \
+the findings are in French, write the entire report in French; if in English, in \
+English. Match the language of the research, not this instruction.
 </goal>
 
 <format_rules>
@@ -140,10 +144,17 @@ async def write(
     *,
     provider: LLMProvider,
     emit: Emit = _noop,
+    guidance: str = "",
 ) -> Report:
     """Render a ResearchResult into a cited prose Report via one LLM call. The
     code owns the sources and their numbers; the writer only weaves prose and
-    preserves the supplied [n] markers."""
+    preserves the supplied [n] markers.
+
+    ``guidance`` carries an extra instruction from the user (used when the
+    supervisor composes a longer report by merging existing ones): how to shape or
+    expand the report. It never licenses new facts: the writer stays grounded in
+    the provided points.
+    """
     if not result.points:
         return Report(
             content="No relevant information was found for this query.",
@@ -152,9 +163,17 @@ async def write(
         )
 
     await emit(AgentEvent(type="writer_start", message="Writing report"))
+    user_content = _render(result)
+    if guidance.strip():
+        user_content += (
+            "\n\n# How to shape this report\n"
+            f"{guidance.strip()}\n\n"
+            "Follow this shaping instruction, but add no facts beyond the points "
+            "above."
+        )
     messages = [
         Message(role="system", content=_system_prompt()),
-        Message(role="user", content=_render(result)),
+        Message(role="user", content=user_content),
     ]
     response = await retry_async(
         lambda: provider.generate(messages),

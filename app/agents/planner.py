@@ -27,6 +27,9 @@ def _system_prompt(cap: int) -> str:
         "- Target distinct facets of the question (for example definitions, "
         "causes, effects, comparisons, current state), not rephrasings of the "
         "same ask.\n"
+        "- Write the sub-questions in the same language as the user's question "
+        "(French question -> French sub-questions), so the research runs in that "
+        "language.\n"
         f"- Use at most {cap} sub-questions. Call submit_plan with the list."
     )
 

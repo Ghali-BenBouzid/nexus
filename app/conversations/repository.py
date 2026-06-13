@@ -64,6 +64,16 @@ async def add_message(
     return message
 
 
+async def set_title(db: AsyncSession, conversation_id: int, title: str) -> None:
+    """Name the conversation (once), so the sidebar shows a real title instead of
+    the fallback. Called with the first report's supervisor-given title."""
+    conversation = await db.get(Conversation, conversation_id)
+    if conversation is None:
+        return
+    conversation.title = title
+    await db.commit()
+
+
 async def list_messages(db: AsyncSession, conversation_id: int) -> list[Message]:
     """Messages in order (id is monotonic)."""
     result = await db.execute(

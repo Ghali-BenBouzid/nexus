@@ -24,8 +24,12 @@ async def reap_interrupted_queries(db: AsyncSession) -> int:
     return result.rowcount or 0
 
 
-async def create_pending_query(db: AsyncSession, user_id: int, prompt: str) -> Query:
-    query = Query(user_id=user_id, prompt=prompt, status=QueryStatus.pending)
+async def create_pending_query(
+    db: AsyncSession, user_id: int, prompt: str, title: str | None = None
+) -> Query:
+    query = Query(
+        user_id=user_id, prompt=prompt, title=title, status=QueryStatus.pending
+    )
     db.add(query)
     await db.commit()
     await db.refresh(query)

@@ -31,8 +31,8 @@ class RoleProvider:
                 tool_calls=[
                     ToolCall(
                         id="d",
-                        name="submit_decision",
-                        args={"action": "research", "query": "research"},
+                        name="research",
+                        args={"query": "research", "title": "Research Topic"},
                     )
                 ]
             )
