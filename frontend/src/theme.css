@@ -1049,7 +1049,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 
   /* Recent: an opaque left drawer over the thread (so the list text never bleeds
      through to the conversation), closed by default (corner opens it). */
-  .chat-history { background: var(--surface-solid); position: fixed; left: 0; top: 0; bottom: 0; z-index: 45;
+  .chat-history { background: var(--bg); position: fixed; left: 0; top: 0; bottom: 0; z-index: 45;
     width: min(86vw, 320px); box-shadow: var(--shadow); }
   .chat-history.collapsed { display: none; }
 
