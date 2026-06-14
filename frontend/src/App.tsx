@@ -17,6 +17,7 @@ import {
 } from "./lib/api";
 import { t } from "./lib/i18n";
 import { outcomeFor } from "./lib/outcome";
+import { getRoute, navigate, onPopState, type Route } from "./lib/router";
 import {
   applyBackground,
   applyFont,
@@ -36,7 +37,9 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(
     () => (document.documentElement.getAttribute("data-theme") as Theme) || "dark",
   );
-  const [view, setView] = useState<View>("home");
+  // The URL is the source of truth for the view; a deep link or reload on
+  // /chat/:id starts on the chat view and the conversation is loaded on mount.
+  const [view, setView] = useState<View>(() => getRoute().view);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [layout, setLayout] = useState<LayoutMode>("thread");
   const [focusedId, setFocusedId] = useState<number | null>(null);
@@ -191,6 +194,47 @@ export default function App() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Keep the view in sync with the URL on back/forward (and the phone back
+  // gesture). A ref holds the latest handler so the listener is registered once
+  // but always reads current state.
+  const syncRoute = (route: Route) => {
+    if (route.view === "home") {
+      setView("home");
+      window.scrollTo({ top: 0 });
+      return;
+    }
+    if (route.conversationId == null) {
+      setView("chat"); // /chat: a fresh chat
+      return;
+    }
+    if (route.conversationId === activeConversationId) {
+      setView("chat"); // already loaded; just show it again
+      return;
+    }
+    if (LIVE_MODE) openHistory(route.conversationId);
+    else {
+      navigate("/", { replace: true });
+      setView("home");
+    }
+  };
+  const syncRouteRef = useRef(syncRoute);
+  syncRouteRef.current = syncRoute;
+
+  // On mount, load a deep-linked /chat/:id (redirecting home if it isn't the
+  // user's), then wire popstate to the same sync.
+  useEffect(() => {
+    const route = getRoute();
+    if (route.view === "chat" && route.conversationId != null) {
+      if (LIVE_MODE) openHistory(route.conversationId);
+      else {
+        navigate("/", { replace: true });
+        setView("home");
+      }
+    }
+    return onPopState((r) => syncRouteRef.current(r));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Update only one turn; turns run independently and never clobber each other.
   const patchTurn = (id: number, fn: (t: Turn) => Turn) =>
     setTurns((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
@@ -205,7 +249,12 @@ export default function App() {
     },
     isCancelled: () => cancelled.current.has(id),
     onQueryId: (qid) => patchTurn(id, (t) => ({ ...t, queryId: qid })),
-    onConversation: (cid) => setActiveConversation(cid),
+    onConversation: (cid) => {
+      setActiveConversation(cid);
+      // The fresh /chat now has a real id: rewrite the URL in place (no extra
+      // history entry) so a reload or back/forward resolves to this conversation.
+      navigate(`/chat/${cid}`, { replace: true });
+    },
     onTitle: (title) => patchTurn(id, (t) => ({ ...t, title })),
   });
 
@@ -253,6 +302,7 @@ export default function App() {
   function heroSubmit(prompt: string) {
     turns.forEach((t) => cancelled.current.add(t.id));
     setActiveConversation(null);
+    navigate("/chat"); // a fresh chat; becomes /chat/:id once the backend assigns one
     startResearch(prompt, { fresh: true });
   }
 
@@ -392,6 +442,7 @@ export default function App() {
   const chooseLayout = (m: LayoutMode) => setLayout(m);
 
   function goHome() {
+    navigate("/");
     setView("home");
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
@@ -401,7 +452,14 @@ export default function App() {
   async function openHistory(conversationId: number) {
     setHistoryOpen(false);
     const conv = await loadConversation(conversationId);
-    if (!conv) return;
+    // Missing or not owned by this user: the API 404s and we land back on home
+    // rather than showing an empty chat for a conversation that isn't theirs.
+    if (!conv) {
+      navigate("/", { replace: true });
+      setView("home");
+      return;
+    }
+    navigate(`/chat/${conv.id}`);
     turns.forEach((t) => {
       if (t.status === "running" || t.status === "pending") cancelled.current.add(t.id);
     });
@@ -420,6 +478,7 @@ export default function App() {
     setFocusedId(null);
     setLayout("thread");
     setActiveConversation(null); // a fresh chat starts a new conversation
+    navigate("/chat"); // becomes /chat/:id once the backend assigns one
     setView("chat"); // land on a fresh, empty conversation, not the hero
   }
 
