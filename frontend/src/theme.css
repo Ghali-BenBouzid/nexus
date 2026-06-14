@@ -1011,8 +1011,11 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
      Only the conversation thread scrolls; the prompt bar and the corner buttons
      stay fixed. The Recent column is a left drawer, the Artifacts list a top
      sheet, and a report a bottom sheet drawn up over everything. */
-  /* Extra nav clearance so the in-flow sub-bar sits cleanly below the nav. */
-  .chat { padding-top: 84px; }
+  /* Nav clearance so the in-flow sub-bar sits flush below the nav (no overlap). */
+  .chat { padding-top: 80px; }
+  /* The two parts of the header read as one unit: drop the nav's own divider so
+     only the sub-bar's bottom edge separates the header from the thread. */
+  .nav.nav-chat { border-bottom-color: transparent; }
   .chat-main { flex-direction: column; position: relative; }
   .resizer, .artifact-fab { display: none; }
 
@@ -1048,7 +1051,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 
   /* Artifacts list: a sheet dropping from the top, below the sub-bar. It shows
      about one and a half entries, then the body scrolls to the rest. */
-  .artifact-panel--list { position: fixed; left: 0; right: 0; top: 116px; width: auto;
+  .artifact-panel--list { position: fixed; left: 0; right: 0; top: 114px; width: auto;
     z-index: 30; border: 1px solid var(--line);
     border-radius: 0 0 16px 16px; box-shadow: var(--shadow);
     background: color-mix(in srgb, var(--panel) 95%, transparent); backdrop-filter: blur(16px) saturate(1.4);
@@ -1057,7 +1060,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 
   /* Report: a sheet drawn up from the bottom, over the (still fixed) prompt bar,
      leaving a thin top strip for the Recent button. No resize, close with the X. */
-  .artifact-panel--reader { position: fixed; left: 0; right: 0; top: 128px; bottom: 0; width: auto;
+  .artifact-panel--reader { position: fixed; left: 0; right: 0; top: 124px; bottom: 0; width: auto;
     z-index: 30; border-top-left-radius: 18px; border-top-right-radius: 18px; box-shadow: var(--shadow);
     background: color-mix(in srgb, var(--panel) 97%, transparent); backdrop-filter: blur(18px) saturate(1.4);
     animation: sheetUp 0.26s var(--ease); }
@@ -1105,9 +1108,10 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
      viewport and clearly outsizes the description, which steps down. */
   .hero h1 { font-size: clamp(34px, 10vw, 48px); margin-bottom: 16px; }
   .hero-sub { font-size: 14px; }
-  /* Keep the hero prompt placeholder (incl. the longer French copy) on one line. */
-  .prompt { padding: 5px 6px 5px 12px; }
-  .prompt textarea { font-size: 14px; padding: 5px 10px; }
+  /* Keep the hero prompt placeholder (incl. the longer French copy) on one line so
+     it stays vertically centered instead of wrapping into a clipped second line. */
+  .prompt { padding: 5px 6px 5px 10px; }
+  .prompt textarea { font-size: 13.5px; line-height: 1.4; padding: 6px 8px; }
   /* Comfortable thumb targets (>=40px) for the controls a mobile user taps. */
   .cinput-send { width: 40px; height: 40px; }
   .icon-btn, .theme-toggle, .drawer-x { width: 40px; height: 40px; }
