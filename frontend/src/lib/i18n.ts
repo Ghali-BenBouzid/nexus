@@ -8,12 +8,6 @@ export type Lang = "fr" | "en";
 
 const STORAGE_KEY = "nexus-lang";
 
-function browserPrefersFrench(): boolean {
-  if (typeof navigator === "undefined") return false;
-  const primary = navigator.language || (navigator.languages && navigator.languages[0]) || "en";
-  return primary.toLowerCase().startsWith("fr");
-}
-
 function storedLang(): Lang | null {
   try {
     const v = localStorage.getItem(STORAGE_KEY);
@@ -26,8 +20,8 @@ function storedLang(): Lang | null {
 function detect(): Lang {
   // A ?lang=fr / ?lang=en query param wins (handy for previewing). Otherwise
   // English is the default for everyone; French is used only when the visitor
-  // has explicitly chosen it. French-browser visitors are *offered* French via
-  // the language switch (see canOfferFrench), never switched automatically.
+  // has explicitly chosen it via the language switch, never switched
+  // automatically from the browser locale.
   if (typeof window !== "undefined") {
     const forced = new URLSearchParams(window.location.search).get("lang");
     if (forced === "fr" || forced === "en") return forced;
@@ -36,9 +30,6 @@ function detect(): Lang {
 }
 
 export const lang: Lang = detect();
-// Whether to surface the French/English switch at all: only French-browser
-// visitors (or anyone already viewing French) ever see it.
-export const canOfferFrench: boolean = browserPrefersFrench() || lang === "fr";
 
 if (typeof document !== "undefined") document.documentElement.lang = lang;
 

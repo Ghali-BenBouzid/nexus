@@ -1,5 +1,5 @@
 import { I } from "../icons";
-import { canOfferFrench, lang, setLang, t } from "../lib/i18n";
+import { lang, setLang, t } from "../lib/i18n";
 import type { Theme } from "../types";
 import { NexusLockup } from "./NexusLogo";
 
@@ -38,15 +38,13 @@ export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory, 
           </div>
         )}
         <div className="nav-right">
-          {canOfferFrench && (
-            <button
-              className="nav-link nav-lang"
-              onClick={() => setLang(lang === "en" ? "fr" : "en")}
-              title={lang === "en" ? "Voir en français" : "View in English"}
-            >
-              {lang === "en" ? "Français" : "English"}
-            </button>
-          )}
+          <button
+            className="nav-link nav-lang"
+            onClick={() => setLang(lang === "en" ? "fr" : "en")}
+            title={lang === "en" ? "Voir en français" : "View in English"}
+          >
+            {lang === "en" ? "Français" : "English"}
+          </button>
           <button className="theme-toggle" onClick={toggleTheme} aria-label={t.nav.theme} title={t.nav.theme}>
             {theme === "dark" ? I.sun : I.moon}
           </button>
