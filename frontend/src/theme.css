@@ -1011,8 +1011,9 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
      Only the conversation thread scrolls; the prompt bar and the corner buttons
      stay fixed. The Recent column is a left drawer, the Artifacts list a top
      sheet, and a report a bottom sheet drawn up over everything. */
-  /* Nav clearance so the in-flow sub-bar sits flush below the nav. */
-  .chat { padding-top: 80px; }
+  /* Nav clearance: tightened so the in-flow sub-bar (and its icons) sit ~10px
+     higher, closing the gap below the nav. */
+  .chat { padding-top: 70px; }
   /* The two parts of the header read as one unit: drop the nav's own divider so
      only the sub-bar's bottom edge separates the header from the thread. */
   .nav.nav-chat { border-bottom-color: transparent; }
@@ -1045,14 +1046,16 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   .chat-corner-right.active { color: var(--accent); }
 
   /* Recent: an opaque left drawer over the thread (so the list text never bleeds
-     through to the conversation), closed by default (corner opens it). */
+     through to the conversation), closed by default (corner opens it). It slides
+     in from the left, the same motion as the landing page history drawer. */
   .chat-history { background: var(--bg); position: fixed; left: 0; top: 0; bottom: 0; z-index: 45;
-    width: min(86vw, 320px); box-shadow: var(--shadow); }
-  .chat-history.collapsed { display: none; }
+    width: min(86vw, 320px); box-shadow: var(--shadow);
+    transform: translateX(0); transition: transform 0.28s var(--ease); }
+  .chat-history.collapsed { transform: translateX(-100%); box-shadow: none; }
 
   /* Artifacts list: a sheet dropping from the top, below the sub-bar. It shows
      about one and a half entries, then the body scrolls to the rest. */
-  .artifact-panel--list { position: fixed; left: 0; right: 0; top: 108px; width: auto;
+  .artifact-panel--list { position: fixed; left: 0; right: 0; top: 98px; width: auto;
     z-index: 30; border: 1px solid var(--line);
     border-radius: 0 0 16px 16px; box-shadow: var(--shadow);
     background: color-mix(in srgb, var(--panel) 95%, transparent); backdrop-filter: blur(16px) saturate(1.4);
@@ -1061,7 +1064,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 
   /* Report: a sheet drawn up from the bottom, over the (still fixed) prompt bar,
      leaving a thin top strip for the Recent button. No resize, close with the X. */
-  .artifact-panel--reader { position: fixed; left: 0; right: 0; top: 118px; bottom: 0; width: auto;
+  .artifact-panel--reader { position: fixed; left: 0; right: 0; top: 108px; bottom: 0; width: auto;
     z-index: 30; border-top-left-radius: 18px; border-top-right-radius: 18px; box-shadow: var(--shadow);
     background: color-mix(in srgb, var(--panel) 97%, transparent); backdrop-filter: blur(18px) saturate(1.4);
     animation: sheetUp 0.26s var(--ease); }
