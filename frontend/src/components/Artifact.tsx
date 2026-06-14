@@ -77,11 +77,12 @@ type ArtifactProps = {
   onRefresh: (turn: Turn) => void;
   onBack?: () => void; // return to the artifact list (reader view)
   onClose?: () => void; // collapse the whole panel
+  isMobile?: boolean; // mobile: one X that closes the drawn-up report back to the list
 };
 
 // The output panel: the rendered report and its sources, presented as a single
 // coherent document (the chat thread carries the live agent activity instead).
-export function Artifact({ turn, onRefresh, onBack, onClose }: ArtifactProps) {
+export function Artifact({ turn, onRefresh, onBack, onClose, isMobile }: ArtifactProps) {
   const [activeCite, setActiveCite] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const result = turn.result;
@@ -105,16 +106,19 @@ export function Artifact({ turn, onRefresh, onBack, onClose }: ArtifactProps) {
       <div className="artifact">
         <div className="art-head">
           <div className="art-head-title">
-            {onBack && (
+            {onBack && !isMobile && (
               <button className="icon-btn" title={t.artifact.back} onClick={onBack}>{I.arrowLeft}</button>
             )}
             {I.doc}<span>{t.artifact.report}</span>
           </div>
-          {onClose && (
-            <div className="art-head-actions">
+          <div className="art-head-actions">
+            {!isMobile && onClose && (
               <button className="icon-btn" title={t.artifact.closePanel} onClick={onClose}>{I.arrowRight}</button>
-            </div>
-          )}
+            )}
+            {isMobile && (
+              <button className="icon-btn" title={t.artifact.closePanel} onClick={onBack ?? onClose}>{I.close}</button>
+            )}
+          </div>
         </div>
         <div className="art-empty">{msg}</div>
       </div>
@@ -125,7 +129,7 @@ export function Artifact({ turn, onRefresh, onBack, onClose }: ArtifactProps) {
     <div className="artifact">
       <div className="art-head">
         <div className="art-head-title">
-          {onBack && (
+          {onBack && !isMobile && (
             <button className="icon-btn" title={t.artifact.back} onClick={onBack}>{I.arrowLeft}</button>
           )}
           {I.doc}<span>{turn.title ?? t.artifact.report}</span>
@@ -137,8 +141,11 @@ export function Artifact({ turn, onRefresh, onBack, onClose }: ArtifactProps) {
           <button className="icon-btn" title={t.artifact.refresh} onClick={() => onRefresh(turn)}>
             {I.refresh}
           </button>
-          {onClose && (
+          {!isMobile && onClose && (
             <button className="icon-btn" title={t.artifact.closePanel} onClick={onClose}>{I.arrowRight}</button>
+          )}
+          {isMobile && (
+            <button className="icon-btn" title={t.artifact.closePanel} onClick={onBack ?? onClose}>{I.close}</button>
           )}
         </div>
       </div>

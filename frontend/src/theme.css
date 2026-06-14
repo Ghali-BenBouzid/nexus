@@ -1010,15 +1010,63 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   .hero { min-height: 100svh; padding-top: 64px; padding-bottom: 56px; }
   /* All three stack columns stay on one row; tighten the gap to fit. */
   .stack-grid { gap: 16px 14px; }
-  /* the report panel stacks under the chat; the Recent column becomes an overlay. */
+  /* ---- Mobile chat workspace ----
+     Only the conversation thread scrolls; the prompt bar and the corner buttons
+     stay fixed. The Recent column is a left drawer, the Artifacts list a top
+     sheet, and a report a bottom sheet drawn up over everything. */
   .chat-main { flex-direction: column; position: relative; }
-  .artifact-panel { flex: none; width: auto !important; max-height: 55vh; border-top: 1px solid var(--line); }
-  .resizer { display: none; }
-  /* Open overlays the conversation; collapsed stays an in-flow slim rail so the
-     toggle is always reachable without squeezing the messages. */
-  .chat-history { position: absolute; left: 0; top: 0; bottom: 0; z-index: 25; width: 280px; box-shadow: var(--shadow); }
-  .chat-history.collapsed { position: static; width: 56px; box-shadow: none; }
+  .resizer, .artifact-fab { display: none; }
+
+  /* Leave room at the top for the corner buttons and at the bottom for the
+     fixed composer; the thread itself is the only scrolling surface. */
+  .chat-col { padding: 56px 18px 96px; }
+
+  /* Composer pinned to the bottom, above the thread and below the sheets. */
+  .composer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
+    padding: 8px 0 12px; border-top: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(14px) saturate(1.4); }
+  .composer-inner { padding-inline: 16px; }
+  .jump-latest { bottom: 92px; }
+
+  /* Fixed corner buttons: Recent (left), Artifacts (right, highlights when open). */
+  .chat-corner { position: fixed; top: 78px; z-index: 40; width: 40px; height: 40px;
+    display: grid; place-items: center; cursor: pointer; color: var(--muted);
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    box-shadow: var(--shadow); backdrop-filter: blur(12px); }
+  .chat-corner svg { width: 19px; height: 19px; }
+  .chat-corner-left { left: 14px; }
+  .chat-corner-right { right: 14px; }
+  .chat-corner-right.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+
+  /* Recent: a left drawer over the thread, closed by default (corner opens it). */
+  .chat-history { position: fixed; left: 0; top: 0; bottom: 0; z-index: 45;
+    width: min(86vw, 320px); box-shadow: var(--shadow); }
+  .chat-history.collapsed { display: none; }
+
+  /* Artifacts list: a sheet dropping from the top, below the corner buttons; the
+     header is padded so its title clears the two corner buttons that flank it. */
+  .artifact-panel--list { position: fixed; left: 0; right: 0; top: 76px; width: auto;
+    max-height: min(70vh, 520px); z-index: 30; border: 1px solid var(--line);
+    border-radius: 0 0 16px 16px; box-shadow: var(--shadow);
+    background: color-mix(in srgb, var(--panel) 95%, transparent); backdrop-filter: blur(16px) saturate(1.4);
+    animation: sheetDown 0.24s var(--ease); }
+  .artifact-panel--list .ch-head { justify-content: center; padding-inline: 62px; }
+
+  /* Report: a sheet drawn up from the bottom, over the (still fixed) prompt bar,
+     leaving a thin top strip for the Recent button. No resize, close with the X. */
+  .artifact-panel--reader { position: fixed; left: 0; right: 0; top: 124px; bottom: 0; width: auto;
+    z-index: 30; border-top-left-radius: 18px; border-top-right-radius: 18px; box-shadow: var(--shadow);
+    background: color-mix(in srgb, var(--panel) 97%, transparent); backdrop-filter: blur(18px) saturate(1.4);
+    animation: sheetUp 0.26s var(--ease); }
+
+  /* The blurred strip behind the report's exposed top; Recent stays above it. */
+  .report-scrim { position: fixed; inset: 0; z-index: 20; pointer-events: none;
+    background: color-mix(in srgb, var(--bg) 32%, transparent); backdrop-filter: blur(5px);
+    animation: scrimIn 0.26s var(--ease); }
 }
+@keyframes sheetUp { from { transform: translateY(100%); } }
+@keyframes sheetDown { from { transform: translateY(-100%); } }
+@keyframes scrimIn { from { opacity: 0; } }
 /* Minimum width: the section headers no longer fit, so drop them and collapse the
    left side too (monogram-only logo, GitHub icon only). 760px is where the longest
    header ("Engineering challenges") stops fitting alongside the full left side. */

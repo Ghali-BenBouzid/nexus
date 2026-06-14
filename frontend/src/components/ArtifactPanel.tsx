@@ -10,6 +10,7 @@ type ArtifactPanelProps = {
   onSelect: (id: number | null) => void;
   onClose: () => void; // collapse the whole panel
   onRefresh: (turn: Turn) => void; // re-sync the open report from the backend
+  isMobile?: boolean; // mobile: list is a top sheet, report a bottom sheet
 };
 
 // A turn becomes a readable artifact once it carries a result with something to
@@ -29,14 +30,16 @@ function meta(turn: Turn): string {
 // conversation has produced (newest first), and a reader for the chosen one. The
 // reader's back/close chevrons live in the Artifact header, so there is no second
 // title bar stacked on top of the report.
-export function ArtifactPanel({ turns, width, selectedId, onSelect, onClose, onRefresh }: ArtifactPanelProps) {
+export function ArtifactPanel({ turns, width, selectedId, onSelect, onClose, onRefresh, isMobile }: ArtifactPanelProps) {
   const artifacts = turns.filter(isArtifactTurn);
   const selected = selectedId != null ? artifacts.find((t) => t.id === selectedId) : undefined;
+  // On mobile the width is set by CSS (full-bleed sheets), not the resize divider.
+  const style = isMobile ? undefined : { width };
 
   if (selected) {
     return (
-      <aside className="artifact-panel" style={{ width }}>
-        <Artifact turn={selected} onRefresh={onRefresh} onBack={() => onSelect(null)} onClose={onClose} />
+      <aside className="artifact-panel artifact-panel--reader" style={style}>
+        <Artifact turn={selected} onRefresh={onRefresh} onBack={() => onSelect(null)} onClose={onClose} isMobile={isMobile} />
       </aside>
     );
   }
@@ -45,12 +48,16 @@ export function ArtifactPanel({ turns, width, selectedId, onSelect, onClose, onR
   const ordered = [...artifacts].reverse();
 
   return (
-    <aside className="artifact-panel" style={{ width }}>
+    <aside className="artifact-panel artifact-panel--list" style={style}>
       <div className="ch-head">
         <span className="ch-title">{I.doc}{t.artifact.title}</span>
-        <button className="icon-btn" onClick={onClose} aria-label={t.artifact.closePanel} title={t.artifact.closePanel}>
-          {I.arrowRight}
-        </button>
+        {/* Mobile has no close button here: the top-right corner button toggles
+            the list (and highlights while open). Desktop keeps the chevron. */}
+        {!isMobile && (
+          <button className="icon-btn" onClick={onClose} aria-label={t.artifact.closePanel} title={t.artifact.closePanel}>
+            {I.arrowRight}
+          </button>
+        )}
       </div>
       <div className="ch-body">
         {ordered.length === 0 && <div className="drawer-empty">{t.artifact.noReports}</div>}
