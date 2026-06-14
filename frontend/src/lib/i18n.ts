@@ -78,7 +78,7 @@ const en = {
     proof: ["Open source", "Live on a free LLM tier", "A real run takes ~1min"],
     builtWithLabel: "Built with",
     builtWith: [
-      { label: "Backend", items: ["FastAPI", "Python", "agent orchestration", "Postgres"] },
+      { label: "Backend", items: ["FastAPI", "Python", "Postgres"] },
       { label: "Frontend", items: ["React", "TypeScript", "three.js"] },
       { label: "Deployment", items: ["Railway", "Neon", "Cloudflare"] },
     ],
@@ -296,7 +296,7 @@ const fr: Dict = {
     proof: ["Open source", "Fonctionne sur une offre LLM gratuite", "Une vraie recherche prend ~1min"],
     builtWithLabel: "Construit avec",
     builtWith: [
-      { label: "Partie serveur", items: ["FastAPI", "Python", "orchestration d'agents", "Postgres"] },
+      { label: "Partie serveur", items: ["FastAPI", "Python", "Postgres"] },
       { label: "Interface", items: ["React", "TypeScript", "three.js"] },
       { label: "Déploiement", items: ["Railway", "Neon", "Cloudflare"] },
     ],
