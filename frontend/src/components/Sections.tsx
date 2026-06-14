@@ -20,9 +20,21 @@ export function About() {
             <li key={i}>{p}</li>
           ))}
         </ul>
-        <p className="built-with">
-          <span>{t.about.builtWithLabel}</span> {t.about.builtWith}
-        </p>
+        <div className="built-with">
+          <span className="built-with-label">{t.about.builtWithLabel}</span>
+          <div className="stack-grid">
+            {t.about.builtWith.map((group) => (
+              <div className="stack-col" key={group.label}>
+                <h3 className="stack-col-head">{group.label}</h3>
+                <ul className="stack-col-list">
+                  {group.items.map((item) => (
+                    <li key={item}>{item}</li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </div>
         <div className="about-links">
           <a className="btn btn-ghost" href={REPO_URL} target="_blank" rel="noreferrer">
             {t.about.sourceLink}
@@ -108,12 +120,12 @@ export function HowItWorks() {
             {/* Conversation lane: message in, then the supervisor's three routes. */}
             <path className="hiw-edge flow" d="M52,146 H67" markerEnd="url(#hiw-arrow)" pathLength={1} />
             {/* answer: a short branch up from the supervisor's centre to a reply (terminal). */}
-            <path className="hiw-edge flow" d="M152,100 V62" markerEnd="url(#hiw-arrow)" pathLength={1} />
+            <path className="hiw-edge flow" d="M164,100 V62" markerEnd="url(#hiw-arrow)" pathLength={1} />
             {/* compose: across the top to the Compose node, then down into Write. */}
-            <path className="hiw-edge flow" d="M234,124 H1005" markerEnd="url(#hiw-arrow)" pathLength={1} />
+            <path className="hiw-edge flow" d="M258,124 H1005" markerEnd="url(#hiw-arrow)" pathLength={1} />
             <path className="hiw-edge flow" d="M1085,158 V343" markerEnd="url(#hiw-arrow)" pathLength={1} />
             {/* research: down into the plan step, kept left of the orchestrator title. */}
-            <path className="hiw-edge flow" d="M152,192 C 158,300 248,312 282,343" markerEnd="url(#hiw-arrow)" pathLength={1} />
+            <path className="hiw-edge flow" d="M164,192 C 164,302 250,312 282,343" markerEnd="url(#hiw-arrow)" pathLength={1} />
 
             {/* Research subgraph edges. */}
             <path className="hiw-edge flow" d="M362,385 H392" markerEnd="url(#hiw-arrow)" pathLength={1} />
@@ -130,7 +142,7 @@ export function HowItWorks() {
             <path className="hiw-edge flow" d="M1144,385 H1198" markerEnd="url(#hiw-arrow)" pathLength={1} />
 
             <text className="hiw-io" x="2" y="150">{L.message}</text>
-            <text className="hiw-io" x="152" y="52" textAnchor="middle">{L.directAnswer}</text>
+            <text className="hiw-io" x="164" y="52" textAnchor="middle">{L.directAnswer}</text>
             <text className="hiw-io" x="1206" y="389">{L.citedReport}</text>
             <text className="hiw-stack-label" x="724" y="276" textAnchor="middle">{L.fanout}</text>
             <text className="hiw-gate-label" x="600" y="114" textAnchor="middle">{L.routeCompose}</text>
@@ -140,10 +152,9 @@ export function HowItWorks() {
 
             {/* Supervisor: the agent the user talks to; sits above the subgraph. */}
             <g className={"hiw-node" + (active === "supervisor" ? " active" : "")} {...bind("supervisor", L.supervisor)}>
-              <rect x="70" y="100" width="164" height="92" rx="12" />
-              <text className="hiw-title" x="152" y="136" textAnchor="middle">{L.supervisor}</text>
-              <text className="hiw-role" x="152" y="156" textAnchor="middle">{L.supervisorRole}</text>
-              <text className="hiw-sub" x="152" y="174" textAnchor="middle">{L.supervisorTools}</text>
+              <rect x="70" y="100" width="188" height="92" rx="12" />
+              <text className="hiw-title" x="164" y="140" textAnchor="middle">{L.supervisor}</text>
+              <text className="hiw-role" x="164" y="160" textAnchor="middle">{L.supervisorRole}</text>
             </g>
 
             {/* Compose: merge existing reports into one new report, no new search. */}
