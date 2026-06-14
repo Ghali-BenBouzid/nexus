@@ -200,15 +200,15 @@ a { color: inherit; text-decoration: none; }
 /* Icon-only rail toggle. The nav is centered (max-width), so on wide screens the
    toggle floats out to the real viewport edge (media query below); on narrower
    screens it stays in flow at the nav's left. The history drawer emerges here. */
-.nav-rail { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px;
-  color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 10px;
-  cursor: pointer; transition: border-color 0.2s, color 0.2s, background 0.2s; }
-.nav-rail:hover { color: var(--fg); border-color: var(--line-strong); background: var(--surface-2); }
-.nav-rail svg { width: 18px; height: 18px; }
-/* Once the centered nav has real side gutters, pin the toggle to the screen edge
-   (absolute resolves against the fixed, full-width .nav). */
+.nav-rail { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 34px;
+  color: var(--muted); background: none; border: none; padding: 0;
+  cursor: pointer; transition: color 0.2s; }
+.nav-rail:hover { color: var(--fg); }
+.nav-rail svg { width: 19px; height: 19px; }
+/* Once the centered nav has real side gutters, pin the toggle close to the screen
+   edge (absolute resolves against the fixed, full-width .nav). */
 @media (min-width: 1220px) {
-  .nav-rail { position: absolute; left: 20px; top: 50%; transform: translateY(-50%); }
+  .nav-rail { position: absolute; left: 8px; top: 50%; transform: translateY(-50%); }
 }
 .nav-right { display: flex; align-items: center; gap: 14px; }
 
@@ -1011,12 +1011,14 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
      Only the conversation thread scrolls; the prompt bar and the corner buttons
      stay fixed. The Recent column is a left drawer, the Artifacts list a top
      sheet, and a report a bottom sheet drawn up over everything. */
+  /* Extra nav clearance so the in-flow sub-bar sits cleanly below the nav. */
+  .chat { padding-top: 84px; }
   .chat-main { flex-direction: column; position: relative; }
   .resizer, .artifact-fab { display: none; }
 
-  /* Leave room at the top for the sub-bar and at the bottom for the fixed
-     composer; the thread itself is the only scrolling surface. */
-  .chat-col { padding: 46px 18px 96px; }
+  /* The thread is the only scrolling surface; the in-flow sub-bar spaces the top,
+     so only the bottom needs room for the fixed composer. */
+  .chat-col { padding: 10px 18px 96px; }
 
   /* Composer pinned to the bottom, above the thread and below the sheets. */
   .composer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
@@ -1027,17 +1029,17 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   /* The composer history hint has no use without the arrow controls on mobile. */
   .cinput-hint { display: none; }
 
-  /* A slim sub-bar under the nav holds the Recent (left) and Artifacts (right)
-     buttons, so they read as nav chrome instead of floating over the page. */
-  .chat-topbar { position: fixed; top: 57px; left: 0; right: 0; z-index: 40;
-    display: flex; align-items: center; justify-content: space-between; padding: 6px 14px;
+  /* A slim sub-bar sitting in flow right under the nav (so it can never overlap
+     it), holding the Recent (left) and Artifacts (right) buttons as bare icons. */
+  .chat-topbar { position: relative; z-index: 40;
+    display: flex; align-items: center; justify-content: space-between; padding: 3px 12px;
     background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(14px) saturate(1.4);
     border-bottom: 1px solid var(--line); }
-  .chat-corner { width: 32px; height: 32px; display: grid; place-items: center; cursor: pointer;
-    color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
-    transition: border-color 0.2s, color 0.2s, background 0.2s; }
-  .chat-corner svg { width: 17px; height: 17px; }
-  .chat-corner-right.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  .chat-corner { display: grid; place-items: center; cursor: pointer; padding: 4px;
+    background: none; border: none; color: var(--muted); transition: color 0.2s; }
+  .chat-corner:hover { color: var(--fg); }
+  .chat-corner svg { width: 19px; height: 19px; }
+  .chat-corner-right.active { color: var(--accent); }
 
   /* Recent: a left drawer over the thread, closed by default (corner opens it). */
   .chat-history { position: fixed; left: 0; top: 0; bottom: 0; z-index: 45;
@@ -1046,7 +1048,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 
   /* Artifacts list: a sheet dropping from the top, below the sub-bar. It shows
      about one and a half entries, then the body scrolls to the rest. */
-  .artifact-panel--list { position: fixed; left: 0; right: 0; top: 102px; width: auto;
+  .artifact-panel--list { position: fixed; left: 0; right: 0; top: 116px; width: auto;
     z-index: 30; border: 1px solid var(--line);
     border-radius: 0 0 16px 16px; box-shadow: var(--shadow);
     background: color-mix(in srgb, var(--panel) 95%, transparent); backdrop-filter: blur(16px) saturate(1.4);
@@ -1055,7 +1057,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 
   /* Report: a sheet drawn up from the bottom, over the (still fixed) prompt bar,
      leaving a thin top strip for the Recent button. No resize, close with the X. */
-  .artifact-panel--reader { position: fixed; left: 0; right: 0; top: 124px; bottom: 0; width: auto;
+  .artifact-panel--reader { position: fixed; left: 0; right: 0; top: 128px; bottom: 0; width: auto;
     z-index: 30; border-top-left-radius: 18px; border-top-right-radius: 18px; box-shadow: var(--shadow);
     background: color-mix(in srgb, var(--panel) 97%, transparent); backdrop-filter: blur(18px) saturate(1.4);
     animation: sheetUp 0.26s var(--ease); }
@@ -1101,10 +1103,11 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   .footer-cols { gap: 36px; }
   /* Restore the hero hierarchy on phones: the heading scales up with the
      viewport and clearly outsizes the description, which steps down. */
-  .hero h1 { font-size: clamp(30px, 8.5vw, 44px); margin-bottom: 18px; }
-  .hero-sub { font-size: 15px; }
-  /* Keep the hero prompt placeholder on a single line. */
-  .prompt textarea { font-size: 15px; padding: 6px 14px; }
+  .hero h1 { font-size: clamp(34px, 10vw, 48px); margin-bottom: 16px; }
+  .hero-sub { font-size: 14px; }
+  /* Keep the hero prompt placeholder (incl. the longer French copy) on one line. */
+  .prompt { padding: 5px 6px 5px 12px; }
+  .prompt textarea { font-size: 14px; padding: 5px 10px; }
   /* Comfortable thumb targets (>=40px) for the controls a mobile user taps. */
   .cinput-send { width: 40px; height: 40px; }
   .icon-btn, .theme-toggle, .drawer-x { width: 40px; height: 40px; }
