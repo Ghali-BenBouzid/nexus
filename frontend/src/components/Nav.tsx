@@ -17,7 +17,7 @@ type NavProps = {
 
 export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory, showLinks = true }: NavProps) {
   return (
-    <nav className={"nav" + (scrolled ? " scrolled" : "")}>
+    <nav className={"nav" + (scrolled ? " scrolled" : "") + (showLinks ? "" : " nav-chat")}>
       <div className="wrap">
         <div className="nav-left">
           {onHistory && (
@@ -28,10 +28,14 @@ export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory, 
           <div className="brand" onClick={onLogo}>
             <NexusLockup size={20} />
           </div>
-          <a className="nav-link nav-gh" href={REPO_URL} target="_blank" rel="noreferrer" aria-label={t.nav.source} title={t.nav.source}>
-            {I.github}
-            <span className="nav-gh-text">{t.nav.source}</span>
-          </a>
+          {/* The GitHub link belongs to the marketing page; the chat keeps the nav
+              minimal, just the full logo on the left. */}
+          {showLinks && (
+            <a className="nav-link nav-gh" href={REPO_URL} target="_blank" rel="noreferrer" aria-label={t.nav.source} title={t.nav.source}>
+              {I.github}
+              <span className="nav-gh-text">{t.nav.source}</span>
+            </a>
+          )}
         </div>
         {showLinks && (
           <div className="nav-links">

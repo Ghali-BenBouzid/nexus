@@ -183,6 +183,9 @@ a { color: inherit; text-decoration: none; }
    normal capital and stops floating. */
 .nexus-lockup-n { width: 0.75em; height: 0.75em; vertical-align: -0.02em; }
 .nexus-lockup-text { margin-left: -0.02em; }
+/* The chat nav stays minimal but keeps the full wordmark: it never collapses the
+   logo to the monogram (higher specificity overrides the mobile collapse below). */
+.nav-chat .nexus-lockup-text { display: inline; }
 .nav-links { display: flex; align-items: center; gap: 26px; }
 .nav-link { font-size: 14.5px; color: var(--muted); }
 .nav-link:hover { color: var(--fg); }
