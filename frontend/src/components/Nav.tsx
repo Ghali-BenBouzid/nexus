@@ -17,7 +17,7 @@ type NavProps = {
 
 export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory, showLinks = true }: NavProps) {
   return (
-    <nav className={"nav" + (scrolled ? " scrolled" : "")}>
+    <nav className={"nav" + (scrolled ? " scrolled" : "") + (showLinks ? "" : " nav-chat")}>
       <div className="wrap">
         <div className="nav-left">
           {onHistory && (
@@ -28,7 +28,14 @@ export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory, 
           <div className="brand" onClick={onLogo}>
             <NexusLockup size={20} />
           </div>
-          <a className="nav-link nav-gh" href={REPO_URL} target="_blank" rel="noreferrer">{I.github}{t.nav.source}</a>
+          {/* The GitHub link belongs to the marketing page; the chat keeps the nav
+              minimal, just the full logo on the left. */}
+          {showLinks && (
+            <a className="nav-link nav-gh" href={REPO_URL} target="_blank" rel="noreferrer" aria-label={t.nav.source} title={t.nav.source}>
+              {I.github}
+              <span className="nav-gh-text">{t.nav.source}</span>
+            </a>
+          )}
         </div>
         {showLinks && (
           <div className="nav-links">
@@ -43,13 +50,17 @@ export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory, 
             onClick={() => setLang(lang === "en" ? "fr" : "en")}
             title={lang === "en" ? "Voir en français" : "View in English"}
           >
-            {lang === "en" ? "Français" : "English"}
+            <span className="nav-lang-full">{lang === "en" ? "Français" : "English"}</span>
+            <span className="nav-lang-short">{lang === "en" ? "FR" : "EN"}</span>
           </button>
           <button className="theme-toggle" onClick={toggleTheme} aria-label={t.nav.theme} title={t.nav.theme}>
             {theme === "dark" ? I.sun : I.moon}
           </button>
           {showLinks && (
-            <button className="btn btn-primary" onClick={onStart}>{t.nav.start}</button>
+            <button className="btn btn-primary nav-start" onClick={onStart} aria-label={t.nav.start} title={t.nav.start}>
+              <span className="nav-start-label">{t.nav.start}</span>
+              <span className="nav-start-icon" aria-hidden="true">{I.search}</span>
+            </button>
           )}
         </div>
       </div>

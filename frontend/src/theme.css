@@ -183,6 +183,9 @@ a { color: inherit; text-decoration: none; }
    normal capital and stops floating. */
 .nexus-lockup-n { width: 0.75em; height: 0.75em; vertical-align: -0.02em; }
 .nexus-lockup-text { margin-left: -0.02em; }
+/* The chat nav stays minimal but keeps the full wordmark: it never collapses the
+   logo to the monogram (higher specificity overrides the mobile collapse below). */
+.nav-chat .nexus-lockup-text { display: inline; }
 .nav-links { display: flex; align-items: center; gap: 26px; }
 .nav-link { font-size: 14.5px; color: var(--muted); }
 .nav-link:hover { color: var(--fg); }
@@ -190,6 +193,12 @@ a { color: inherit; text-decoration: none; }
 .nav-lang { background: none; border: none; padding: 0; font-family: inherit; cursor: pointer; }
 .nav-gh { display: inline-flex; align-items: center; gap: 7px; }
 .nav-gh svg { width: 16px; height: 16px; }
+/* Compact button variants: the short language code and the search-icon CTA are
+   hidden on desktop and revealed at mobile width (see the 920px block). */
+.nav-lang-short { display: none; }
+.nav-start { display: inline-flex; align-items: center; }
+.nav-start-icon { display: none; }
+.nav-start-icon svg { width: 17px; height: 17px; }
 .nav-left { display: flex; align-items: center; gap: 12px; }
 /* Icon-only rail toggle. The nav is centered (max-width), so on wide screens the
    toggle floats out to the real viewport edge (media query below); on narrower
@@ -407,10 +416,10 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .built-with { margin: 24px 0 0; max-width: 720px; }
 .built-with-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.07em;
   text-transform: uppercase; color: var(--accent-2); }
-/* Three layer columns (backend / frontend / deployment); auto-fit so they
-   collapse to fewer columns on narrow screens without a media query. */
+/* Three layer columns (backend / frontend / deployment) kept on one row at every
+   width; the gap tightens on mobile (see the 920px block) so all three fit. */
 .stack-grid { margin-top: 16px; display: grid; gap: 18px 28px;
-  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+  grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .stack-col-head { font-family: var(--font-mono); font-size: 11px; font-weight: 600;
   letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg); margin: 0 0 9px; }
 .stack-col-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
@@ -988,7 +997,19 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   .steps-grid { grid-template-columns: 1fr; }
   .feature-row, .feature-row.flip { grid-template-columns: 1fr; gap: 30px; }
   .feature-row.flip .feature-visual { order: 0; }
-  .nav-links { display: none; }
+  /* Intermediate width: collapse only the right-side controls (language code +
+     search-icon Start) so the section headers still fit and stay usable. The
+     left side (logo, GitHub) keeps its full form until the minimum width. */
+  .nav-lang-full { display: none; }
+  .nav-lang-short { display: inline; }
+  .nav-start-label { display: none; }
+  .nav-start-icon { display: inline-flex; }
+  .nav-start { padding: 0; width: 38px; height: 38px; justify-content: center; border-radius: 10px; }
+  .nav-right { gap: 10px; }
+  /* Keep hero content clear of the fixed, transparent nav (no overlap). */
+  .hero { min-height: 100svh; padding-top: 64px; padding-bottom: 56px; }
+  /* All three stack columns stay on one row; tighten the gap to fit. */
+  .stack-grid { gap: 16px 14px; }
   /* the report panel stacks under the chat; the Recent column becomes an overlay. */
   .chat-main { flex-direction: column; position: relative; }
   .artifact-panel { flex: none; width: auto !important; max-height: 55vh; border-top: 1px solid var(--line); }
@@ -997,6 +1018,29 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
      toggle is always reachable without squeezing the messages. */
   .chat-history { position: absolute; left: 0; top: 0; bottom: 0; z-index: 25; width: 280px; box-shadow: var(--shadow); }
   .chat-history.collapsed { position: static; width: 56px; box-shadow: none; }
+}
+/* Minimum width: the section headers no longer fit, so drop them and collapse the
+   left side too (monogram-only logo, GitHub icon only). 760px is where the longest
+   header ("Engineering challenges") stops fitting alongside the full left side. */
+@media (max-width: 760px) {
+  .nav-links { display: none; }
+  .nexus-lockup-text { display: none; }
+  .nav-gh-text { display: none; }
+  .nav-gh { gap: 0; }
+  .nav-left { gap: 10px; }
+}
+/* Flipped phone (short viewport): show the heading centered in the first screen,
+   clear of the nav, hide the sub and chips, and let the prompt bar fall below the
+   fold so it is reached by scrolling. Keyed on height so tall windows are ignored. */
+@media (orientation: landscape) and (max-height: 560px) {
+  .hero { justify-content: flex-start; min-height: 100svh; padding: 0 0 40px; }
+  .hero h1 {
+    min-height: 100svh; margin: 0;
+    display: flex; align-items: center; justify-content: center;
+    padding: 60px 0 12px;
+  }
+  .hero-sub, .hero .chips { display: none; }
+  .prompt-wrap-outer { margin-top: 4px; }
 }
 @media (max-width: 600px) {
   .wrap { padding-inline: 18px; }
@@ -1014,7 +1058,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
    independent of viewport width. Fine (mouse) pointers keep the tighter
    desktop density. */
 @media (pointer: coarse) {
-  .nav-rail, .icon-btn, .theme-toggle, .drawer-x, .cinput-send, .prompt-go {
+  .nav-rail, .icon-btn, .theme-toggle, .drawer-x, .cinput-send, .prompt-go, .nav-start {
     min-width: 44px; min-height: 44px;
   }
   .chip { min-height: 44px; }
