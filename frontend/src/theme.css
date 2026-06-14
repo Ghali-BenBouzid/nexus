@@ -994,18 +994,14 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   .steps-grid { grid-template-columns: 1fr; }
   .feature-row, .feature-row.flip { grid-template-columns: 1fr; gap: 30px; }
   .feature-row.flip .feature-visual { order: 0; }
-  .nav-links { display: none; }
-  /* Compact the persistent nav controls so the bar is not crowded: monogram only,
-     GitHub icon only, two-letter language code, and a search-icon Start button. */
-  .nexus-lockup-text { display: none; }
-  .nav-gh-text { display: none; }
-  .nav-gh { gap: 0; }
+  /* Intermediate width: collapse only the right-side controls (language code +
+     search-icon Start) so the section headers still fit and stay usable. The
+     left side (logo, GitHub) keeps its full form until the minimum width. */
   .nav-lang-full { display: none; }
   .nav-lang-short { display: inline; }
   .nav-start-label { display: none; }
   .nav-start-icon { display: inline-flex; }
   .nav-start { padding: 0; width: 38px; height: 38px; justify-content: center; border-radius: 10px; }
-  .nav-left { gap: 10px; }
   .nav-right { gap: 10px; }
   /* Keep hero content clear of the fixed, transparent nav (no overlap). */
   .hero { min-height: 100svh; padding-top: 64px; padding-bottom: 56px; }
@@ -1019,6 +1015,16 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
      toggle is always reachable without squeezing the messages. */
   .chat-history { position: absolute; left: 0; top: 0; bottom: 0; z-index: 25; width: 280px; box-shadow: var(--shadow); }
   .chat-history.collapsed { position: static; width: 56px; box-shadow: none; }
+}
+/* Minimum width: the section headers no longer fit, so drop them and collapse the
+   left side too (monogram-only logo, GitHub icon only). 760px is where the longest
+   header ("Engineering challenges") stops fitting alongside the full left side. */
+@media (max-width: 760px) {
+  .nav-links { display: none; }
+  .nexus-lockup-text { display: none; }
+  .nav-gh-text { display: none; }
+  .nav-gh { gap: 0; }
+  .nav-left { gap: 10px; }
 }
 /* Flipped phone (short viewport): show the heading centered in the first screen,
    clear of the nav, hide the sub and chips, and let the prompt bar fall below the
