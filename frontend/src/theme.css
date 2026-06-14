@@ -1074,14 +1074,11 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 @keyframes sheetUp { from { transform: translateY(100%); } }
 @keyframes sheetDown { from { transform: translateY(-100%); } }
 @keyframes scrimIn { from { opacity: 0; } }
-/* Minimum width: the section headers no longer fit, so drop them and collapse the
-   left side too (monogram-only logo, GitHub icon only). 760px is where the longest
-   header ("Engineering challenges") stops fitting alongside the full left side. */
+/* Minimum width: the section headers no longer fit, so drop them and reduce the
+   GitHub link to its icon. 760px is where the longest header ("Engineering
+   challenges") stops fitting alongside the full left side. */
 @media (max-width: 760px) {
   .nav-links { display: none; }
-  /* Marketing nav only: collapse the logo to the monogram. The chat nav and the
-     footer keep the full wordmark. */
-  .nav:not(.nav-chat) .nexus-lockup-text { display: none; }
   .nav-gh-text { display: none; }
   .nav-gh { gap: 0; }
   .nav-left { gap: 10px; }
