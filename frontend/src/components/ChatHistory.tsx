@@ -17,13 +17,17 @@ type ChatHistoryProps = {
   onNewChat: () => void;
   // Bumped by the caller (e.g. turn count) to re-pull the list as queries run.
   refreshKey: number;
+  // Mobile: the column is a slide-in drawer with a tap-to-close scrim, and it
+  // always renders the full list (never the desktop slim rail) so it slides out
+  // with its content intact rather than swapping to the rail mid-animation.
+  isMobile?: boolean;
 };
 
 // The persistent left column of the chat workspace: the caller's past queries,
 // most-recent first. Selecting one loads it as the conversation. Collapsing never
 // hides it entirely: it shrinks to a slim icon rail (expand + new chat) that is
 // always reachable, so the toggle lives next to the column it controls.
-export function ChatHistory({ open, onToggle, onOpen, onNewChat, refreshKey }: ChatHistoryProps) {
+export function ChatHistory({ open, onToggle, onOpen, onNewChat, refreshKey, isMobile }: ChatHistoryProps) {
   const [items, setItems] = useState<ConversationSummary[] | null>(null);
 
   useEffect(() => {
@@ -35,8 +39,10 @@ export function ChatHistory({ open, onToggle, onOpen, onNewChat, refreshKey }: C
   const sorted = items && [...items].sort((a, b) => b.updated_at.localeCompare(a.updated_at));
 
   return (
-    <aside className={"chat-history" + (open ? "" : " collapsed")}>
-      {open ? (
+    <>
+      {isMobile && open && <div className="chat-history-scrim" onClick={onToggle} aria-hidden="true" />}
+      <aside className={"chat-history" + (open ? "" : " collapsed")}>
+        {open || isMobile ? (
         <>
           <div className="ch-head">
             <span className="ch-title">{t.history.recent}</span>
@@ -72,6 +78,7 @@ export function ChatHistory({ open, onToggle, onOpen, onNewChat, refreshKey }: C
           </button>
         </div>
       )}
-    </aside>
+      </aside>
+    </>
   );
 }

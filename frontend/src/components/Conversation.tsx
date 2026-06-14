@@ -250,6 +250,7 @@ export function Conversation({
             // Reload the list when a turn is added and again once a title lands, so
             // a freshly named conversation shows its title instead of "Untitled".
             refreshKey={turns.length + turns.filter((t) => t.title).length}
+            isMobile={isMobile}
           />
         )}
 

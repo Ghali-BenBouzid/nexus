@@ -1052,6 +1052,10 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
     width: min(86vw, 320px); box-shadow: var(--shadow);
     transform: translateX(0); transition: transform 0.28s var(--ease); }
   .chat-history.collapsed { transform: translateX(-100%); box-shadow: none; }
+  /* Tap the dimmed area beside the drawer to close it (matches the landing page). */
+  .chat-history-scrim { position: fixed; inset: 0; z-index: 44;
+    background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px);
+    animation: scrimIn 0.2s var(--ease); }
 
   /* Artifacts list: a sheet dropping from the top, below the sub-bar. It shows
      about one and a half entries, then the body scrolls to the rest. */
