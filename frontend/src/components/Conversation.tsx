@@ -208,28 +208,34 @@ export function Conversation({
 
   return (
     <main className="chat" data-layout={layout}>
-      {/* Mobile chrome: fixed corner buttons. Recent (left) opens the drawer;
-          Artifacts (right) toggles the list, and is hidden while a report is up so
-          only the Recent button remains. Desktop keeps its rail + floating fab. */}
-      {isMobile && onOpenHistory && (
-        <button
-          className="chat-corner chat-corner-left"
-          onClick={onToggleHistory}
-          aria-label={t.history.recent}
-          title={t.history.recent}
-        >
-          {I.history}
-        </button>
-      )}
-      {isMobile && !reportUp && (
-        <button
-          className={"chat-corner chat-corner-right" + (artifactsListOpen ? " active" : "")}
-          onClick={toggleArtifacts}
-          aria-label={t.chat.showArtifacts}
-          title={t.chat.showArtifacts}
-        >
-          {I.doc}
-        </button>
+      {/* Mobile chrome: a slim sub-bar under the nav holding the Recent (left) and
+          Artifacts (right) buttons. Artifacts hides while a report is up so only
+          Recent remains. Desktop keeps its rail + floating fab. */}
+      {isMobile && (
+        <div className="chat-topbar">
+          {onOpenHistory ? (
+            <button
+              className="chat-corner chat-corner-left"
+              onClick={onToggleHistory}
+              aria-label={t.history.recent}
+              title={t.history.recent}
+            >
+              {I.sidebar}
+            </button>
+          ) : (
+            <span />
+          )}
+          {!reportUp && (
+            <button
+              className={"chat-corner chat-corner-right" + (artifactsListOpen ? " active" : "")}
+              onClick={toggleArtifacts}
+              aria-label={t.chat.showArtifacts}
+              title={t.chat.showArtifacts}
+            >
+              {I.doc}
+            </button>
+          )}
+        </div>
       )}
       {/* The blurred top strip behind a drawn-up report, so the eye lands on it. */}
       {isMobile && reportUp && <div className="report-scrim" aria-hidden="true" />}

@@ -183,9 +183,6 @@ a { color: inherit; text-decoration: none; }
    normal capital and stops floating. */
 .nexus-lockup-n { width: 0.75em; height: 0.75em; vertical-align: -0.02em; }
 .nexus-lockup-text { margin-left: -0.02em; }
-/* The chat nav stays minimal but keeps the full wordmark: it never collapses the
-   logo to the monogram (higher specificity overrides the mobile collapse below). */
-.nav-chat .nexus-lockup-text { display: inline; }
 .nav-links { display: flex; align-items: center; gap: 26px; }
 .nav-link { font-size: 14.5px; color: var(--muted); }
 .nav-link:hover { color: var(--fg); }
@@ -1017,9 +1014,9 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   .chat-main { flex-direction: column; position: relative; }
   .resizer, .artifact-fab { display: none; }
 
-  /* Leave room at the top for the corner buttons and at the bottom for the
-     fixed composer; the thread itself is the only scrolling surface. */
-  .chat-col { padding: 56px 18px 96px; }
+  /* Leave room at the top for the sub-bar and at the bottom for the fixed
+     composer; the thread itself is the only scrolling surface. */
+  .chat-col { padding: 46px 18px 96px; }
 
   /* Composer pinned to the bottom, above the thread and below the sheets. */
   .composer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
@@ -1027,15 +1024,19 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
     background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(14px) saturate(1.4); }
   .composer-inner { padding-inline: 16px; }
   .jump-latest { bottom: 92px; }
+  /* The composer history hint has no use without the arrow controls on mobile. */
+  .cinput-hint { display: none; }
 
-  /* Fixed corner buttons: Recent (left), Artifacts (right, highlights when open). */
-  .chat-corner { position: fixed; top: 78px; z-index: 40; width: 40px; height: 40px;
-    display: grid; place-items: center; cursor: pointer; color: var(--muted);
-    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-    box-shadow: var(--shadow); backdrop-filter: blur(12px); }
-  .chat-corner svg { width: 19px; height: 19px; }
-  .chat-corner-left { left: 14px; }
-  .chat-corner-right { right: 14px; }
+  /* A slim sub-bar under the nav holds the Recent (left) and Artifacts (right)
+     buttons, so they read as nav chrome instead of floating over the page. */
+  .chat-topbar { position: fixed; top: 57px; left: 0; right: 0; z-index: 40;
+    display: flex; align-items: center; justify-content: space-between; padding: 6px 14px;
+    background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(14px) saturate(1.4);
+    border-bottom: 1px solid var(--line); }
+  .chat-corner { width: 32px; height: 32px; display: grid; place-items: center; cursor: pointer;
+    color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 9px;
+    transition: border-color 0.2s, color 0.2s, background 0.2s; }
+  .chat-corner svg { width: 17px; height: 17px; }
   .chat-corner-right.active { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
 
   /* Recent: a left drawer over the thread, closed by default (corner opens it). */
@@ -1043,14 +1044,14 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
     width: min(86vw, 320px); box-shadow: var(--shadow); }
   .chat-history.collapsed { display: none; }
 
-  /* Artifacts list: a sheet dropping from the top, below the corner buttons; the
-     header is padded so its title clears the two corner buttons that flank it. */
-  .artifact-panel--list { position: fixed; left: 0; right: 0; top: 76px; width: auto;
-    max-height: min(70vh, 520px); z-index: 30; border: 1px solid var(--line);
+  /* Artifacts list: a sheet dropping from the top, below the sub-bar. It shows
+     about one and a half entries, then the body scrolls to the rest. */
+  .artifact-panel--list { position: fixed; left: 0; right: 0; top: 102px; width: auto;
+    z-index: 30; border: 1px solid var(--line);
     border-radius: 0 0 16px 16px; box-shadow: var(--shadow);
     background: color-mix(in srgb, var(--panel) 95%, transparent); backdrop-filter: blur(16px) saturate(1.4);
     animation: sheetDown 0.24s var(--ease); }
-  .artifact-panel--list .ch-head { justify-content: center; padding-inline: 62px; }
+  .artifact-panel--list .ch-body { max-height: 104px; }
 
   /* Report: a sheet drawn up from the bottom, over the (still fixed) prompt bar,
      leaving a thin top strip for the Recent button. No resize, close with the X. */
@@ -1072,7 +1073,9 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
    header ("Engineering challenges") stops fitting alongside the full left side. */
 @media (max-width: 760px) {
   .nav-links { display: none; }
-  .nexus-lockup-text { display: none; }
+  /* Marketing nav only: collapse the logo to the monogram. The chat nav and the
+     footer keep the full wordmark. */
+  .nav:not(.nav-chat) .nexus-lockup-text { display: none; }
   .nav-gh-text { display: none; }
   .nav-gh { gap: 0; }
   .nav-left { gap: 10px; }
@@ -1096,6 +1099,12 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   .run-head { flex-wrap: wrap; }
   .run-status { order: 3; }
   .footer-cols { gap: 36px; }
+  /* Restore the hero hierarchy on phones: the heading scales up with the
+     viewport and clearly outsizes the description, which steps down. */
+  .hero h1 { font-size: clamp(30px, 8.5vw, 44px); margin-bottom: 18px; }
+  .hero-sub { font-size: 15px; }
+  /* Keep the hero prompt placeholder on a single line. */
+  .prompt textarea { font-size: 15px; padding: 6px 14px; }
   /* Comfortable thumb targets (>=40px) for the controls a mobile user taps. */
   .cinput-send { width: 40px; height: 40px; }
   .icon-btn, .theme-toggle, .drawer-x { width: 40px; height: 40px; }
