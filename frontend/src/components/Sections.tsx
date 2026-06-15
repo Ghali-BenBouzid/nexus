@@ -55,6 +55,11 @@ const L = t.hiw.labels;
 export function HowItWorks() {
   const figRef = useRef<HTMLElement>(null);
   const [active, setActive] = useState<string | null>(null);
+  // Touch devices skip the hover/focus preview: there, the synthetic mouseenter
+  // and focus that precede a tap would set the node active and the click would
+  // immediately toggle it back off, so it took two taps. A plain click toggle is
+  // a single tap. Pointer devices keep hover.
+  const isTouch = typeof window !== "undefined" && window.matchMedia("(pointer: coarse)").matches;
 
   useEffect(() => {
     const el = figRef.current;
@@ -80,14 +85,27 @@ export function HowItWorks() {
     { cy: 456, rag: true },
   ];
 
+  // Mobile fan-out: the same three researchers + dashed Documents slot, laid out
+  // horizontally so the concurrency is visible across the screen width.
+  const mTiles = [
+    { x: 23, rag: false },
+    { x: 103, rag: false },
+    { x: 183, rag: false },
+    { x: 263, rag: true },
+  ];
+
   const bind = (id: string, label: string) => ({
     tabIndex: 0,
     role: "button",
     "aria-label": label,
-    onMouseEnter: () => setActive(id),
-    onMouseLeave: () => setActive(null),
-    onFocus: () => setActive(id),
-    onBlur: () => setActive(null),
+    ...(isTouch
+      ? {}
+      : {
+          onMouseEnter: () => setActive(id),
+          onMouseLeave: () => setActive(null),
+          onFocus: () => setActive(id),
+          onBlur: () => setActive(null),
+        }),
     onClick: () => setActive((a) => (a === id ? null : id)),
     onKeyDown: (e: React.KeyboardEvent) => {
       if (e.key === "Enter" || e.key === " ") {
@@ -211,7 +229,112 @@ export function HowItWorks() {
             </g>
           </svg>
 
-          {/* Mobile fallback: the same flow, stacked and readable. */}
+          {/* Mobile: vertical flow, but the orchestrator is a real container box and
+              the researchers fan out horizontally so the concurrency shows. Same
+              nodes, interactivity, and captions as the desktop graph. */}
+          <svg className="hiw-svg-m" viewBox="0 0 384 446" role="img" aria-label={t.hiw.aria}>
+            <defs>
+              <marker id="hiw-arrow-m" markerWidth="9" markerHeight="9" refX="5.5" refY="3" orient="auto">
+                <path d="M0,0 L6,3 L0,6" className="hiw-arrowhead" />
+              </marker>
+            </defs>
+
+            {/* the orchestrator surrounds the whole research subgraph */}
+            <rect className="hiw-orch" x="12" y="126" width="336" height="288" rx="16" />
+            <text className="hiw-orch-label" x="180" y="145" textAnchor="middle">{L.orchestrator}</text>
+
+            {/* message in */}
+            <text className="hiw-io" x="100" y="18" textAnchor="middle">{L.message}</text>
+            <path className="hiw-edge flow" d="M100,24 V40" markerEnd="url(#hiw-arrow-m)" pathLength={1} />
+
+            {/* supervisor's three moves: answer + compose branch right, research drops in */}
+            <path className="hiw-edge flow" d="M180,54 H236" markerEnd="url(#hiw-arrow-m)" pathLength={1} />
+            <path className="hiw-edge flow" d="M180,70 C 196,70 198,90 214,90" markerEnd="url(#hiw-arrow-m)" pathLength={1} />
+            {/* compose reuses the writer: it runs down the right, outside the
+                orchestrator, and back into Write. */}
+            <path className="hiw-edge flow" d="M338,92 C 382,166 374,342 252,378" markerEnd="url(#hiw-arrow-m)" pathLength={1} />
+            <path className="hiw-edge flow" d="M100,88 V156" markerEnd="url(#hiw-arrow-m)" pathLength={1} />
+
+            {/* research subgraph */}
+            <path className="hiw-edge flow" d="M144,176 H170" markerEnd="url(#hiw-arrow-m)" pathLength={1} />
+            <path className="hiw-edge" d="M170,186 C 150,206 104,206 86,196" markerEnd="url(#hiw-arrow-m)" pathLength={1} />
+            {/* confirm feeds an orthogonal fan-out manifold: one rail distributes to
+                the tiles and another collects them, instead of crossing curves. */}
+            <path className="hiw-edge" d="M240,196 V214 H180 V228" pathLength={1} />
+            <path className="hiw-edge" d="M60,228 H300" pathLength={1} />
+            {mTiles.map((m, i) => (
+              <path key={"mfo" + i} className="hiw-edge" d={`M${m.x + 37},228 V240`} pathLength={1} />
+            ))}
+            {mTiles.map((m, i) => (
+              <path key={"mfi" + i} className="hiw-edge" d={`M${m.x + 37},278 V290`} pathLength={1} />
+            ))}
+            <path className="hiw-edge" d="M60,290 H300" pathLength={1} />
+            <path className="hiw-edge flow" d="M180,290 V300" markerEnd="url(#hiw-arrow-m)" pathLength={1} />
+            <path className="hiw-edge flow" d="M180,340 V358" markerEnd="url(#hiw-arrow-m)" pathLength={1} />
+            <path className="hiw-edge flow" d="M180,398 V416" markerEnd="url(#hiw-arrow-m)" pathLength={1} />
+
+            <text className="hiw-io" x="242" y="58" textAnchor="start">{L.directAnswer}</text>
+            <text className="hiw-io" x="180" y="432" textAnchor="middle">{L.citedReport}</text>
+            {/* answer + compose are self-labelled by their targets; only the research
+                branch into the orchestrator needs a route label. */}
+            <text className="hiw-gate-label" x="100" y="120" textAnchor="middle">{L.routeResearch}</text>
+            <text className="hiw-gate-label" x="132" y="215" textAnchor="middle">{L.revise}</text>
+            <text className="hiw-gate-label" x="245" y="215" textAnchor="start">{L.confirm}</text>
+
+            <g className={"hiw-node" + (active === "supervisor" ? " active" : "")} {...bind("supervisor", L.supervisor)}>
+              <rect x="20" y="40" width="160" height="48" rx="12" />
+              <text className="hiw-title" x="100" y="69" textAnchor="middle">{L.supervisor}</text>
+            </g>
+
+            <g className={"hiw-node" + (active === "compose" ? " active" : "")} {...bind("compose", L.compose)}>
+              <rect x="214" y="72" width="124" height="36" rx="11" />
+              <text className="hiw-title sm" x="276" y="95" textAnchor="middle">{L.compose}</text>
+            </g>
+
+            <g className={"hiw-node" + (active === "plan" ? " active" : "")} {...bind("plan", L.plan)}>
+              <rect x="24" y="156" width="120" height="40" rx="12" />
+              <text className="hiw-title sm" x="84" y="181" textAnchor="middle">{L.plan}</text>
+            </g>
+
+            <g className={"hiw-node hiw-human" + (active === "review" ? " active" : "")} {...bind("review", L.review)}>
+              <rect x="170" y="156" width="140" height="40" rx="12" />
+              <text className="hiw-title sm" x="240" y="181" textAnchor="middle">{L.review}</text>
+            </g>
+
+            {mTiles.map((m, i) => {
+              const id = m.rag ? "documents" : "researcher";
+              const cx = m.x + 37;
+              return (
+                <g
+                  key={"mt" + i}
+                  className={"hiw-node" + (m.rag ? " rag" : "") + (active === id ? " active" : "")}
+                  {...bind(id, m.rag ? L.documents : L.researcher)}
+                >
+                  <rect x={m.x} y="240" width="74" height="38" rx="10" />
+                  {m.rag ? (
+                    <text className="hiw-role" x={cx} y="263" textAnchor="middle">{L.docRole}</text>
+                  ) : (
+                    <>
+                      <circle className="hiw-tile-ic" cx={cx - 2} cy="257" r="4.5" />
+                      <line className="hiw-tile-ic" x1={cx + 1.5} y1="260.5" x2={cx + 5} y2="264" />
+                    </>
+                  )}
+                </g>
+              );
+            })}
+
+            <g className={"hiw-node" + (active === "consolidate" ? " active" : "")} {...bind("consolidate", L.consolidate)}>
+              <rect x="110" y="300" width="140" height="40" rx="12" />
+              <text className="hiw-title sm" x="180" y="325" textAnchor="middle">{L.consolidate}</text>
+            </g>
+
+            <g className={"hiw-node" + (active === "write" ? " active" : "")} {...bind("write", L.write)}>
+              <rect x="110" y="358" width="140" height="40" rx="12" />
+              <text className="hiw-title sm" x="180" y="383" textAnchor="middle">{L.write}</text>
+            </g>
+          </svg>
+
+          {/* Deeper fallback (kept for no-SVG / very old engines): the flow as text. */}
           <div className="hiw-stack-wrap" aria-hidden="true">
             <span className="hiw-stack-orch">{L.orchestrator}</span>
             <ol className="hiw-stack">
