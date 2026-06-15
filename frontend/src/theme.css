@@ -440,6 +440,8 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .hiw-title { font-family: var(--font-display); font-size: 16px; font-weight: 600; fill: var(--fg); }
 .hiw-title.sm { font-size: 14px; }
 .hiw-role { font-family: var(--font-mono); font-size: 11px; fill: var(--muted); }
+/* The magnifier glyph inside the mobile fan-out researcher tiles. */
+.hiw-tile-ic { fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-linecap: round; }
 /* Human-in-the-loop: the review step is you, not the machine, so it carries the
    accent fill to stand out, with a 'revise' arc that loops it back to Plan. */
 .hiw-human rect { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
@@ -453,7 +455,8 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .hiw-cap { margin: 20px auto 0; max-width: 700px; height: 8em; overflow: hidden; text-align: center;
   font-size: 14.5px; line-height: 1.55; color: var(--muted); transition: color 0.2s; }
 .hiw-cap.on { color: var(--fg); }
-/* mobile fallback stack (hidden on desktop) */
+/* the vertical mobile graph and the deeper text fallback (both hidden on desktop) */
+.hiw-svg-m { display: none; }
 .hiw-stack-wrap { display: none; }
 @media (prefers-reduced-motion: no-preference) {
   .hiw .hiw-node, .hiw .hiw-gate, .hiw .hiw-io, .hiw .hiw-orch-label, .hiw .hiw-stack-label, .hiw .hiw-gate-label, .hiw .hiw-orch { opacity: 0; }
@@ -495,17 +498,9 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .footer-loop { color: var(--accent-2); border-bottom: 1px solid color-mix(in srgb, var(--accent-2) 40%, transparent); transition: color 0.2s; }
 .footer-loop:hover { color: var(--accent); }
 @media (max-width: 760px) {
+  /* Swap the wide desktop graph for the vertical one. */
   .hiw-svg { display: none; }
-  .hiw-stack-wrap { display: block; position: relative; border: 1px dashed var(--line-strong);
-    border-radius: var(--r-md); padding: 30px 18px 18px; }
-  .hiw-stack-orch { position: absolute; top: 11px; left: 16px; font-family: var(--font-mono);
-    font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent-2); }
-  .hiw-stack { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
-  .hiw-stack li { position: relative; padding-left: 18px; font-size: 14px; line-height: 1.5; color: var(--muted); }
-  .hiw-stack li::before { content: ""; position: absolute; left: 0; top: 0.55em; width: 6px; height: 6px;
-    border-radius: 50%; background: var(--accent); }
-  .hiw-stack li.rag::before { background: transparent; border: 1px solid var(--line-strong); }
-  .hiw-stack b { color: var(--fg); font-weight: 600; }
+  .hiw-svg-m { display: block; width: 100%; height: auto; max-width: 384px; margin: 0 auto; overflow: visible; }
 }
 
 .feature-visual {
