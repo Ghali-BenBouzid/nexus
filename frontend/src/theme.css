@@ -1060,6 +1060,12 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
     background: color-mix(in srgb, var(--panel) 95%, transparent); backdrop-filter: blur(16px) saturate(1.4);
     animation: sheetDown 0.24s var(--ease); }
   .artifact-panel--list .ch-body { max-height: 104px; }
+  /* Tap-outside catcher for the artifacts list: under the sheet (z 30) and the
+     sub-bar (z 40, so its toggle stays live), over the thread so a tap closes
+     the sheet instead of falling through and focusing a turn behind it. */
+  .artifact-list-scrim { position: fixed; inset: 0; z-index: 25;
+    background: color-mix(in srgb, var(--bg) 38%, transparent); backdrop-filter: blur(2px);
+    animation: scrimIn 0.2s var(--ease); }
 
   /* Report: a sheet drawn up from the bottom, over the (still fixed) prompt bar,
      leaving a thin top strip for the Recent button. No resize, close with the X. */

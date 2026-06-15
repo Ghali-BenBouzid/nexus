@@ -239,6 +239,12 @@ export function Conversation({
       )}
       {/* The blurred top strip behind a drawn-up report, so the eye lands on it. */}
       {isMobile && reportUp && <div className="report-scrim" aria-hidden="true" />}
+      {/* Tap the thread to close the artifacts top sheet (matches the Recent
+          drawer's tap-outside-to-close). Without it a tap falls through to the
+          thread, focuses a turn, hides the toggle, and strands the list open. */}
+      {isMobile && artifactsListOpen && (
+        <div className="artifact-list-scrim" onClick={() => onLayout("thread")} aria-hidden="true" />
+      )}
 
       <div className="chat-main" ref={mainRef}>
         {onOpenHistory && (
