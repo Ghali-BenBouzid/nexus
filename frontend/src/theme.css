@@ -1008,7 +1008,11 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
      sheet, and a report a bottom sheet drawn up over everything. */
   /* Nav clearance: tightened so the in-flow sub-bar (and its icons) sit ~10px
      higher, closing the gap below the nav. */
-  .chat { padding-top: 70px; }
+  /* Track the dynamic viewport so the shell always equals the visible area: with
+     a static 100vh the body keeps a sliver of scroll the height of the mobile URL
+     bar, and scrolling the thread collapses the bar and peels the in-flow sub-bar
+     away from the fixed nav. dvh removes that slack so only the thread scrolls. */
+  .chat { padding-top: 70px; height: 100dvh; }
   /* The two parts of the header read as one unit: drop the nav's own divider so
      only the sub-bar's bottom edge separates the header from the thread. */
   .nav.nav-chat { border-bottom-color: transparent; }
