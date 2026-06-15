@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
+import { useIsMobile } from "../lib/useIsMobile";
 import type { LayoutMode, Turn } from "../types";
 import { ArtifactPanel, isArtifactTurn } from "./ArtifactPanel";
 import { ChatHistory } from "./ChatHistory";
@@ -52,6 +53,7 @@ export function Conversation({
   onToggleHistory,
   onOpenHistory,
 }: ConversationProps) {
+  const isMobile = useIsMobile();
   const bodyRef = useRef<HTMLDivElement>(null);
   // Stick-to-bottom: the view follows the latest events by default. A manual
   // scroll up drops into free mode; following resumes on the next query (and via
@@ -136,6 +138,19 @@ export function Conversation({
     onFocus(id);
   };
 
+  // Mobile-only: the top-right corner button toggles the Artifacts list (a top
+  // sheet). It is "open" when the panel is split and no report is selected.
+  const artifactsListOpen = layout === "split" && focusedId === null;
+  const toggleArtifacts = () => {
+    if (artifactsListOpen) onLayout("thread");
+    else {
+      onFocus(null); // land on the list, never a stale preview
+      onLayout("split");
+    }
+  };
+  // A report is drawn up as a bottom sheet on mobile whenever one is focused.
+  const reportUp = focusedId != null;
+
   // The panel has two states with two widths: the slim, fixed Artifacts list, and
   // the wide, resizable report Preview. `previewing` is true once a real artifact
   // is selected (a running/empty turn keeps the slim list). The slim width is the
@@ -193,6 +208,38 @@ export function Conversation({
 
   return (
     <main className="chat" data-layout={layout}>
+      {/* Mobile chrome: a slim sub-bar under the nav holding the Recent (left) and
+          Artifacts (right) buttons. Artifacts hides while a report is up so only
+          Recent remains. Desktop keeps its rail + floating fab. */}
+      {isMobile && (
+        <div className="chat-topbar">
+          {onOpenHistory ? (
+            <button
+              className="chat-corner chat-corner-left"
+              onClick={onToggleHistory}
+              aria-label={t.history.recent}
+              title={t.history.recent}
+            >
+              {I.sidebar}
+            </button>
+          ) : (
+            <span />
+          )}
+          {!reportUp && (
+            <button
+              className={"chat-corner chat-corner-right" + (artifactsListOpen ? " active" : "")}
+              onClick={toggleArtifacts}
+              aria-label={t.chat.showArtifacts}
+              title={t.chat.showArtifacts}
+            >
+              {I.doc}
+            </button>
+          )}
+        </div>
+      )}
+      {/* The blurred top strip behind a drawn-up report, so the eye lands on it. */}
+      {isMobile && reportUp && <div className="report-scrim" aria-hidden="true" />}
+
       <div className="chat-main" ref={mainRef}>
         {onOpenHistory && (
           <ChatHistory
@@ -203,6 +250,7 @@ export function Conversation({
             // Reload the list when a turn is added and again once a title lands, so
             // a freshly named conversation shows its title instead of "Untitled".
             refreshKey={turns.length + turns.filter((t) => t.title).length}
+            isMobile={isMobile}
           />
         )}
 
@@ -245,20 +293,23 @@ export function Conversation({
               onSelect={onFocus}
               onClose={() => onLayout("thread")}
               onRefresh={onRefresh}
+              isMobile={isMobile}
             />
           </>
         ) : (
-          <button
-            className="artifact-fab"
-            onClick={() => {
-              onFocus(null); // always land on the Artifacts list, never a stale preview
-              onLayout("split");
-            }}
-            aria-label={t.chat.showArtifacts}
-            title={t.chat.showArtifacts}
-          >
-            {I.doc}
-          </button>
+          !isMobile && (
+            <button
+              className="artifact-fab"
+              onClick={() => {
+                onFocus(null); // always land on the Artifacts list, never a stale preview
+                onLayout("split");
+              }}
+              aria-label={t.chat.showArtifacts}
+              title={t.chat.showArtifacts}
+            >
+              {I.doc}
+            </button>
+          )
         )}
       </div>
     </main>

@@ -64,6 +64,11 @@ export const I: Record<string, ReactElement> = {
       <path d="M21 21l-4.3-4.3" />
     </svg>
   ),
+  close: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 6l12 12M18 6L6 18" />
+    </svg>
+  ),
   cite: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <path d="M14 3v4a1 1 0 0 0 1 1h4" />

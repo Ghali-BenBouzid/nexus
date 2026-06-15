@@ -56,6 +56,9 @@ export default function App() {
   // remembered across sessions.
   const [chatHistoryOpen, setChatHistoryOpen] = useState(() => {
     try {
+      // On mobile the Recent column is a drawer opened from a corner button; it
+      // always lands closed, regardless of the remembered desktop preference.
+      if (window.matchMedia("(max-width: 920px)").matches) return false;
       return localStorage.getItem("nexus-history-open") === "true";
     } catch {
       return false;
@@ -282,7 +285,10 @@ export default function App() {
       status: res.outcome === "failed" ? "failed" : "complete",
       endedAt: performance.now(),
     }));
-    if (res.outcome === "ok" && res.result) {
+    // Desktop reveals the finished report in the side panel. On mobile that would
+    // draw a full sheet over the thread, so the thread stays put and the user
+    // opens the report from its "Report ready" button.
+    if (res.outcome === "ok" && res.result && !window.matchMedia("(max-width: 920px)").matches) {
       setLayout("split");
       setFocusedId(id);
     }

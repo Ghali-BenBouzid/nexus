@@ -183,9 +183,6 @@ a { color: inherit; text-decoration: none; }
    normal capital and stops floating. */
 .nexus-lockup-n { width: 0.75em; height: 0.75em; vertical-align: -0.02em; }
 .nexus-lockup-text { margin-left: -0.02em; }
-/* The chat nav stays minimal but keeps the full wordmark: it never collapses the
-   logo to the monogram (higher specificity overrides the mobile collapse below). */
-.nav-chat .nexus-lockup-text { display: inline; }
 .nav-links { display: flex; align-items: center; gap: 26px; }
 .nav-link { font-size: 14.5px; color: var(--muted); }
 .nav-link:hover { color: var(--fg); }
@@ -203,15 +200,15 @@ a { color: inherit; text-decoration: none; }
 /* Icon-only rail toggle. The nav is centered (max-width), so on wide screens the
    toggle floats out to the real viewport edge (media query below); on narrower
    screens it stays in flow at the nav's left. The history drawer emerges here. */
-.nav-rail { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px;
-  color: var(--muted); background: transparent; border: 1px solid var(--line); border-radius: 10px;
-  cursor: pointer; transition: border-color 0.2s, color 0.2s, background 0.2s; }
-.nav-rail:hover { color: var(--fg); border-color: var(--line-strong); background: var(--surface-2); }
-.nav-rail svg { width: 18px; height: 18px; }
-/* Once the centered nav has real side gutters, pin the toggle to the screen edge
-   (absolute resolves against the fixed, full-width .nav). */
+.nav-rail { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 34px;
+  color: var(--muted); background: none; border: none; padding: 0; margin-left: -20px;
+  cursor: pointer; transition: color 0.2s; }
+.nav-rail:hover { color: var(--fg); }
+.nav-rail svg { width: 19px; height: 19px; }
+/* Once the centered nav has real side gutters, pin the toggle hard against the
+   screen edge (absolute resolves against the fixed, full-width .nav). */
 @media (min-width: 1220px) {
-  .nav-rail { position: absolute; left: 20px; top: 50%; transform: translateY(-50%); }
+  .nav-rail { position: absolute; left: -2px; top: 50%; transform: translateY(-50%); margin-left: 0; }
 }
 .nav-right { display: flex; align-items: center; gap: 14px; }
 
@@ -1010,21 +1007,85 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   .hero { min-height: 100svh; padding-top: 64px; padding-bottom: 56px; }
   /* All three stack columns stay on one row; tighten the gap to fit. */
   .stack-grid { gap: 16px 14px; }
-  /* the report panel stacks under the chat; the Recent column becomes an overlay. */
+  /* ---- Mobile chat workspace ----
+     Only the conversation thread scrolls; the prompt bar and the corner buttons
+     stay fixed. The Recent column is a left drawer, the Artifacts list a top
+     sheet, and a report a bottom sheet drawn up over everything. */
+  /* Nav clearance: tightened so the in-flow sub-bar (and its icons) sit ~10px
+     higher, closing the gap below the nav. */
+  .chat { padding-top: 70px; }
+  /* The two parts of the header read as one unit: drop the nav's own divider so
+     only the sub-bar's bottom edge separates the header from the thread. */
+  .nav.nav-chat { border-bottom-color: transparent; }
   .chat-main { flex-direction: column; position: relative; }
-  .artifact-panel { flex: none; width: auto !important; max-height: 55vh; border-top: 1px solid var(--line); }
-  .resizer { display: none; }
-  /* Open overlays the conversation; collapsed stays an in-flow slim rail so the
-     toggle is always reachable without squeezing the messages. */
-  .chat-history { position: absolute; left: 0; top: 0; bottom: 0; z-index: 25; width: 280px; box-shadow: var(--shadow); }
-  .chat-history.collapsed { position: static; width: 56px; box-shadow: none; }
+  .resizer, .artifact-fab { display: none; }
+
+  /* The thread is the only scrolling surface; the in-flow sub-bar spaces the top,
+     so only the bottom needs room for the fixed composer. */
+  .chat-col { padding: 10px 18px 96px; }
+
+  /* Composer pinned to the bottom, above the thread and below the sheets. */
+  .composer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
+    padding: 8px 0 12px; border-top: 1px solid var(--line);
+    background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(14px) saturate(1.4); }
+  .composer-inner { padding-inline: 16px; }
+  .jump-latest { bottom: 92px; }
+  /* The composer history hint has no use without the arrow controls on mobile. */
+  .cinput-hint { display: none; }
+
+  /* A slim sub-bar sitting in flow right under the nav (so it can never overlap
+     it), holding the Recent (left) and Artifacts (right) buttons as bare icons. */
+  .chat-topbar { position: relative; z-index: 40;
+    display: flex; align-items: center; justify-content: space-between; padding: 2px 12px;
+    background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(14px) saturate(1.4);
+    border-bottom: 1px solid var(--line); }
+  .chat-corner { display: grid; place-items: center; cursor: pointer; padding: 2px;
+    background: none; border: none; color: var(--muted); transition: color 0.2s; }
+  .chat-corner:hover { color: var(--fg); }
+  .chat-corner svg { width: 19px; height: 19px; }
+  .chat-corner-right.active { color: var(--accent); }
+
+  /* Recent: an opaque left drawer over the thread (so the list text never bleeds
+     through to the conversation), closed by default (corner opens it). It slides
+     in from the left, the same motion as the landing page history drawer. */
+  .chat-history { background: var(--bg); position: fixed; left: 0; top: 0; bottom: 0; z-index: 45;
+    width: min(86vw, 320px); box-shadow: var(--shadow);
+    transform: translateX(0); transition: transform 0.28s var(--ease); }
+  .chat-history.collapsed { transform: translateX(-100%); box-shadow: none; }
+  /* Tap the dimmed area beside the drawer to close it (matches the landing page). */
+  .chat-history-scrim { position: fixed; inset: 0; z-index: 44;
+    background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px);
+    animation: scrimIn 0.2s var(--ease); }
+
+  /* Artifacts list: a sheet dropping from the top, below the sub-bar. It shows
+     about one and a half entries, then the body scrolls to the rest. */
+  .artifact-panel--list { position: fixed; left: 0; right: 0; top: 98px; width: auto;
+    z-index: 30; border: 1px solid var(--line);
+    border-radius: 0 0 16px 16px; box-shadow: var(--shadow);
+    background: color-mix(in srgb, var(--panel) 95%, transparent); backdrop-filter: blur(16px) saturate(1.4);
+    animation: sheetDown 0.24s var(--ease); }
+  .artifact-panel--list .ch-body { max-height: 104px; }
+
+  /* Report: a sheet drawn up from the bottom, over the (still fixed) prompt bar,
+     leaving a thin top strip for the Recent button. No resize, close with the X. */
+  .artifact-panel--reader { position: fixed; left: 0; right: 0; top: 108px; bottom: 0; width: auto;
+    z-index: 30; border-top-left-radius: 18px; border-top-right-radius: 18px; box-shadow: var(--shadow);
+    background: color-mix(in srgb, var(--panel) 97%, transparent); backdrop-filter: blur(18px) saturate(1.4);
+    animation: sheetUp 0.26s var(--ease); }
+
+  /* The blurred strip behind the report's exposed top; Recent stays above it. */
+  .report-scrim { position: fixed; inset: 0; z-index: 20; pointer-events: none;
+    background: color-mix(in srgb, var(--bg) 32%, transparent); backdrop-filter: blur(5px);
+    animation: scrimIn 0.26s var(--ease); }
 }
-/* Minimum width: the section headers no longer fit, so drop them and collapse the
-   left side too (monogram-only logo, GitHub icon only). 760px is where the longest
-   header ("Engineering challenges") stops fitting alongside the full left side. */
+@keyframes sheetUp { from { transform: translateY(100%); } }
+@keyframes sheetDown { from { transform: translateY(-100%); } }
+@keyframes scrimIn { from { opacity: 0; } }
+/* Minimum width: the section headers no longer fit, so drop them and reduce the
+   GitHub link to its icon. 760px is where the longest header ("Engineering
+   challenges") stops fitting alongside the full left side. */
 @media (max-width: 760px) {
   .nav-links { display: none; }
-  .nexus-lockup-text { display: none; }
   .nav-gh-text { display: none; }
   .nav-gh { gap: 0; }
   .nav-left { gap: 10px; }
@@ -1048,6 +1109,14 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   .run-head { flex-wrap: wrap; }
   .run-status { order: 3; }
   .footer-cols { gap: 36px; }
+  /* Restore the hero hierarchy on phones: the heading scales up with the
+     viewport and clearly outsizes the description, which steps down. */
+  .hero h1 { font-size: clamp(34px, 10vw, 48px); margin-bottom: 16px; }
+  .hero-sub { font-size: 14px; }
+  /* Keep the hero prompt placeholder (incl. the longer French copy) on one line so
+     it stays vertically centered instead of wrapping into a clipped second line. */
+  .prompt { padding: 5px 6px 5px 10px; }
+  .prompt textarea { font-size: 13.5px; line-height: 1.4; padding: 6px 8px; }
   /* Comfortable thumb targets (>=40px) for the controls a mobile user taps. */
   .cinput-send { width: 40px; height: 40px; }
   .icon-btn, .theme-toggle, .drawer-x { width: 40px; height: 40px; }
