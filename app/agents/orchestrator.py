@@ -9,6 +9,7 @@ from app.agents.researcher import research
 from app.agents.schemas import AgentEvent, Finding, Report, ResearchResult
 from app.agents.tools import Tool
 from app.agents.writer import write
+from app.observability import traced_step
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
 ShouldCancel = Callable[[], bool]
@@ -33,6 +34,7 @@ def _never_cancel() -> bool:
     return False
 
 
+@traced_step("research.run")
 async def run(
     prompt: str,
     *,
@@ -74,6 +76,7 @@ async def run(
     )
 
 
+@traced_step("research.execute")
 async def research_from_plan(
     sub_questions: list[str],
     *,

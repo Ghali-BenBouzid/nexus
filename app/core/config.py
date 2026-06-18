@@ -63,6 +63,14 @@ class Settings(BaseSettings):
     retry_base_delay: float = 0.5  # seconds before the first retry
     retry_max_delay: float = 8.0  # backoff ceiling
 
+    # observability (LangSmith). Off by default: the @traceable decorators stay in
+    # the hot path year-round but are inert no-ops until tracing is switched on with
+    # a key. configure_tracing() bridges these into the LANGSMITH_* env the SDK reads.
+    langsmith_tracing: bool = False
+    langsmith_api_key: str | None = None
+    langsmith_project: str = "nexus"
+    langsmith_endpoint: str | None = None  # set for self-hosted / EU LangSmith
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [

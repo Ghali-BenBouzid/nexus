@@ -11,6 +11,7 @@ from app.conversations.router import router as conversations_router
 from app.core.config import settings
 from app.core.limiter import limiter
 from app.db import session as db_session
+from app.observability import configure_tracing
 from app.research import repository
 from app.research.router import router as research_router
 
@@ -19,6 +20,9 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Turn on LangSmith tracing if it is configured (no-op otherwise). Done before
+    # serving so every request's agent run is captured.
+    configure_tracing()
     # Clean up jobs orphaned by a previous restart (best-effort: a DB blip at boot
     # must not stop the app from starting).
     try:

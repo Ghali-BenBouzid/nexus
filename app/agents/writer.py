@@ -7,6 +7,7 @@ from app.agents.language import language_directive
 from app.agents.provider import LLMProvider, Message, ProviderError
 from app.agents.retry import RetryPolicy, retry_async
 from app.agents.schemas import AgentEvent, Report, ResearchResult, Source
+from app.observability import traced_step
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +140,7 @@ async def _noop(event: AgentEvent) -> None:
     return None
 
 
+@traced_step("write")
 async def write(
     result: ResearchResult,
     *,

@@ -89,6 +89,11 @@ async def _run_research_pipeline(
                         tools=tools,
                         emit=_EventSink(query_id),
                         should_cancel=lambda: query_id in _cancel_requested,
+                        # Tag the trace's root run with the query id so a run in
+                        # LangSmith maps back to its row (stripped + ignored when
+                        # tracing is off). Flows through make_coro into the
+                        # @traced_step on orchestrator.run / research_from_plan.
+                        langsmith_extra={"metadata": {"query_id": query_id}},
                     ),
                     timeout=settings.global_timeout,
                 )

@@ -3,10 +3,11 @@ from typing import Any
 
 import httpx
 
-from app.agents.provider import LLMResponse, Message, ProviderError, ToolCall
+from app.agents.provider import LLMResponse, Message, ProviderError, ToolCall, Usage
 from app.agents.rate_limit import RateLimiter, llm_rate_limiter
 from app.agents.retry import RetryPolicy, is_transient, retry_async
 from app.agents.tools import ToolSpec
+from app.observability import record_model, traced_llm
 
 # A rough chars-per-token ratio for English + JSON tool schemas. Token-bucket
 # pacing only needs an estimate; the per-model TPM is set with a safety margin.
@@ -52,6 +53,7 @@ class OpenAICompatibleProvider:
             await self._client.aclose()
             self._client = None
 
+    @traced_llm("openai.generate")
     async def generate(
         self,
         messages: list[Message],
@@ -63,6 +65,7 @@ class OpenAICompatibleProvider:
             raise RuntimeError(
                 "OpenAICompatibleProvider must be used within 'async with'"
             )
+        record_model(self.base_url, self.model)
 
         payload: dict[str, Any] = {
             "model": self.model,
@@ -135,6 +138,7 @@ class OpenAICompatibleProvider:
     @staticmethod
     def _parse(data: dict[str, Any]) -> LLMResponse:
         message = data["choices"][0]["message"]
+        usage = OpenAICompatibleProvider._to_usage(data.get("usage"))
         tool_calls = message.get("tool_calls")
         if tool_calls:
             return LLMResponse(
@@ -146,9 +150,20 @@ class OpenAICompatibleProvider:
                         extra=tc.get("extra_content"),
                     )
                     for tc in tool_calls
-                ]
+                ],
+                usage=usage,
             )
-        return LLMResponse(text=message.get("content"))
+        return LLMResponse(text=message.get("content"), usage=usage)
+
+    @staticmethod
+    def _to_usage(usage: dict[str, Any] | None) -> Usage | None:
+        if not usage:
+            return None
+        return Usage(
+            input_tokens=usage.get("prompt_tokens"),
+            output_tokens=usage.get("completion_tokens"),
+            total_tokens=usage.get("total_tokens"),
+        )
 
 
 def _tool_call_payload(call: ToolCall) -> dict[str, Any]:
