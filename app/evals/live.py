@@ -28,6 +28,7 @@ from app.core.config import settings
 from app.evals.cases import EVAL_PROMPTS
 from app.evals.judge import score_cases
 from app.evals.runner import Case, format_aggregate, run_cases
+from app.observability import configure_tracing
 from app.research.dependencies import get_provider, get_search_backend
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ def _write_reports(cases: list[Case]) -> Path:
 
 
 async def _amain(*, use_judge: bool) -> None:
+    configure_tracing()  # trace the suite when LangSmith is set (no-op otherwise)
     provider = get_provider()
     backend: SearchBackend = CachingSearchBackend(get_search_backend())
     async with provider, backend:

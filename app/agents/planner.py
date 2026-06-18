@@ -6,6 +6,7 @@ from app.agents.language import language_directive
 from app.agents.provider import LLMProvider, LLMResponse, Message
 from app.agents.schemas import AgentEvent
 from app.agents.tools import SubmitPlan, SubmitPlanArgs
+from app.observability import traced_step
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
 
@@ -34,6 +35,7 @@ def _system_prompt(cap: int) -> str:
     )
 
 
+@traced_step("plan")
 async def plan(
     prompt: str,
     *,

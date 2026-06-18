@@ -1,4 +1,5 @@
 from app.agents.schemas import Claim, Finding, ResearchPoint, ResearchResult, Source
+from app.observability import traced_step
 
 
 def merge_results(results: list[ResearchResult]) -> ResearchResult:
@@ -55,6 +56,7 @@ def merge_results(results: list[ResearchResult]) -> ResearchResult:
     )
 
 
+@traced_step("consolidate")
 def consolidate(
     findings: list[Finding],
     failed_subquestions: list[str] | None = None,

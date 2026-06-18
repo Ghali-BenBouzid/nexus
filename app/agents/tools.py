@@ -4,6 +4,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from app.agents.schemas import Source
+from app.observability import record_run_name, traced_tool
 
 
 class ToolResult(BaseModel):
@@ -62,7 +63,9 @@ class BaseTool(BaseToolSpec):
     """Executable tool: validates incoming kwargs through args_model before
     running the tool's real work."""
 
+    @traced_tool()
     async def execute(self, **kwargs: Any) -> ToolResult:
+        record_run_name(self.name)
         args = self.args_model(**kwargs)
         return await self._run(args)
 

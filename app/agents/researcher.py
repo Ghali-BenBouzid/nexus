@@ -13,6 +13,7 @@ from app.agents.tools import (
     Tool,
     ToolResult,
 )
+from app.observability import traced_step
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
 
@@ -42,6 +43,7 @@ def _never_cancel() -> bool:
     return False
 
 
+@traced_step("research")
 async def research(
     sub_question: str,
     *,

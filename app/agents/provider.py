@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.agents.retry import RetryPolicy, retry_async
 from app.agents.tools import ToolSpec
+from app.observability import record_model, traced_llm
 
 
 class ProviderError(Exception):
@@ -31,9 +32,19 @@ class Message(BaseModel):
     name: str | None = None  # tool name on a tool result (Gemini matches by it)
 
 
+class Usage(BaseModel):
+    """Token counts for one model call. Optional throughout: a provider that does
+    not report usage leaves these None, and tracing simply omits the cost figure."""
+
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+
+
 class LLMResponse(BaseModel):
     text: str | None = None
     tool_calls: list[ToolCall] | None = None
+    usage: Usage | None = None  # token counts, for tracing/cost (when reported)
 
 
 class LLMProvider(Protocol):
@@ -90,6 +101,7 @@ class GeminiProvider:
             await self._client.aio.aclose()
             self._client = None
 
+    @traced_llm("gemini.generate")
     async def generate(
         self,
         messages: list[Message],
@@ -98,6 +110,7 @@ class GeminiProvider:
     ) -> LLMResponse:
         if self._client is None:
             raise RuntimeError("GeminiProvider must be used within 'async with'")
+        record_model("google", self.model)
 
         system_instruction, contents = self._to_contents(messages)
         config = types.GenerateContentConfig(
@@ -119,6 +132,7 @@ class GeminiProvider:
         except Exception as exc:  # never let a raw SDK error (key-bearing) escape
             raise ProviderError("LLM request failed") from exc
 
+        usage = self._to_usage(response)
         calls = response.function_calls
         if calls:
             return LLMResponse(
@@ -129,9 +143,21 @@ class GeminiProvider:
                         args=dict(call.args or {}),
                     )
                     for call in calls
-                ]
+                ],
+                usage=usage,
             )
-        return LLMResponse(text=response.text)
+        return LLMResponse(text=response.text, usage=usage)
+
+    @staticmethod
+    def _to_usage(response: types.GenerateContentResponse) -> Usage | None:
+        meta = response.usage_metadata
+        if meta is None:
+            return None
+        return Usage(
+            input_tokens=meta.prompt_token_count,
+            output_tokens=meta.candidates_token_count,
+            total_tokens=meta.total_token_count,
+        )
 
     @staticmethod
     def _to_contents(
