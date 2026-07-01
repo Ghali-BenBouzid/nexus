@@ -58,7 +58,7 @@ const L = t.hiw.labels;
 const HIW_FLOW = [
   { d: "M28,146 H67", i: 0 }, // message -> supervisor (start)
   { d: "M164,192 C 164,302 250,312 282,343", i: 1 }, // route research -> plan
-  { d: "M362,385 H392", i: 2 }, // plan -> review
+  { d: "M362,385 H389", i: 2 }, // plan -> review
   // Split: the packet fans out into the three active researcher lanes at once.
   { d: "M522,385 H582 C 602,385 602,300 636,300", i: 3 },
   { d: "M522,385 H582 C 602,385 602,352 636,352", i: 3 },
@@ -67,7 +67,7 @@ const HIW_FLOW = [
   { d: "M812,300 C 850,300 850,385 876,385", i: 4 },
   { d: "M812,352 C 850,352 850,385 876,385", i: 4 },
   { d: "M812,404 C 850,404 850,385 876,385", i: 4 },
-  { d: "M1006,385 H1032", i: 5 }, // consolidate -> write
+  { d: "M1006,385 H1029", i: 5 }, // consolidate -> write
   { d: "M1144,385 H1198", i: 6 }, // write -> cited report (end)
 ];
 const HIW_FLOW_M = [
@@ -183,7 +183,7 @@ export function HowItWorks() {
             <path className="hiw-edge flow" d="M164,192 C 164,302 250,312 282,343" markerEnd="url(#hiw-arrow)" pathLength={1} />
 
             {/* Research subgraph edges. */}
-            <path className="hiw-edge flow" d="M362,385 H392" markerEnd="url(#hiw-arrow)" pathLength={1} />
+            <path className="hiw-edge flow" d="M362,385 H389" markerEnd="url(#hiw-arrow)" pathLength={1} />
             {/* The revise arc loops the review back to re-plan. */}
             <path className="hiw-edge" d="M495,345 C 486,302 362,302 332,343" markerEnd="url(#hiw-arrow)" pathLength={1} />
             {/* Confirm fans the approved plan out to the researchers, and back in. */}
@@ -193,7 +193,7 @@ export function HowItWorks() {
             {rows.map((r, i) => (
               <path key={"fi" + i} className="hiw-edge" d={`M812,${r.cy} C 850,${r.cy} 850,385 876,385`} pathLength={1} />
             ))}
-            <path className="hiw-edge flow" d="M1006,385 H1032" markerEnd="url(#hiw-arrow)" pathLength={1} />
+            <path className="hiw-edge flow" d="M1006,385 H1029" markerEnd="url(#hiw-arrow)" pathLength={1} />
             <path className="hiw-edge flow" d="M1144,385 H1198" markerEnd="url(#hiw-arrow)" pathLength={1} />
 
             {/* Traveling flow-light: one packet, three stacked layers per segment. */}
