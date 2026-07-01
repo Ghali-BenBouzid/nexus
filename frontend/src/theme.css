@@ -24,9 +24,9 @@
 html[data-theme="dark"] {
   --bg: #010000;
   --bg-2: #060400;
-  --fg: #f4f1f8;
-  --muted: rgba(244, 241, 248, 0.72);
-  --faint: rgba(244, 241, 248, 0.52);
+  --fg: #ffffff;
+  --muted: rgba(255, 255, 255, 0.9);
+  --faint: rgba(255, 255, 255, 0.6);
   --line: rgba(255, 255, 255, 0.10);
   --line-strong: rgba(255, 255, 255, 0.18);
   --surface: rgba(255, 255, 255, 0.045);
@@ -51,9 +51,9 @@ html[data-theme="dark"] {
 html[data-theme="light"] {
   --bg: #faf7f2;
   --bg-2: #f3ede4;
-  --fg: #1c1714;
-  --muted: rgba(28, 23, 20, 0.74);
-  --faint: rgba(28, 23, 20, 0.56);
+  --fg: #0a0705;
+  --muted: rgba(10, 7, 5, 0.9);
+  --faint: rgba(10, 7, 5, 0.62);
   --line: rgba(28, 18, 8, 0.12);
   --line-strong: rgba(28, 18, 8, 0.20);
   --surface: rgba(255, 255, 255, 0.66);
@@ -283,7 +283,7 @@ a { color: inherit; text-decoration: none; }
 .hero h1 .char { display: inline-block; }
 .hero-sub {
   font-size: clamp(16px, 1.9vw, 19px);
-  color: var(--muted);
+  color: var(--fg);
   max-width: 100ch; line-height: 1.5;
   /* honors an explicit \n in the copy as a hard break, still wraps otherwise */
   white-space: pre-line;
@@ -298,18 +298,22 @@ a { color: inherit; text-decoration: none; }
   background: var(--surface);
   border: 1px solid var(--line-strong);
   border-radius: var(--r-xl);
-  padding: 6px 8px 6px 14px;
+  padding: 10px 10px 10px 18px;
   backdrop-filter: blur(22px) saturate(1.5);
   box-shadow: var(--shadow);
   transition: border-color 0.25s, box-shadow 0.25s;
 }
 .prompt:focus-within { border-color: var(--accent); box-shadow: 0 0 0 4px var(--accent-soft), var(--shadow); }
+/* A touch more opaque than the default surface so the bar reads as a solid input,
+   while the backdrop blur keeps it glassy rather than fully opaque. */
+html[data-theme="light"] .prompt { background: rgba(255, 255, 255, 0.7); }
+html[data-theme="dark"] .prompt { background: rgba(255, 255, 255, 0.14); }
 .prompt textarea {
   flex: 1;
   background: transparent; border: none; outline: none; resize: none;
   color: var(--fg);
   font-family: var(--font-sans); font-size: 17px; line-height: 1.5;
-  padding: 4px 24px; max-height: 180px; overflow: hidden; text-align: left;
+  padding: 6px 24px; max-height: 180px; overflow: hidden; text-align: left;
 }
 /* Input is left-aligned (caret at the start when empty, at the end while typing),
    but the placeholder/UI text is centered. */
@@ -335,7 +339,9 @@ a { color: inherit; text-decoration: none; }
   font-size: 13px; color: var(--faint);
 }
 
-.chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 20px; }
+/* Small nudge toward the examples, separating them from the input above. */
+.chips-label { text-align: center; color: var(--fg); font-size: 13.5px; font-weight: 500; margin: 30px 0 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 13px; }
 .chip {
   font-size: 13.5px; color: var(--muted);
   padding: 9px 15px; border-radius: 999px;
@@ -359,7 +365,7 @@ a { color: inherit; text-decoration: none; }
   font-size: clamp(30px, 4.4vw, 46px); letter-spacing: -0.03em; line-height: 1.04;
   margin: 0 0 16px;
 }
-.section-head p { font-size: 18px; color: var(--muted); line-height: 1.55; margin: 0; }
+.section-head p { font-size: 18px; color: var(--fg); line-height: 1.55; margin: 0; }
 
 .steps-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
 .step-card {
@@ -427,9 +433,26 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .hiw-svg { display: block; width: 100%; height: auto; max-width: 1060px; margin: 0 auto; overflow: visible; }
 .hiw-orch { fill: none; stroke: var(--line-strong); stroke-dasharray: 5 6; }
 .hiw-orch-label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; fill: var(--accent-2); }
-.hiw-edge { fill: none; stroke: var(--line-strong); stroke-width: 1.6; }
-.hiw-arrowhead { fill: none; stroke: var(--line-strong); stroke-width: 1.6; }
-.hiw-io { font-family: var(--font-mono); font-size: 12px; fill: var(--muted); }
+.hiw-edge { fill: none; stroke: color-mix(in srgb, var(--fg) 42%, transparent); stroke-width: 1.8; }
+.hiw-arrowhead { fill: none; stroke: color-mix(in srgb, var(--fg) 68%, transparent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+/* Flow-light: one guided light traces the primary path start -> end. It's built from
+   three stacked strokes sharing a leading edge: a bright short head, and progressively
+   dimmer, longer tails, so the packet reads as a comet (bright head, fading trail).
+   All layers move as one because the dashoffset delta is identical; only --l (tail
+   length) and the stroke alpha differ. Base edge stays solid underneath. */
+.hiw-comet { fill: none; stroke-linecap: round; pointer-events: none; opacity: 0; }
+.hiw-comet.head { stroke-dasharray: 0.05 4; stroke: var(--accent-2); stroke-width: 3.2;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--accent-2) 80%, transparent)); }
+.hiw-comet.mid  { stroke-dasharray: 0.16 4; stroke: color-mix(in srgb, var(--accent-2) 55%, transparent); stroke-width: 2.6; }
+.hiw-comet.tail { stroke-dasharray: 0.32 4; stroke: color-mix(in srgb, var(--accent-2) 26%, transparent); stroke-width: 2; }
+.hiw-io { font-family: var(--font-mono); font-size: 12px; fill: var(--fg); }
+/* The exit label stays accent so start and end read as a pair; the entry label is plain
+   bold ink (its ping ring + brighter first arrow carry the "start here" cue instead). */
+.hiw-io-key { fill: var(--accent-2); font-weight: 700; }
+.hiw-io-start { fill: var(--fg); font-weight: 700; }
+.hiw-edge.start { stroke: color-mix(in srgb, var(--fg) 72%, transparent); stroke-width: 2.3; }
+.hiw-start-dot { fill: var(--accent-2); }
+.hiw-ping { fill: none; stroke: var(--accent-2); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; }
 .hiw-stack-label { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.1em; text-transform: uppercase; fill: var(--faint); }
 .hiw-node { cursor: pointer; }
 .hiw-node rect { fill: var(--surface); stroke: var(--line); stroke-width: 1.4; transition: stroke 0.2s, fill 0.2s; }
@@ -465,7 +488,51 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   .hiw.in .hiw-edge { animation: hiwDraw 0.8s var(--ease) both 0.15s; }
   .hiw.in .hiw-node, .hiw.in .hiw-gate { animation: hiwUp 0.5s var(--ease) both 0.25s; }
   .hiw.in .hiw-io, .hiw.in .hiw-orch-label, .hiw.in .hiw-stack-label, .hiw.in .hiw-gate-label { animation: hiwFade 0.5s var(--ease) both 0.45s; }
+  /* The light: one 7s loop over the whole graph. Each segment's move happens in an 8%
+     window; a per-segment 0.56s delay chains them so the packet hands off seamlessly,
+     start -> end, then rests before repeating. --i is the segment's order along the path. */
+  /* Three layers, one packet: 0.5s per-segment stagger with a concrete dashoffset
+     sweep so the head leads and the longer/dimmer tails trail. The 2.3s loop is
+     shorter than the ~3.5s journey, so a new packet launches before the previous
+     one exits: a steady train (~2 on the graph), never a dead moment, never a pile. */
+  .hiw.in .hiw-comet.head { animation: hiwCometHead 2.3s linear calc(0.9s + var(--i, 0) * 0.5s) infinite; }
+  .hiw.in .hiw-comet.mid  { animation: hiwCometMid  2.3s linear calc(0.9s + var(--i, 0) * 0.5s) infinite; }
+  .hiw.in .hiw-comet.tail { animation: hiwCometTail 2.3s linear calc(0.9s + var(--i, 0) * 0.5s) infinite; }
+  /* Stage boxes light up as a packet reaches them, but only every other packet (4.6s
+     = 2x the 2.3s spacing), so a glow reads as tied to a beam instead of strobing on
+     every one. A head reaches a box at 0.84s + d*0.5s (19% into its segment's cycle);
+     the delay puts the keyframe's peak exactly there, with a short attack just before. */
+  .hiw.in .hiw-node.hiw-glow {
+    animation: hiwUp 0.5s var(--ease) both 0.25s, hiwNodeGlow 4.6s ease-out infinite;
+    animation-delay: 0.25s, calc(0.7s + var(--d, 1) * 0.5s);
+  }
+  .hiw.in .hiw-start-dot { animation: hiwFade 0.5s var(--ease) both 0.45s; }
+  .hiw.in .hiw-ping { animation: hiwPing 2.6s var(--ease) infinite 1.1s; }
 }
+/* Each layer shares the same leading-edge trajectory (0 -> 1.15) so heads align;
+   the longer dasharray on mid/tail leaves a fading trail behind that head. */
+@keyframes hiwCometHead {
+  0% { stroke-dashoffset: 0.05; opacity: 0; } 2% { opacity: 1; }
+  22% { stroke-dashoffset: -1.1; opacity: 1; } 24% { opacity: 0; }
+  100% { stroke-dashoffset: -1.1; opacity: 0; }
+}
+@keyframes hiwCometMid {
+  0% { stroke-dashoffset: 0.16; opacity: 0; } 2% { opacity: 1; }
+  22% { stroke-dashoffset: -0.99; opacity: 1; } 24% { opacity: 0; }
+  100% { stroke-dashoffset: -0.99; opacity: 0; }
+}
+@keyframes hiwCometTail {
+  0% { stroke-dashoffset: 0.32; opacity: 0; } 2% { opacity: 1; }
+  22% { stroke-dashoffset: -0.83; opacity: 1; } 24% { opacity: 0; }
+  100% { stroke-dashoffset: -0.83; opacity: 0; }
+}
+@keyframes hiwNodeGlow {
+  0%   { filter: drop-shadow(0 0 0 transparent); }
+  3%   { filter: drop-shadow(0 0 8px var(--accent-2)); }
+  13%  { filter: drop-shadow(0 0 0 transparent); }
+  100% { filter: drop-shadow(0 0 0 transparent); }
+}
+@keyframes hiwPing { 0% { r: 3; opacity: 0.7; } 70% { opacity: 0; } 100% { r: 12; opacity: 0; } }
 /* Safety net: if scripting is unavailable the IntersectionObserver never adds
    `.in`, so force the graph visible rather than shipping a blank figure. */
 @media (scripting: none) {
@@ -487,14 +554,17 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 .acad-list.muted li::before { background: transparent; border: 1px solid var(--line-strong); }
 .acad-list b { color: var(--fg); font-weight: 600; }
-/* Engineering challenges: problem -> how -> why, with a left accent rule */
-.took-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 34px; max-width: 760px; }
+/* Engineering challenges: problem -> how, then a framed impact line. Narrow column
+   and short copy so each one reads in a glance, not a wall of text. */
+.took-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 40px; max-width: 560px; }
 .took-item { position: relative; }
-.took-item h3 { font-family: var(--font-display); font-size: 17px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 9px; color: var(--fg); }
-.took-item p { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--muted); }
-.took-why { margin-top: 10px; }
-.took-why span { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.08em;
-  text-transform: uppercase; color: var(--accent-2); margin-right: 10px; }
+.took-item h3 { font-family: var(--font-display); font-size: 17px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 8px; color: var(--fg); }
+.took-item p { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--fg); }
+/* Impact framed off on its own so it never clutters the description above it. */
+.took-why { margin-top: 32px; padding: 13px 15px 14px; border: 1px solid var(--line);
+  border-radius: 10px; background: var(--surface); }
+.took-why span { display: block; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.09em;
+  text-transform: uppercase; color: var(--accent-2); margin: 0 0 4px; }
 .footer-loop { color: var(--accent-2); border-bottom: 1px solid color-mix(in srgb, var(--accent-2) 40%, transparent); transition: color 0.2s; }
 .footer-loop:hover { color: var(--accent); }
 @media (max-width: 760px) {
@@ -714,6 +784,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   .hero-badge { transform: translateY(14px); animation: slideUp 0.9s var(--ease) 0.2s forwards; }
   .hero-sub { transform: translateY(16px); animation: slideUp 0.9s var(--ease) 0.9s forwards; }
   .prompt-wrap { transform: translateY(18px); animation: slideUp 0.9s var(--ease) 1.1s forwards; }
+  .chips-label { transform: translateY(14px); animation: slideUp 0.9s var(--ease) 1.3s forwards; }
   .chips { transform: translateY(14px); animation: slideUp 0.9s var(--ease) 1.35s forwards; }
   .ev { transform: translateY(8px); animation: slideUp 0.45s var(--ease) forwards; }
 }
@@ -1105,7 +1176,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
     display: flex; align-items: center; justify-content: center;
     padding: 60px 0 12px;
   }
-  .hero-sub, .hero .chips { display: none; }
+  .hero-sub, .hero .chips, .hero .chips-label { display: none; }
   .prompt-wrap-outer { margin-top: 4px; }
 }
 @media (max-width: 600px) {

@@ -1,8 +1,12 @@
 <!doctype html>
-<html lang="en" data-theme="dark">
+<html lang="en" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- Read by the preload scanner before any CSS, so the browser compositor
+         paints its base/navigation backdrop with the app's own default on reload.
+         light is listed first because the app is light by default. -->
+    <meta name="color-scheme" content="light dark" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>Nexus, deep research, cited</title>
 
@@ -17,6 +21,32 @@
       })();
     </script>
 
+    <!-- Two layers of flash protection, both before any app code runs:
+         1. color-scheme + html/body background: the preload-scanned meta above and
+            these rules paint the pre-app frames (incl. the reload navigation gap)
+            dark instead of the UA default white.
+         2. #boot-splash: a full-bleed opaque cover painted on the very first frame,
+            sitting above the WebGL canvas and the app, removed once React mounts
+            (html[data-ready]). It hides any white the GPU canvas init or the
+            dev-injected stylesheet would otherwise flash after first paint.
+         Values mirror --bg in theme.css. -->
+    <style>
+      html { background: #faf7f2; color-scheme: light; }
+      body { background: #faf7f2; }
+      html[data-theme="dark"] { background: #010000; color-scheme: dark; }
+      html[data-theme="dark"] body { background: #010000; }
+
+      #boot-splash {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        pointer-events: none;
+        background: #faf7f2;
+        transition: opacity 0.25s ease;
+      }
+      html[data-theme="dark"] #boot-splash { background: #010000; }
+    </style>
+
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
@@ -25,6 +55,9 @@
     />
   </head>
   <body data-stage="home">
+    <!-- Opaque cover, removed once the app mounts (see #boot-splash above). Last
+         line of defense against a white flash on (re)load. -->
+    <div id="boot-splash"></div>
     <canvas id="fluid-canvas"></canvas>
     <div id="bg-scrim"></div>
     <div id="root"></div>

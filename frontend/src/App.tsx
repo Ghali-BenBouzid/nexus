@@ -35,7 +35,7 @@ const FEED_TAG = LIVE_MODE ? t.feed.liveTag : t.feed.simTag;
 
 export default function App() {
   const [theme, setTheme] = useState<Theme>(
-    () => (document.documentElement.getAttribute("data-theme") as Theme) || "dark",
+    () => (document.documentElement.getAttribute("data-theme") as Theme) || "light",
   );
   // The URL is the source of truth for the view; a deep link or reload on
   // /chat/:id starts on the chat view and the conversation is loaded on mount.
@@ -136,6 +136,27 @@ export default function App() {
       fluidRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Lift the boot splash (the opaque anti-flash cover in index.html) once the app
+  // has mounted and painted a frame. Two rAFs guarantee at least one real paint,
+  // so the splash only fades to the dark app, never to a white intermediate. The
+  // fade + removal is done directly on the node (not a CSS attribute toggle) so it
+  // is unconditional: the cover can never get stuck over the app.
+  useEffect(() => {
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const splash = document.getElementById("boot-splash");
+        if (!splash) return;
+        splash.style.opacity = "0";
+        setTimeout(() => splash.remove(), 300); // after the 0.25s fade
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      cancelAnimationFrame(raf2);
+    };
   }, []);
 
   // Theme side-effects: persist, set the attribute, recolor the fluid.

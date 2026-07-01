@@ -33,6 +33,7 @@ export function Hero({ onSubmit }: HeroProps) {
 
         <div className="prompt-wrap-outer">
           <PromptBar ref={barRef} onSubmit={onSubmit} showHint={false} />
+          <p className="chips-label">{t.hero.examplesLabel}</p>
           <div className="chips">
             {t.hero.chips.map((prompt, i) => (
               <button key={i} className="chip" onClick={() => barRef.current?.inject(prompt)}>

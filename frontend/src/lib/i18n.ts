@@ -58,6 +58,7 @@ const en = {
     headline: "Ask anything. Every claim, sourced.",
     sub: "Nexus plans your question, sends agents to research the live web, and returns one fully-cited report.\nEvery claim links back to its source, so you can check the work yourself.",
     placeholder: "Ask Nexus to research anything…",
+    examplesLabel: "Try one of these examples",
     chips: [
       "What are the most promising approaches to grid-scale energy storage in 2026?",
       "How are small language models changing on-device AI in 2026?",
@@ -126,32 +127,32 @@ const en = {
   },
   eng: {
     title: "Engineering challenges",
-    why: "Why",
+    why: "Impact",
     challenges: [
       {
         problem: "Free-tier LLM limits, on three axes at once.",
-        how: "Free tiers cap requests per minute, tokens per minute, and a daily total, and a single run can trip any of the three. I treated it as a cost-engineering problem: a token-aware rate limiter with a profile per model, so the orchestrator paces its own calls and the whole run stays under every ceiling.",
-        why: "So a real run never dies on a rate-limit error in front of someone. Running reliably on a free tier is the whole point of the demo.",
+        how: "Free tiers cap requests, tokens, and daily totals, and one run can trip any of them. A token-aware rate limiter with a per-model profile paces the orchestrator's own calls under every ceiling.",
+        why: "A real run never dies on a rate-limit error in front of someone.",
       },
       {
         problem: "Keeping the model from inventing citations.",
-        how: "If the language model assigns citations, it will eventually reference a source it never used. I took citations out of its hands entirely: a deterministic step dedupes the sources and numbers them, and the writer only preserves the markers it is handed.",
-        why: "It shrinks the surface where a hallucination can happen to almost nothing, which is what lets me promise that every claim links to a source that was actually read.",
+        how: "Hand citations to the model and it eventually cites a source it never read. So a deterministic step dedupes and numbers the sources, and the writer only keeps the markers it's given.",
+        why: "The room for a hallucinated citation shrinks to almost nothing, so every claim links to a source that was actually read.",
       },
       {
         problem: "Knowing whether a change actually helps.",
-        how: "Prompt and pipeline tweaks feel better without being better. I'm building an eval harness with a fixed set of graded questions and an LLM-as-a-judge pass, so a change gets scored before it ships.",
-        why: "Measure before you tune. It turns 'this prompt seems nicer' into a number I can compare across runs.",
+        how: "Prompt and pipeline tweaks feel better without being better. An eval harness with a fixed set of graded questions and an LLM-as-a-judge pass scores each change before it ships.",
+        why: "Measure before you tune: 'seems nicer' becomes a number I can compare across runs.",
       },
       {
         problem: "One core, four different providers.",
-        how: "Free LLM backends each speak a slightly different dialect, and Groq's Llama models kept returning tool calls in a shape that broke the parser. I put one OpenAI-compatible adapter in front of all of them and defaulted to Gemini, with the rest swappable behind the same seam.",
-        why: "The agents don't know which backend they're on, so changing provider is a config change instead of a rewrite.",
+        how: "Free LLM backends each speak a slightly different dialect, and Groq's Llama models kept breaking the tool-call parser. One OpenAI-compatible adapter fronts them all, Gemini by default, the rest swappable.",
+        why: "The agents never know which backend they run on, so switching provider is a config change, not a rewrite.",
       },
       {
         problem: "Built for concurrency.",
-        how: "The orchestrator dispatches the researchers as concurrent tasks, and the whole path is non-blocking, from the orchestration down through the providers and the database. It also caps how many run at once, and for now that cap is deliberately set to one: the agents run one at a time so a run stays comfortably under the free-tier rate limits.",
-        why: "The fan-out is real and ready; lifting the limit is a single knob, so the system scales with the budget instead of needing a rewrite.",
+        how: "The orchestrator dispatches researchers as concurrent, non-blocking tasks, down through the providers and the database. The concurrency cap is set to one for now, to stay under free-tier limits.",
+        why: "The fan-out is real; lifting the cap is a single knob, so it scales with the budget instead of a rewrite.",
       },
     ],
     nextTitle: "What's next",
@@ -276,6 +277,7 @@ const fr: Dict = {
     headline: "Posez une question. Chaque affirmation est sourcée.",
     sub: "Nexus décompose votre question, envoie des agents chercher sur le web en direct, et produit un seul rapport référencé. Chaque affirmation renvoie à sa source, vous pouvez donc vérifier le travail vous-même.",
     placeholder: "Demandez une recherche à Nexus…",
+    examplesLabel: "Essayez l'un de ces exemples",
     chips: [
       "Quelles sont les approches les plus prometteuses pour le stockage d'énergie à l'échelle du réseau en 2026 ?",
       "Comment les petits modèles de langage transforment-ils l'IA embarquée en 2026 ?",
@@ -344,32 +346,32 @@ const fr: Dict = {
   },
   eng: {
     title: "Défis techniques",
-    why: "Pourquoi",
+    why: "Impact",
     challenges: [
       {
         problem: "Les limites des offres LLM gratuites, sur trois axes à la fois.",
-        how: "Les offres gratuites plafonnent les requêtes par minute, les tokens par minute et un total quotidien ; une seule recherche peut faire sauter n'importe lequel des trois. Je l'ai traité comme un problème d'ingénierie des coûts : un limiteur de débit qui tient compte des tokens, avec un profil par modèle, pour que l'orchestrateur rythme ses propres appels et que toute la recherche reste sous chaque plafond.",
-        why: "Pour qu'une vraie recherche ne plante jamais sur une erreur de quota. L'intérêt de la démo est de tourner de façon fiable sur une offre gratuite.",
+        how: "Les offres gratuites plafonnent requêtes, tokens et total quotidien, et une seule recherche peut faire sauter n'importe lequel. Un limiteur de débit par modèle, conscient des tokens, rythme les appels sous chaque plafond.",
+        why: "Une vraie recherche ne plante jamais sur une erreur de quota devant quelqu'un.",
       },
       {
         problem: "Empêcher le modèle d'inventer des citations.",
-        how: "Si le modèle de langage attribue les citations, il finira par référencer une source qu'il n'a jamais utilisée. Je lui ai complètement retiré la gestion des citations : une étape déterministe dédoublonne les sources et les numérote, et le rédacteur ne fait que conserver les marqueurs qu'on lui transmet.",
-        why: "Ça réduit à presque rien la surface où une hallucination peut se produire, c'est ce qui me permet de promettre que chaque affirmation renvoie à une source réellement lue.",
+        how: "Laissé au modèle, il finit par citer une source qu'il n'a jamais lue. Une étape déterministe dédoublonne et numérote les sources, et le rédacteur ne garde que les marqueurs qu'on lui donne.",
+        why: "La place pour une citation hallucinée se réduit à presque rien, donc chaque affirmation renvoie à une source réellement lue.",
       },
       {
         problem: "Savoir si un changement aide vraiment.",
-        how: "Les retouches de prompt et de chaîne donnent l'impression d'être meilleures sans l'être. Je construis un protocole d'évaluation avec un jeu fixe de questions notées et une passe de LLM-as-a-judge, pour qu'un changement soit noté avant d'être livré.",
-        why: "Mesurer avant d'ajuster. Ça transforme « ce prompt a l'air mieux » en un chiffre que je peux comparer d'une recherche à l'autre.",
+        how: "Les retouches de prompt semblent meilleures sans l'être. Un protocole d'évaluation, questions notées et passe de LLM-as-a-judge, note chaque changement avant sa livraison.",
+        why: "Mesurer avant d'ajuster : « ça a l'air mieux » devient un chiffre comparable d'une recherche à l'autre.",
       },
       {
         problem: "Un seul noyau, quatre fournisseurs différents.",
-        how: "Les fournisseurs LLM gratuits parlent chacun un dialecte un peu différent, et les modèles Llama de Groq renvoyaient leurs appels d'outils dans une forme qui cassait le parseur. J'ai placé un seul adaptateur compatible OpenAI devant tous, avec Gemini par défaut et les autres interchangeables derrière la même interface.",
-        why: "Les agents ne savent pas sur quel fournisseur ils tournent, donc en changer est une question de configuration, pas une réécriture.",
+        how: "Chaque fournisseur LLM gratuit parle un dialecte un peu différent, et les Llama de Groq cassaient le parseur d'appels d'outils. Un adaptateur compatible OpenAI les couvre tous, Gemini par défaut, le reste interchangeable.",
+        why: "Les agents ignorent sur quel fournisseur ils tournent : en changer est une question de config, pas une réécriture.",
       },
       {
         problem: "Conçu pour l'exécution concurrente.",
-        how: "L'orchestrateur lance les chercheurs comme des tâches concurrentes, et toute la chaîne est non bloquante, de l'orchestration jusqu'aux fournisseurs et à la base de données. Il borne aussi le nombre d'agents qui tournent en même temps, et pour l'instant cette limite est volontairement fixée à un seul : les agents s'exécutent un par un pour qu'une recherche reste confortablement sous les limites de l'offre gratuite.",
-        why: "Le fan-out est réel et prêt ; relever la limite est un seul réglage, donc le système monte en charge avec le budget au lieu d'exiger une réécriture.",
+        how: "L'orchestrateur lance les chercheurs en tâches concurrentes et non bloquantes, jusqu'aux fournisseurs et à la base de données. La limite de concurrence est fixée à un pour l'instant, pour rester sous les quotas gratuits.",
+        why: "Le fan-out est réel ; relever la limite est un seul réglage, donc ça monte en charge avec le budget au lieu d'une réécriture.",
       },
     ],
     nextTitle: "La suite",
