@@ -130,11 +130,6 @@ const en = {
     why: "Impact",
     challenges: [
       {
-        problem: "Free-tier LLM limits, on three axes at once.",
-        how: "Free tiers cap requests, tokens, and daily totals, and one run can trip any of them. A token-aware rate limiter with a per-model profile paces the orchestrator's own calls under every ceiling.",
-        why: "A real run never dies on a rate-limit error in front of someone.",
-      },
-      {
         problem: "Keeping the model from inventing citations.",
         how: "Hand citations to the model and it eventually cites a source it never read. So a deterministic step dedupes and numbers the sources, and the writer only keeps the markers it's given.",
         why: "The room for a hallucinated citation shrinks to almost nothing, so every claim links to a source that was actually read.",
@@ -148,6 +143,11 @@ const en = {
         problem: "One core, four different providers.",
         how: "Free LLM backends each speak a slightly different dialect, and Groq's Llama models kept breaking the tool-call parser. One OpenAI-compatible adapter fronts them all, Gemini by default, the rest swappable.",
         why: "The agents never know which backend they run on, so switching provider is a config change, not a rewrite.",
+      },
+      {
+        problem: "Free-tier LLM limits, on three axes at once.",
+        how: "Free tiers cap requests, tokens, and daily totals, and one run can trip any of them. A token-aware rate limiter with a per-model profile paces the orchestrator's own calls under every ceiling.",
+        why: "A real run never dies on a rate-limit error in front of someone.",
       },
       {
         problem: "Built for concurrency.",
@@ -349,29 +349,29 @@ const fr: Dict = {
     why: "Impact",
     challenges: [
       {
-        problem: "Les limites des offres LLM gratuites, sur trois axes à la fois.",
-        how: "Les offres gratuites plafonnent requêtes, tokens et total quotidien, et une seule recherche peut faire sauter n'importe lequel. Un limiteur de débit par modèle, conscient des tokens, rythme les appels sous chaque plafond.",
-        why: "Une vraie recherche ne plante jamais sur une erreur de quota devant quelqu'un.",
-      },
-      {
         problem: "Empêcher le modèle d'inventer des citations.",
-        how: "Laissé au modèle, il finit par citer une source qu'il n'a jamais lue. Une étape déterministe dédoublonne et numérote les sources, et le rédacteur ne garde que les marqueurs qu'on lui donne.",
-        why: "La place pour une citation hallucinée se réduit à presque rien, donc chaque affirmation renvoie à une source réellement lue.",
+        how: "Si on laisse les citations au modèle, il finit par en citer une qu'il n'a jamais lue. Une étape déterministe dédoublonne et numérote les sources, et le rédacteur ne conserve que les marqueurs qu'on lui transmet.",
+        why: "Le risque d'une citation inventée devient quasi nul, donc chaque affirmation renvoie à une source réellement lue.",
       },
       {
         problem: "Savoir si un changement aide vraiment.",
-        how: "Les retouches de prompt semblent meilleures sans l'être. Un protocole d'évaluation, questions notées et passe de LLM-as-a-judge, note chaque changement avant sa livraison.",
+        how: "Les retouches de prompt semblent meilleures sans forcément l'être. Un protocole d'évaluation, avec un jeu de questions notées et une passe de LLM-as-a-judge, mesure chaque changement avant sa mise en ligne.",
         why: "Mesurer avant d'ajuster : « ça a l'air mieux » devient un chiffre comparable d'une recherche à l'autre.",
       },
       {
         problem: "Un seul noyau, quatre fournisseurs différents.",
-        how: "Chaque fournisseur LLM gratuit parle un dialecte un peu différent, et les Llama de Groq cassaient le parseur d'appels d'outils. Un adaptateur compatible OpenAI les couvre tous, Gemini par défaut, le reste interchangeable.",
-        why: "Les agents ignorent sur quel fournisseur ils tournent : en changer est une question de config, pas une réécriture.",
+        how: "Chaque fournisseur LLM gratuit parle un dialecte un peu différent, et les modèles Llama de Groq renvoyaient leurs appels d'outils dans un format qui cassait l'analyse. Un seul adaptateur compatible OpenAI les couvre tous, avec Gemini par défaut et le reste interchangeable.",
+        why: "Les agents ne savent pas quel fournisseur ils utilisent : en changer relève de la configuration, pas d'une réécriture.",
+      },
+      {
+        problem: "Les limites des offres LLM gratuites, sur trois axes à la fois.",
+        how: "Les offres gratuites plafonnent les requêtes, les tokens et un total quotidien, et une seule recherche peut faire sauter n'importe lequel des trois. Un limiteur de débit par modèle, qui tient compte des tokens, cadence les appels pour rester sous chaque plafond.",
+        why: "Une vraie recherche ne plante jamais sur une erreur de quota sous les yeux de quelqu'un.",
       },
       {
         problem: "Conçu pour l'exécution concurrente.",
-        how: "L'orchestrateur lance les chercheurs en tâches concurrentes et non bloquantes, jusqu'aux fournisseurs et à la base de données. La limite de concurrence est fixée à un pour l'instant, pour rester sous les quotas gratuits.",
-        why: "Le fan-out est réel ; relever la limite est un seul réglage, donc ça monte en charge avec le budget au lieu d'une réécriture.",
+        how: "L'orchestrateur lance les chercheurs comme des tâches concurrentes, et toute la chaîne reste non bloquante, jusqu'aux fournisseurs et à la base de données. La limite de concurrence est fixée à un pour l'instant, pour rester sous les quotas gratuits.",
+        why: "Le fan-out est réel ; relever la limite tient à un seul réglage, donc le système monte en charge avec le budget au lieu d'exiger une réécriture.",
       },
     ],
     nextTitle: "La suite",
