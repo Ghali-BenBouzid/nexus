@@ -58,6 +58,7 @@ const en = {
     headline: "Ask anything. Every claim, sourced.",
     sub: "Nexus plans your question, sends agents to research the live web, and returns one fully-cited report.\nEvery claim links back to its source, so you can check the work yourself.",
     placeholder: "Ask Nexus to research anything…",
+    examplesLabel: "Try one of these examples",
     chips: [
       "What are the most promising approaches to grid-scale energy storage in 2026?",
       "How are small language models changing on-device AI in 2026?",
@@ -276,6 +277,7 @@ const fr: Dict = {
     headline: "Posez une question. Chaque affirmation est sourcée.",
     sub: "Nexus décompose votre question, envoie des agents chercher sur le web en direct, et produit un seul rapport référencé. Chaque affirmation renvoie à sa source, vous pouvez donc vérifier le travail vous-même.",
     placeholder: "Demandez une recherche à Nexus…",
+    examplesLabel: "Essayez l'un de ces exemples",
     chips: [
       "Quelles sont les approches les plus prometteuses pour le stockage d'énergie à l'échelle du réseau en 2026 ?",
       "Comment les petits modèles de langage transforment-ils l'IA embarquée en 2026 ?",
