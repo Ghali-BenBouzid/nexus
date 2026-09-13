@@ -1,11 +1,12 @@
 from httpx import AsyncClient
 
-from app.agents.provider import LLMResponse, ToolCall
-from app.conversations.service import _CAP_NOTICE
-from app.core.config import settings
+from app.agents.provider import LLMResponse, ProviderError, ToolCall
+from app.billing.service import BUDGET_EXHAUSTED
+from app.conversations.service import PROVIDER_DOWN
 from app.research.dependencies import get_provider
 from main import app
-from tests.research.test_research import _register_and_headers, _use_fake_pipeline
+from tests.accounts import login_as
+from tests.research.test_research import _use_fake_pipeline
 
 
 class _AnswerProvider:
@@ -227,8 +228,8 @@ async def test_supervisor_composes_a_merged_report(
 
 
 async def test_conversation_hidden_from_other_users(client: AsyncClient) -> None:
-    owner = await _register_and_headers(client, "conv-owner@test.com")
-    other = await _register_and_headers(client, "conv-other@test.com")
+    owner = await login_as(client, "conv-owner@test.com")
+    other = await login_as(client, "conv-other@test.com")
     _use_fake_pipeline(sub_questions=["q1"])
 
     created = await client.post(
@@ -248,34 +249,49 @@ async def test_conversation_hidden_from_other_users(client: AsyncClient) -> None
     ).status_code == 404
 
 
-async def test_capped_research_returns_notice_but_answers_stay_free(
+async def test_spent_budget_refuses_the_message_up_front(client: AsyncClient) -> None:
+    # Every message costs at least a routing call, so even a would-be answer is
+    # refused, and no empty conversation is left behind in the sidebar.
+    headers = await login_as(client, "broke", budget_usd=0)
+    _use_fake_pipeline(sub_questions=["q1"])
+
+    created = await client.post(
+        "/conversations", headers=headers, json={"prompt": "research this"}
+    )
+
+    assert created.status_code == 402
+    assert created.json()["detail"] == BUDGET_EXHAUSTED
+    assert (await client.get("/conversations", headers=headers)).json() == []
+
+
+class _DownProvider:
+    async def __aenter__(self) -> "_DownProvider":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def generate(self, messages, tools=None, tool_choice="auto") -> LLMResponse:
+        raise ProviderError("LLM request failed")
+
+
+async def test_provider_outage_is_a_503_and_leaves_no_orphan_message(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    # When the user is over the daily cap, a follow-up that would launch a heavy
-    # run (research/compose) is held back with an in-chat notice instead of a job,
-    # while cheap answers from existing reports keep working.
-    original = settings.daily_query_cap
-    settings.daily_query_cap = 0  # everyone is "over cap"
-    try:
-        # The supervisor routes this to research, but the cap blocks the launch.
-        _use_fake_pipeline(sub_questions=["q1"])
-        created = await client.post(
-            "/conversations", headers=auth_headers, json={"prompt": "research this"}
-        )
-        blocked = created.json()["messages"][-1]
-        assert blocked["role"] == "assistant"
-        assert blocked["query_id"] is None  # no run was launched
-        assert blocked["content"] == _CAP_NOTICE
+    _use_fake_pipeline(sub_questions=["q1"])
+    created = await client.post(
+        "/conversations", headers=auth_headers, json={"prompt": "first"}
+    )
+    conversation_id = created.json()["id"]
 
-        # An answer follow-up is still served even while capped.
-        app.dependency_overrides[get_provider] = _AnswerProvider
-        followed = await client.post(
-            f"/conversations/{created.json()['id']}/messages",
-            headers=auth_headers,
-            json={"content": "what did it say?"},
-        )
-        answer = followed.json()["messages"][-1]
-        assert answer["query_id"] is None
-        assert answer["content"] == "Answer from the report."
-    finally:
-        settings.daily_query_cap = original
+    app.dependency_overrides[get_provider] = _DownProvider
+    followed = await client.post(
+        f"/conversations/{conversation_id}/messages",
+        headers=auth_headers,
+        json={"content": "and then?"},
+    )
+
+    assert followed.status_code == 503
+    assert followed.json()["detail"] == PROVIDER_DOWN
+    detail = await client.get(f"/conversations/{conversation_id}", headers=auth_headers)
+    assert len(detail.json()["messages"]) == 2  # the failed message was not stored

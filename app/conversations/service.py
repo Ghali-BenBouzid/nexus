@@ -1,9 +1,10 @@
-from fastapi import BackgroundTasks
+from fastapi import BackgroundTasks, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents import supervisor
-from app.agents.provider import LLMProvider
+from app.agents.provider import LLMProvider, ProviderCreditsError, ProviderError
 from app.agents.tools import SearchBackend
+from app.billing.metering import MeteredProvider
 from app.conversations import repository
 from app.core.config import settings
 from app.models.conversation import Conversation, Message, MessageRole
@@ -17,13 +18,7 @@ from app.research import service as research_service
 _MAX_CONTEXT_MESSAGES = 8
 _MAX_REPORT_CHARS = 1200
 
-# Shown in the chat when a follow-up would start a research or compose run but the
-# user has hit the daily cap. Answers from existing reports are not affected, so
-# the conversation stays usable; only new heavy runs are held back.
-_CAP_NOTICE = (
-    "You have reached today's research limit. You can still ask about the "
-    "reports already in this conversation. Please come back tomorrow for new runs."
-)
+PROVIDER_DOWN = "The model provider is not responding. Try again in a moment."
 
 
 def _render_context(messages: list[Message], queries: dict[int, Query]) -> str:
@@ -56,10 +51,15 @@ async def submit_message(
     backend: SearchBackend,
     background_tasks: BackgroundTasks,
 ) -> Message:
-    """Record the user's message and let the supervisor decide what to do: answer
-    from the conversation's reports, compose a new report by merging the existing
-    ones, or start a fresh research run. Returns the assistant message (its
-    ``query_id`` is non-null when it carries a research or compose run)."""
+    """Let the supervisor decide what to do with the user's message: answer from
+    the conversation's reports, compose a new report by merging the existing ones,
+    or start a fresh research run. Records the user message and the assistant's,
+    and returns the latter (its ``query_id`` is non-null when it carries a research
+    or compose run). The caller checks the account's budget first.
+
+    Every model call is billed to the conversation's owner through
+    ``MeteredProvider``: the supervisor's own calls, and each job it launches."""
+    user_id = conversation.user_id
     messages = await repository.list_messages(db, conversation.id)
     query_ids = [m.query_id for m in messages if m.query_id is not None]
     queries = await repository.queries_by_id(db, query_ids)
@@ -74,37 +74,38 @@ async def submit_message(
     ]
     reports = [(query.prompt, query.report or "") for query in completed]
 
-    await repository.add_message(db, conversation.id, MessageRole.user, content)
-
     # The supervisor runs a tool loop, so it needs both the provider (its own model
     # calls) and the search backend (its web_search / fetch_page tools) open.
-    async with provider, backend:
-        decision = await supervisor.decide(
-            content,
-            context,
-            provider=provider,
-            backend=backend,
-            reports=reports,
-            max_iters=settings.supervisor_max_iters,
-        )
+    metered = MeteredProvider(provider, user_id=user_id)
+    try:
+        async with metered, backend:
+            decision = await supervisor.decide(
+                content,
+                context,
+                provider=metered,
+                backend=backend,
+                reports=reports,
+                max_iters=settings.supervisor_max_iters,
+            )
+    except ProviderCreditsError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except ProviderError as exc:
+        raise HTTPException(status_code=503, detail=PROVIDER_DOWN) from exc
+
+    # Stored only once the supervisor has decided, so a provider failure above does
+    # not leave an unanswered message in the thread.
+    await repository.add_message(db, conversation.id, MessageRole.user, content)
 
     if decision.action == "answer":
         return await repository.add_message(
             db, conversation.id, MessageRole.assistant, content=decision.reply
         )
 
-    # Compose and research both launch a heavy job, so they draw on the daily cap.
-    # Answers above are free (cheap, and they keep the chat usable once capped).
-    if await research_service.over_daily_cap(db, conversation.user_id):
-        return await repository.add_message(
-            db, conversation.id, MessageRole.assistant, content=_CAP_NOTICE
-        )
-
     if decision.action == "compose" and completed:
         # Merge the existing reports into one new, longer report (no new search).
         query = await research_repository.create_pending_query(
             db=db,
-            user_id=conversation.user_id,
+            user_id=user_id,
             prompt=decision.instructions or content,
             title=decision.title or None,
         )
@@ -117,7 +118,7 @@ async def submit_message(
             query.id,
             decision.instructions or content,
             source_query_ids=[q.id for q in completed],
-            provider=provider,
+            provider=MeteredProvider(provider, user_id=user_id, query_id=query.id),
         )
         return assistant
 
@@ -126,7 +127,7 @@ async def submit_message(
     research_query = decision.query or content
     query = await research_repository.create_pending_query(
         db=db,
-        user_id=conversation.user_id,
+        user_id=user_id,
         prompt=research_query,
         title=decision.title or None,
     )
@@ -142,7 +143,7 @@ async def submit_message(
         research_service.run_plan_job,
         query.id,
         research_query,
-        provider=provider,
+        provider=MeteredProvider(provider, user_id=user_id, query_id=query.id),
     )
     return assistant
 

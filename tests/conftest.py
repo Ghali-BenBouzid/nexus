@@ -9,11 +9,11 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
-from app.core.limiter import limiter
 from app.db import session as db_session
 from app.db.base import Base
 from app.db.session import get_db
 from main import app
+from tests.accounts import login_as
 
 
 @pytest_asyncio.fixture
@@ -37,13 +37,9 @@ async def client() -> AsyncGenerator[AsyncClient]:
         async with session_local() as db:
             yield db
 
-    # Off by default: most tests register several users and would trip the per-IP
-    # cap (they share one client IP). The throttle test re-enables it explicitly.
-    limiter.enabled = False
-
     app.dependency_overrides[get_db] = get_test_db
-    # The background research job creates its OWN session via db_session.SessionLocal
-    # (not a Depends), so point it at the test engine too.
+    # Background jobs, the event feed and the usage ledger open their OWN sessions
+    # via db_session.SessionLocal (not a Depends), so point it at the test engine.
     original_session_local = db_session.SessionLocal
     db_session.SessionLocal = session_local
 
@@ -63,14 +59,4 @@ async def client() -> AsyncGenerator[AsyncClient]:
 
 @pytest_asyncio.fixture
 async def auth_headers(client: AsyncClient) -> dict[str, str]:
-    await client.post(
-        "/auth/register", json={"email": "test@test.com", "password": "secret"}
-    )
-
-    response = await client.post(
-        "/auth/login", data={"username": "test@test.com", "password": "secret"}
-    )
-
-    token = response.json()["access_token"]
-
-    return {"Authorization": f"Bearer {token}"}
+    return await login_as(client)

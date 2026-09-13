@@ -4,7 +4,7 @@ from collections.abc import Awaitable, Callable
 
 from app.agents.consolidator import consolidate
 from app.agents.planner import plan
-from app.agents.provider import LLMProvider
+from app.agents.provider import LLMProvider, ProviderCreditsError
 from app.agents.researcher import research
 from app.agents.schemas import AgentEvent, Finding, Report, ResearchResult
 from app.agents.tools import Tool
@@ -147,6 +147,12 @@ async def research_from_plan(
     # spending the consolidate + write stages on a run the user already stopped.
     if should_cancel():
         raise OrchestratorCancelledError("research was stopped")
+
+    # Running out of credits is not a gap in one sub-question: every later call
+    # would fail the same way, so it becomes the run's error.
+    for result in results:
+        if isinstance(result, ProviderCreditsError):
+            raise result
 
     findings: list[Finding] = []
     failed: list[str] = []

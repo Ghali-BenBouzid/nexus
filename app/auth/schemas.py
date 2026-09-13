@@ -1,18 +1,23 @@
+from datetime import datetime
+
 from pydantic import BaseModel
 
-from app.schemas.base import BaseSchema
 
-
-class UserRegister(BaseModel):
-    email: str
-    password: str
-
-
-class UserResponse(BaseSchema):
-    id: int
-    email: str
+class InviteRedeem(BaseModel):
+    token: str
 
 
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class Account(BaseModel):
+    """The signed-in demo account, with where its budget stands."""
+
+    id: int
+    name: str
+    expires_at: datetime | None
+    budget_usd: float
+    spent_usd: float
+    remaining_usd: float

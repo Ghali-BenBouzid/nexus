@@ -15,6 +15,11 @@ class ProviderError(Exception):
     a leaked API key can't ride along; the original is chained via ``__cause__``."""
 
 
+class ProviderCreditsError(ProviderError):
+    """The provider refused the call for lack of credits (HTTP 402). Retrying
+    cannot help until the key is topped up, and the message is safe to show."""
+
+
 class ToolCall(BaseModel):
     id: str
     name: str
@@ -39,6 +44,7 @@ class Usage(BaseModel):
     input_tokens: int | None = None
     output_tokens: int | None = None
     total_tokens: int | None = None
+    cost_usd: float | None = None  # billed cost, when reported (OpenRouter does)
 
 
 class LLMResponse(BaseModel):

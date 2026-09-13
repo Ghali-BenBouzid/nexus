@@ -11,13 +11,17 @@ from app.core.config import settings
 # through the one OpenAI-compatible adapter (so they share the limiter, retry, and
 # retry-after handling); Gemini exposes an OpenAI-compatible endpoint too.
 #
-# Default = gemini-3.1-flash-lite. Its free-tier profile is the inverse of Groq's:
-# a low ~15 RPM (which the request side of the RateLimiter paces) but a very high
-# ~250k TPM, so the token starvation that throttles the Groq models is a non-issue,
-# and Gemini has reliable native function-calling (no llama-style tool_use_failed).
-# Chosen over gemini-2.5-flash for its far higher free ceiling: 500 requests/day
-# vs 20 (one research run is ~10-15 requests, so 2.5-flash allows ~1 run/day).
+# Default = OpenRouter, a paid key with a hard credit limit, where each call reports
+# its own cost (billed to the demo account by MeteredProvider). Its default model is
+# gemini-3.1-flash-lite, the model the prompts were tuned on (USD 0.25 / 1.50 per
+# million input / output tokens); LLM_MODEL swaps it for any OpenRouter model id.
+# The free-tier presets below stay for local development.
 _OPENAI_PRESETS = {
+    "openrouter": (
+        "https://openrouter.ai/api/v1",
+        "google/gemini-3.1-flash-lite",
+        "openrouter_api_key",
+    ),
     "gemini": (
         "https://generativelanguage.googleapis.com/v1beta/openai",
         "gemini-3.1-flash-lite",
@@ -55,7 +59,13 @@ _RATE_LIMITS: dict[str, dict[str, tuple[int, int]]] = {
         "llama-3.1-8b-instant": (30, 6_000),
     },
 }
-# Conservative fallback for a provider/model not in the table above.
+# Per-provider fallback when the model is not in the table above. A paid
+# OpenRouter key has no fixed per-minute ceiling to pace under, so pacing is
+# effectively off; an upstream 429 is still retried after its Retry-After.
+_PROVIDER_DEFAULT_LIMITS: dict[str, tuple[int, int]] = {
+    "openrouter": (1_000, 10_000_000),
+}
+# Conservative fallback for a free-tier provider/model not in the tables above.
 _DEFAULT_RATE_LIMIT = (30, 6_000)
 # Pace under the published ceilings, leaving headroom so approximate token
 # estimates and extra requests from retries (e.g. Gemini's frequent 503s) don't
@@ -65,7 +75,8 @@ _RPM_SAFETY = 0.8
 
 
 def _rate_limiter(provider: str, model: str) -> RateLimiter:
-    rpm, tpm = _RATE_LIMITS.get(provider, {}).get(model, _DEFAULT_RATE_LIMIT)
+    fallback = _PROVIDER_DEFAULT_LIMITS.get(provider, _DEFAULT_RATE_LIMIT)
+    rpm, tpm = _RATE_LIMITS.get(provider, {}).get(model, fallback)
     return RateLimiter(rpm=max(1, int(rpm * _RPM_SAFETY)), tpm=int(tpm * _TPM_SAFETY))
 
 

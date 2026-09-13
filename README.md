@@ -38,8 +38,11 @@ Agent progress is emitted as events and persisted, so the frontend tails a live
 
 - **Backend:** FastAPI, async SQLAlchemy + asyncpg, Alembic, Pydantic, JWT auth
 - **Agents:** a hand-rolled orchestrator over a provider seam (one
-  OpenAI-compatible adapter for Gemini / Groq / Cerebras / SambaNova) and a
-  swappable Tavily search backend, with a token + request-aware rate limiter
+  OpenAI-compatible adapter for OpenRouter / Gemini / Groq / Cerebras /
+  SambaNova) and a swappable Tavily search backend, with a token +
+  request-aware rate limiter
+- **Access and cost:** invite-only demo accounts, each with its own dollar
+  budget checked against a ledger of what every model call actually cost
 - **Frontend:** Vite, React, TypeScript, three.js (WebGL background), framework
   -free i18n (English / French)
 - **Evaluation:** a deterministic Tier 1 harness (citation integrity, coverage)
@@ -60,8 +63,23 @@ uv run uvicorn main:app --reload
 
 The API serves at `http://localhost:8000` (`/docs` for Swagger). Set at least
 `DATABASE_URL`, `SECRET_KEY`, `TAVILY_API_KEY`, and the key for your chosen
-`LLM_PROVIDER` (Gemini by default). Every variable is documented in
+`LLM_PROVIDER` (OpenRouter by default). Every variable is documented in
 `.env.example`.
+
+### Demo accounts
+
+There is no signup page. Each visitor gets an account and an invite link from
+the admin command, which talks to whatever `DATABASE_URL` points at:
+
+```bash
+uv run python -m app.admin create "Jane Doe (Acme)" --budget 0.5 --days 14
+uv run python -m app.admin list                     # spend, budget, expiry
+uv run python -m app.admin update 7 --budget 1 --new-link
+```
+
+The link opens the app already signed in. Every model call is billed to the
+account from the cost the provider reports, and new work is refused once the
+budget is spent. Visitors without an invite get the simulated demo.
 
 ### Frontend
 
@@ -109,8 +127,10 @@ The live stack is Railway (backend) + Neon (Postgres) + Cloudflare Pages
 2. **Backend (Railway):** deploy from the repo root `Dockerfile`. The image runs
    `alembic upgrade head` then serves on `$PORT`. Set the environment variables
    from `.env.example` (`DATABASE_URL`, `DATABASE_SSL=true`, `SECRET_KEY`,
-   `CORS_ORIGINS` = your frontend URL, `TAVILY_API_KEY`, `LLM_PROVIDER` and its
-   key). `GET /health` is the health check.
+   `CORS_ORIGINS` and `FRONTEND_URL` = your frontend URL, `TAVILY_API_KEY`,
+   `OPENROUTER_API_KEY`). Give the OpenRouter key a hard credit limit: it caps
+   the total bill. `GET /health` is the health check. Create accounts with
+   `railway run uv run python -m app.admin create ...`.
 3. **Frontend (Cloudflare Pages):** the frontend lives in a subdirectory, so set
    the project's **root directory** to `frontend`. Build command `npm run build`,
    build output directory `dist` (Vite compiles the static site to

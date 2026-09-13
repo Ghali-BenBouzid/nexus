@@ -4,7 +4,7 @@ import httpx
 import pytest
 
 from app.agents.openai_provider import OpenAICompatibleProvider
-from app.agents.provider import Message, ProviderError, ToolCall
+from app.agents.provider import Message, ProviderCreditsError, ProviderError, ToolCall
 from app.agents.rate_limit import RateLimiter
 from app.agents.retry import RetryPolicy
 from app.agents.tools import SubmitFinding
@@ -87,6 +87,41 @@ async def test_generate_retries_on_tool_use_failed():
     assert calls["n"] == 2  # retried once, then succeeded
     assert resp.tool_calls is not None
     assert resp.tool_calls[0].name == "submit_finding"
+
+
+async def test_generate_reports_openrouter_cost():
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": "hi"}}],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 2,
+                    "total_tokens": 12,
+                    "cost": 0.00042,
+                },
+            },
+        )
+
+    async with _provider(handler) as p:
+        resp = await p.generate([Message(role="user", content="q")])
+    assert resp.usage is not None
+    assert resp.usage.cost_usd == 0.00042
+    assert resp.usage.input_tokens == 10
+
+
+async def test_out_of_credits_raises_a_distinct_error_without_retrying():
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(402, json={"error": {"message": "Insufficient credits"}})
+
+    async with _provider(handler, retry=NO_BACKOFF) as p:
+        with pytest.raises(ProviderCreditsError):
+            await p.generate([Message(role="user", content="q")])
+    assert calls["n"] == 1
 
 
 async def test_generate_does_not_retry_generic_400():

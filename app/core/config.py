@@ -16,22 +16,21 @@ class Settings(BaseSettings):
     # CORS: comma-separated allowed frontend origins (empty = no browser access)
     cors_origins: str = ""
 
-    # Abuse / cost guards for the public demo (the URL is gated only by open
-    # registration, so anyone could otherwise drain the Tavily + LLM budget).
-    # Per-account research jobs (research + compose) allowed per rolling 24h.
-    daily_query_cap: int = 5
-    # Per-IP cap on registrations, to stop bots farming throwaway accounts past
-    # the per-account cap. limits syntax, e.g. "5/hour", "100/day".
-    register_rate_limit: str = "5/hour"
+    # Demo accounts. There is no public signup: an admin creates each account with
+    # `python -m app.admin` and hands out its invite link. These are the defaults
+    # for a new account; each one can be topped up or extended later.
+    frontend_url: str = "http://localhost:5173"  # base of the invite links
+    default_budget_usd: float = 0.50
+    default_access_days: int = 14  # 0 = never expires
 
     # agent / provider settings
     gemini_api_key: str | None = None
     tavily_api_key: str | None = None
-    model_name: str = "gemini-2.5-flash"
 
-    # LLM provider selection: gemini | groq | cerebras | sambanova
-    llm_provider: str = "gemini"
+    # LLM provider selection: openrouter | gemini | groq | cerebras | sambanova
+    llm_provider: str = "openrouter"
     llm_model: str | None = None  # overrides the provider's default model
+    openrouter_api_key: str | None = None
     groq_api_key: str | None = None
     cerebras_api_key: str | None = None
     sambanova_api_key: str | None = None
@@ -39,15 +38,12 @@ class Settings(BaseSettings):
     llm_rate_limit_per_min: int = 25
 
     # orchestration knobs (12-factor: env-overridable defaults). Kept small so a
-    # run finishes in ~2-3 min on the default model's low free-tier TPM (run time
-    # ~= total tokens / TPM); a future "deep research" mode raises these for depth.
+    # run stays quick and cheap; a future "deep research" mode raises these.
     cap: int = 3  # max sub-questions
     max_iters: int = 3  # max tool rounds per researcher
-    # Concurrency is bounded by the provider's tokens-per-minute: parallel
-    # researchers split the TPM budget and starve each other (timeouts). At the
-    # default model's 8k TPM, serial keeps each researcher at full throughput and
-    # avoids that; raise this on a higher-TPM / paid tier for parallel, faster runs.
-    max_concurrency: int = 1  # simultaneous researchers
+    # Researchers run in parallel on a paid key. On a free tier, drop this to 1:
+    # parallel researchers split a small tokens-per-minute budget and time out.
+    max_concurrency: int = 3  # simultaneous researchers
     planner_retry_cap: int = 2
     per_researcher_timeout: float = 150.0  # seconds
     global_timeout: float = 300.0  # seconds, whole-job backstop

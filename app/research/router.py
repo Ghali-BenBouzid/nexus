@@ -8,6 +8,8 @@ from app.agents.provider import LLMProvider
 from app.agents.schemas import ResearchResult
 from app.agents.tools import SearchBackend
 from app.auth.dependencies import get_current_user
+from app.billing.metering import MeteredProvider
+from app.billing.service import ensure_budget
 from app.db.session import get_db
 from app.models.query import QueryStatus
 from app.models.user import User
@@ -47,11 +49,7 @@ async def create_query(
     provider: LLMProvider = Depends(get_provider),
     backend: SearchBackend = Depends(get_search_backend),
 ):
-    if await service.over_daily_cap(db, current_user.id):
-        raise HTTPException(
-            status_code=429,
-            detail="Daily research limit reached. Please try again tomorrow.",
-        )
+    await ensure_budget(db, current_user)
     query = await repository.create_pending_query(
         db=db, user_id=current_user.id, prompt=query_create.prompt
     )
@@ -61,7 +59,7 @@ async def create_query(
         service.run_research_job,
         query.id,
         query.prompt,
-        provider=provider,
+        provider=MeteredProvider(provider, user_id=current_user.id, query_id=query.id),
         backend=backend,
     )
     return query
@@ -176,12 +174,13 @@ async def confirm_plan(
         raise HTTPException(status_code=404, detail="Query not found")
     if query.status != QueryStatus.awaiting_plan or not query.plan:
         raise HTTPException(status_code=409, detail="No plan is awaiting confirmation.")
+    await ensure_budget(db, current_user)
     await repository.set_status(db, query_id, QueryStatus.running)
     background_tasks.add_task(
         service.run_research_from_plan_job,
         query_id,
         query.plan,
-        provider=provider,
+        provider=MeteredProvider(provider, user_id=current_user.id, query_id=query_id),
         backend=backend,
     )
 
@@ -204,11 +203,12 @@ async def revise_plan(
         raise HTTPException(status_code=404, detail="Query not found")
     if query.status != QueryStatus.awaiting_plan:
         raise HTTPException(status_code=409, detail="No plan is awaiting revision.")
+    await ensure_budget(db, current_user)
     await repository.set_status(db, query_id, QueryStatus.running)
     background_tasks.add_task(
         service.run_plan_job,
         query_id,
         query.prompt,
-        provider=provider,
+        provider=MeteredProvider(provider, user_id=current_user.id, query_id=query_id),
         feedback=payload.feedback,
     )

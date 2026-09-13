@@ -3,7 +3,14 @@ from typing import Any
 
 import httpx
 
-from app.agents.provider import LLMResponse, Message, ProviderError, ToolCall, Usage
+from app.agents.provider import (
+    LLMResponse,
+    Message,
+    ProviderCreditsError,
+    ProviderError,
+    ToolCall,
+    Usage,
+)
 from app.agents.rate_limit import RateLimiter, llm_rate_limiter
 from app.agents.retry import RetryPolicy, is_transient, retry_async
 from app.agents.tools import ToolSpec
@@ -14,6 +21,8 @@ from app.observability import record_model, traced_llm
 _CHARS_PER_TOKEN = 4
 # Reserve room for the model's reply, which also counts against TPM.
 _OUTPUT_TOKEN_RESERVATION = 1024
+
+OUT_OF_CREDITS = "The model credits behind this demo have run out."
 
 
 class OpenAICompatibleProvider:
@@ -88,6 +97,11 @@ class OpenAICompatibleProvider:
         try:
             data = await retry_async(_call, policy=self.retry, transient=_retryable)
         except Exception as exc:  # never let a raw/key-bearing error escape
+            if (
+                isinstance(exc, httpx.HTTPStatusError)
+                and exc.response.status_code == 402
+            ):
+                raise ProviderCreditsError(OUT_OF_CREDITS) from exc
             raise ProviderError("LLM request failed") from exc
         return self._parse(data)
 
@@ -163,6 +177,8 @@ class OpenAICompatibleProvider:
             input_tokens=usage.get("prompt_tokens"),
             output_tokens=usage.get("completion_tokens"),
             total_tokens=usage.get("total_tokens"),
+            # OpenRouter reports what the call was billed, in USD credits.
+            cost_usd=usage.get("cost"),
         )
 
 

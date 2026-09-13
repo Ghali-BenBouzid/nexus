@@ -6,6 +6,18 @@ from app.core.config import settings
 from app.research.dependencies import get_provider
 
 
+def test_get_provider_defaults_to_openrouter_with_unthrottled_pacing(monkeypatch):
+    monkeypatch.setattr(settings, "llm_provider", "openrouter")
+    monkeypatch.setattr(settings, "openrouter_api_key", "key")
+    monkeypatch.setattr(settings, "llm_model", None)
+    provider = get_provider()
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider.base_url == "https://openrouter.ai/api/v1"
+    assert provider.model == "google/gemini-3.1-flash-lite"
+    # a paid key must not inherit the conservative free-tier pacing
+    assert provider._limiter._requests.refill_per_sec > 10
+
+
 def test_get_provider_returns_openai_compatible_for_gemini(monkeypatch):
     monkeypatch.setattr(settings, "llm_provider", "gemini")
     monkeypatch.setattr(settings, "gemini_api_key", "key")
