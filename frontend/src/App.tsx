@@ -9,15 +9,18 @@ import { About, Engineering, Footer, HowItWorks } from "./components/Sections";
 import {
   cancelQuery,
   confirmPlan as confirmPlanApi,
+  getAccount,
   loadConversation,
   openQuery,
+  redeemInvite,
   resumeRun,
   revisePlan as revisePlanApi,
+  type Account,
   type LoadedTurn,
 } from "./lib/api";
-import { t } from "./lib/i18n";
+import { t, usd } from "./lib/i18n";
 import { outcomeFor } from "./lib/outcome";
-import { getRoute, navigate, onPopState, type Route } from "./lib/router";
+import { getRoute, inviteFromUrl, navigate, onPopState, type Route } from "./lib/router";
 import {
   applyBackground,
   applyFont,
@@ -28,10 +31,8 @@ import {
   getStoredPalette,
 } from "./lib/design";
 import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
-import { LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
+import { isLive, LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
 import type { LayoutMode, Theme, Turn, View } from "./types";
-
-const FEED_TAG = LIVE_MODE ? t.feed.liveTag : t.feed.simTag;
 
 export default function App() {
   const [theme, setTheme] = useState<Theme>(
@@ -80,6 +81,13 @@ export default function App() {
   // stays saved server-side and is reopened on demand from Recent/history.
   const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
   const setActiveConversation = (id: number | null) => setActiveConversationId(id);
+
+  // Live research needs an invite (see lib/api). Without one, or once it has been
+  // revoked or has expired, the app runs the simulated demo instead.
+  const [live, setLive] = useState(isLive);
+  const [account, setAccount] = useState<Account | null>(null);
+  // Why an invite link did not work, shown under the composer for this session.
+  const [inviteError, setInviteError] = useState<string | null>(null);
 
   const turnSeq = useRef(0);
   const cancelled = useRef<Set<number>>(new Set());
@@ -203,6 +211,16 @@ export default function App() {
     return () => clearInterval(id);
   }, [anyRunning]);
 
+  // The composer shows the budget left: fetch it once access is granted and again
+  // each time a run settles, since every run spends from it.
+  useEffect(() => {
+    if (!live || anyRunning) return;
+    getAccount().then((acc) => {
+      setAccount(acc);
+      setLive(isLive()); // an expired account drops the invite on this call
+    });
+  }, [live, anyRunning]);
+
   // Nav shadow on scroll + hero-focal fluid fade: the blob is full behind the
   // hero and fades out over the first ~70vh as the sections rise. On chat stages
   // the body pins --fluid-op low (CSS), which wins over this since it's closer.
@@ -235,7 +253,7 @@ export default function App() {
       setView("chat"); // already loaded; just show it again
       return;
     }
-    if (LIVE_MODE) openHistory(route.conversationId);
+    if (live) openHistory(route.conversationId);
     else {
       navigate("/", { replace: true });
       setView("home");
@@ -244,12 +262,21 @@ export default function App() {
   const syncRouteRef = useRef(syncRoute);
   syncRouteRef.current = syncRoute;
 
-  // On mount, load a deep-linked /chat/:id (redirecting home if it isn't the
-  // user's), then wire popstate to the same sync.
+  // On mount, redeem an invite link or load a deep-linked /chat/:id (redirecting
+  // home if it isn't the user's), then wire popstate to the same sync.
   useEffect(() => {
+    const invite = inviteFromUrl();
+    if (invite) {
+      // An invite link lands straight in a fresh chat, where the composer shows the
+      // budget (or why the link did not work). The token leaves the URL at once.
+      navigate("/chat", { replace: true });
+      redeemInvite(invite)
+        .catch((err) => setInviteError(err instanceof Error ? err.message : t.access.invalid))
+        .finally(() => setLive(isLive()));
+    }
     const route = getRoute();
     if (route.view === "chat" && route.conversationId != null) {
-      if (LIVE_MODE) openHistory(route.conversationId);
+      if (isLive()) openHistory(route.conversationId);
       else {
         navigate("/", { replace: true });
         setView("home");
@@ -315,7 +342,7 @@ export default function App() {
     }
   };
 
-  const failTurn = (id: number, err: unknown) =>
+  const failTurn = (id: number, err: unknown) => {
     patchTurn(id, (t) => ({
       ...t,
       status: "failed",
@@ -323,6 +350,8 @@ export default function App() {
       error: err instanceof Error ? err.message : "The research run failed.",
       endedAt: performance.now(),
     }));
+    setLive(isLive()); // a refusal for an expired account drops the invite
+  };
 
   // The hero always opens a brand-new conversation: launching from the landing
   // page starts a fresh chat rather than appending to whatever was open last.
@@ -525,6 +554,15 @@ export default function App() {
     }
   };
 
+  // One line under the composer, keeping the demo's terms visible: the budget left
+  // for an invited visitor, otherwise that this run is simulated (or why the
+  // invite did not work). Local simulated-only builds show nothing.
+  const accessNote = !LIVE_MODE
+    ? null
+    : live
+      ? account && t.access.budget(usd(account.remaining_usd), usd(account.budget_usd))
+      : (inviteError ?? t.access.simulated);
+
   return (
     <Fragment>
       <Nav
@@ -536,7 +574,7 @@ export default function App() {
         onHistory={
           // Home: the nav rail opens the history drawer. In chat the Recent column
           // owns its own slim-rail toggle, so the nav control drops away there.
-          LIVE_MODE && view !== "chat" ? () => setHistoryOpen(true) : undefined
+          live && view !== "chat" ? () => setHistoryOpen(true) : undefined
         }
         onStart={() => {
           if (view === "chat") document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus();
@@ -544,7 +582,7 @@ export default function App() {
         }}
       />
 
-      {LIVE_MODE && (
+      {live && (
         <History open={historyOpen} onClose={() => setHistoryOpen(false)} onOpen={openHistory} />
       )}
 
@@ -575,10 +613,11 @@ export default function App() {
           onDiscardPlan={discardPlan}
           running={anyRunning}
           onNewChat={newChat}
-          feedTag={FEED_TAG}
+          feedTag={live ? t.feed.liveTag : t.feed.simTag}
+          accessNote={accessNote}
           historyOpen={chatHistoryOpen}
           onToggleHistory={toggleChatHistory}
-          onOpenHistory={LIVE_MODE ? openHistory : undefined}
+          onOpenHistory={live ? openHistory : undefined}
         />
       )}
     </Fragment>

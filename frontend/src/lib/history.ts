@@ -3,19 +3,19 @@
 // with ArrowUp/ArrowDown. Entries are de-duplicated, re-running a prompt moves
 // it to the most-recent slot rather than piling up.
 //
-// The list is scoped per browser AND per demo user in live mode, so switching
-// accounts on a shared machine doesn't mix histories. In simulated mode there are
-// no accounts, so a single shared key is used.
+// The list is scoped per browser AND per invited account in live mode, so two
+// invites on a shared machine don't mix histories. The simulated demo has no
+// accounts, so a single shared key is used.
 import { useCallback, useState } from "react";
 
 import { currentUserKey } from "./api";
-import { LIVE_MODE } from "./research";
+import { isLive } from "./research";
 
 const BASE_KEY = "nexus-query-history";
 const MAX = 50;
 
 function storageKey(): string {
-  return LIVE_MODE ? `${BASE_KEY}:${currentUserKey()}` : BASE_KEY;
+  return isLive() ? `${BASE_KEY}:${currentUserKey()}` : BASE_KEY;
 }
 
 export function loadHistory(): string[] {

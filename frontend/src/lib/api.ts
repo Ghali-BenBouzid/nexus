@@ -11,7 +11,10 @@ import type { ResearchCallbacks, ResearchOutcome } from "./research";
 
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const TOKEN_KEY = "nexus-token";
-const CREDS_KEY = "nexus-demo-creds";
+// The invite token from the link an admin handed out (/invite/:token). It is the
+// visitor's credential: exchanged for a short-lived access token, and exchanged
+// again whenever that expires. Without one, the app runs the simulated demo.
+const INVITE_KEY = "nexus-invite";
 
 type QueryDetail = {
   id: number;
@@ -28,53 +31,91 @@ type QueryDetail = {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-// The throwaway per-browser demo account. Created lazily and kept in localStorage
-// so every visitor gets a stable identity (and its own server-side history) without
-// ever seeing a login screen. Read-or-create is synchronous (no network).
-function getOrCreateCreds(): { email: string; password: string } {
-  const existing = localStorage.getItem(CREDS_KEY);
-  if (existing) {
-    try {
-      return JSON.parse(existing) as { email: string; password: string };
-    } catch {
-      // corrupt blob: fall through and mint a fresh identity
-    }
+export function hasInvite(): boolean {
+  try {
+    return !!localStorage.getItem(INVITE_KEY);
+  } catch {
+    return false;
   }
-  const rand = Math.random().toString(36).slice(2, 10);
-  const creds = { email: `demo+${rand}@nexus.app`, password: rand + "Aa1!" };
-  localStorage.setItem(CREDS_KEY, JSON.stringify(creds));
-  return creds;
 }
 
-// A stable per-browser identity for namespacing local state (e.g. query history),
-// so two demo accounts on one machine don't share a list.
+// A stable per-account key for namespacing local state (e.g. query history), so
+// two invites opened on one machine don't share a list.
 export function currentUserKey(): string {
-  return getOrCreateCreds().email;
+  return (localStorage.getItem(INVITE_KEY) ?? "").slice(0, 12);
+}
+
+// Drop the credential entirely (the link was revoked or the access expired), so
+// the app falls back to the simulated demo instead of failing every request.
+function forgetAccess(): void {
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(INVITE_KEY);
+}
+
+// A 401 on a request made with a stored access token: that token went stale, and
+// one retry with a fresh one is worth it. Any other refusal is final.
+class SessionExpiredError extends Error {}
+
+// The server's own reason for a refusal (FastAPI's {"detail": "..."}), so budget,
+// expiry and provider errors read exactly as the backend words them.
+async function errorMessage(res: Response, fallback: string): Promise<string> {
+  try {
+    const body = await res.json();
+    if (typeof body?.detail === "string") return body.detail;
+  } catch {
+    /* not JSON */
+  }
+  return fallback;
+}
+
+async function exchangeInvite(invite: string): Promise<string> {
+  const res = await fetch(`${BASE}/auth/invite`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: invite }),
+  });
+  if (!res.ok) {
+    const message = await errorMessage(res, t.access.invalid);
+    forgetAccess();
+    throw new Error(message);
+  }
+  const token = (await res.json()).access_token as string;
+  localStorage.setItem(INVITE_KEY, invite);
+  localStorage.setItem(TOKEN_KEY, token);
+  return token;
+}
+
+// Redeem a freshly opened invite link. Throws with the server's reason (not
+// valid, expired) so the caller can show it.
+export async function redeemInvite(invite: string): Promise<void> {
+  localStorage.removeItem(TOKEN_KEY); // a new link replaces any previous session
+  await exchangeInvite(invite);
 }
 
 async function ensureToken(): Promise<string> {
   const existing = localStorage.getItem(TOKEN_KEY);
   if (existing) return existing;
+  const invite = localStorage.getItem(INVITE_KEY);
+  if (!invite) throw new Error(t.access.none);
+  return exchangeInvite(invite);
+}
 
-  const { email, password } = getOrCreateCreds();
+export type Account = {
+  name: string;
+  budget_usd: number;
+  remaining_usd: number;
+  expires_at: string | null;
+};
 
-  // Register is idempotent enough for a demo: ignore "already exists" and log in.
-  await fetch(`${BASE}/auth/register`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password }),
-  }).catch(() => undefined);
-
-  const form = new URLSearchParams({ username: email, password });
-  const res = await fetch(`${BASE}/auth/login`, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: form,
-  });
-  if (!res.ok) throw new Error("Could not start a demo session.");
-  const token = (await res.json()).access_token as string;
-  localStorage.setItem(TOKEN_KEY, token);
-  return token;
+// The signed-in account and its remaining budget, or null without live access.
+export async function getAccount(): Promise<Account | null> {
+  try {
+    const res = await authedGet(`/auth/me`);
+    if (!res || !res.ok) return null;
+    return (await res.json()) as Account;
+  } catch {
+    return null;
+  }
 }
 
 // Authenticated GET that self-heals a stale/expired token: on 401 it drops the
@@ -89,6 +130,7 @@ async function authedGet(path: string): Promise<Response | null> {
     token = await ensureToken();
     res = await fetch(`${BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
   }
+  if (res.status === 403) forgetAccess(); // the account expired
   return res;
 }
 
@@ -111,7 +153,8 @@ async function authedPost(path: string, body?: object): Promise<Response> {
     token = await ensureToken();
     res = await fetch(`${BASE}${path}`, init(token));
   }
-  if (!res.ok) throw new Error(`Request failed (${res.status}).`);
+  if (res.status === 403) forgetAccess(); // the account expired
+  if (!res.ok) throw new Error(await errorMessage(res, `Request failed (${res.status}).`));
   return res;
 }
 
@@ -247,9 +290,13 @@ async function postConvJson(path: string, body: object, token: string): Promise<
   });
   if (res.status === 401) {
     localStorage.removeItem(TOKEN_KEY);
-    throw new Error("Session expired. Try again.");
+    throw new SessionExpiredError("Session expired. Try again.");
   }
-  if (!res.ok) throw new Error(`Could not reach the research service (${res.status}).`);
+  if (res.status === 403) forgetAccess(); // the account expired
+  // 402 (budget used up) and 503 (provider down) carry a message worth showing.
+  if (!res.ok) {
+    throw new Error(await errorMessage(res, `Could not reach the research service (${res.status}).`));
+  }
   return (await res.json()) as ConvDetail;
 }
 
@@ -269,8 +316,9 @@ export async function runLiveResearch(
   let detail: ConvDetail;
   try {
     detail = await startTurn(prompt, conversationId, token);
-  } catch {
-    // One retry after a fresh session, in case a stored token went stale.
+  } catch (err) {
+    // One retry after a fresh session, only when the stored token went stale.
+    if (!(err instanceof SessionExpiredError)) throw err;
     token = await ensureToken();
     detail = await startTurn(prompt, conversationId, token);
   }

@@ -1,11 +1,16 @@
 // Dispatches a research run to either the simulated engine (default) or the real
-// backend (VITE_LIVE_MODE=true). The UI calls runResearch and reacts to the
-// callbacks; it doesn't care which engine is behind them.
+// backend (VITE_LIVE_MODE=true, with an invite). The UI calls runResearch and
+// reacts to the callbacks; it doesn't care which engine is behind them.
 import type { Outcome, Result, Status, TimelineEvent } from "../types";
-import { runLiveResearch } from "./api";
+import { hasInvite, runLiveResearch } from "./api";
 import { pickRun, toTimeline } from "./simulatedEngine";
 
 export const LIVE_MODE = import.meta.env.VITE_LIVE_MODE === "true";
+
+// Live research needs a live build AND an invite: a visitor without one gets the
+// simulated demo instead of an error. Re-read on use, since an expired invite is
+// dropped mid-session.
+export const isLive = (): boolean => LIVE_MODE && hasInvite();
 
 export type ResearchCallbacks = {
   onEvent: (e: TimelineEvent) => void;
@@ -44,7 +49,7 @@ export function runResearch(
   cb: ResearchCallbacks,
   conversationId?: number | null,
 ): Promise<ResearchOutcome | null> {
-  return LIVE_MODE
+  return isLive()
     ? runLiveResearch(prompt, cb, conversationId ?? null)
     : runSimulated(prompt, cb);
 }
