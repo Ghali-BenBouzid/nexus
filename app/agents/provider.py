@@ -16,8 +16,9 @@ class ProviderError(Exception):
 
 
 class ProviderCreditsError(ProviderError):
-    """The provider refused the call for lack of credits (HTTP 402). Retrying
-    cannot help until the key is topped up, and the message is safe to show."""
+    """The provider refused the call for lack of credits (HTTP 402, or a key that
+    reached its credit limit). Retrying cannot help until the key is topped up,
+    and the message is safe to show."""
 
 
 class ToolCall(BaseModel):

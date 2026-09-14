@@ -97,10 +97,7 @@ class OpenAICompatibleProvider:
         try:
             data = await retry_async(_call, policy=self.retry, transient=_retryable)
         except Exception as exc:  # never let a raw/key-bearing error escape
-            if (
-                isinstance(exc, httpx.HTTPStatusError)
-                and exc.response.status_code == 402
-            ):
+            if _out_of_credits(exc):
                 raise ProviderCreditsError(OUT_OF_CREDITS) from exc
             raise ProviderError("LLM request failed") from exc
         return self._parse(data)
@@ -221,6 +218,19 @@ def _tool_use_failed(exc: Exception) -> bool:
     return isinstance(body, dict) and body.get("error", {}).get("code") == (
         "tool_use_failed"
     )
+
+
+def _out_of_credits(exc: Exception) -> bool:
+    """True when the provider refused for money: 402 when the account has no
+    credits, or OpenRouter's 403 "Key limit exceeded (total limit)" once the key
+    reaches its credit limit, the cap the demo relies on. Other 403s (a moderation
+    flag, a bad key) stay generic errors."""
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return False
+    status = exc.response.status_code
+    if status == 402:
+        return True
+    return status == 403 and "limit exceeded" in exc.response.text.lower()
 
 
 def _retryable(exc: Exception) -> bool:

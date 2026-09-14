@@ -124,6 +124,33 @@ async def test_out_of_credits_raises_a_distinct_error_without_retrying():
     assert calls["n"] == 1
 
 
+async def test_a_key_over_its_credit_limit_is_out_of_credits():
+    # OpenRouter answers 403, not 402, once the key hits its limit: demo users got
+    # "provider down" instead of the out-of-credits message.
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        body = {"error": {"code": 403, "message": "Key limit exceeded (total limit)."}}
+        return httpx.Response(403, json=body)
+
+    async with _provider(handler, retry=NO_BACKOFF) as p:
+        with pytest.raises(ProviderCreditsError):
+            await p.generate([Message(role="user", content="q")])
+    assert calls["n"] == 1
+
+
+async def test_other_403s_stay_generic_errors():
+    def handler(request: httpx.Request) -> httpx.Response:
+        body = {"error": {"code": 403, "message": "Your input was flagged"}}
+        return httpx.Response(403, json=body)
+
+    async with _provider(handler, retry=NO_BACKOFF) as p:
+        with pytest.raises(ProviderError) as raised:
+            await p.generate([Message(role="user", content="q")])
+    assert not isinstance(raised.value, ProviderCreditsError)
+
+
 async def test_generate_does_not_retry_generic_400():
     # A genuine bad request must fail fast — no retry storm.
     calls = {"n": 0}
