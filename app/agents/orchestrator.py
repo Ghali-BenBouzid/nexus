@@ -2,6 +2,7 @@ import asyncio
 import logging
 import time
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from app.agents.consolidator import consolidate
 from app.agents.narration import ThinkingProvider
@@ -30,6 +31,17 @@ class OrchestratorCancelledError(OrchestratorError):
 
 async def _noop(event: AgentEvent) -> None:
     return None
+
+
+def _tagged(emit: Emit, **data: Any) -> Emit:
+    """An emit that stamps ``data`` on every event, so what happens inside one
+    researcher (its model calls, its searches) says which researcher it was. With
+    researchers running at once, the live UI could not tell otherwise."""
+
+    async def tagged(event: AgentEvent) -> None:
+        await emit(event.model_copy(update={"data": {**(event.data or {}), **data}}))
+
+    return tagged
 
 
 def _never_cancel() -> bool:
@@ -114,6 +126,7 @@ async def research_from_plan(
         # Emit the lifecycle here (not in the researcher leaf): this is the only
         # place that knows the researcher's index and the total, which is what the
         # live feed needs to render "researcher k/N" honestly.
+        own_emit = _tagged(emit, index=index, total=total)
         async with semaphore:
             await emit(
                 AgentEvent(
@@ -129,11 +142,9 @@ async def research_from_plan(
             finding = await asyncio.wait_for(
                 research(
                     sub_question,
-                    provider=ThinkingProvider(
-                        provider, emit, agent="researcher", index=index, total=total
-                    ),
+                    provider=ThinkingProvider(provider, own_emit, agent="researcher"),
                     tools=tools,
-                    emit=emit,
+                    emit=own_emit,
                     should_cancel=should_cancel,
                     max_iters=max_iters,
                     deadline=deadline,
