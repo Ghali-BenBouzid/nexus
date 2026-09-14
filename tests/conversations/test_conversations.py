@@ -1,11 +1,14 @@
+import httpx
 from httpx import AsyncClient
 
+from app.agents.openai_provider import OUT_OF_CREDITS
 from app.agents.provider import LLMResponse, ProviderError, ToolCall
 from app.billing.service import BUDGET_EXHAUSTED
 from app.conversations.service import PROVIDER_DOWN
 from app.research.dependencies import get_provider
 from main import app
 from tests.accounts import login_as
+from tests.agents.test_openai_provider import NO_BACKOFF, _provider
 from tests.research.test_research import _use_fake_pipeline
 
 
@@ -295,3 +298,23 @@ async def test_provider_outage_is_a_503_and_leaves_no_orphan_message(
     assert followed.json()["detail"] == PROVIDER_DOWN
     detail = await client.get(f"/conversations/{conversation_id}", headers=auth_headers)
     assert len(detail.json()["messages"]) == 2  # the failed message was not stored
+
+
+async def test_a_key_over_its_credit_limit_tells_the_user_credits_ran_out(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    # OpenRouter's real answer once the demo key reaches its credit limit. It is a
+    # 403, not a 402, and it used to reach the user as "provider not responding".
+    def key_limit(request: httpx.Request) -> httpx.Response:
+        body = {"error": {"code": 403, "message": "Key limit exceeded (total limit)."}}
+        return httpx.Response(403, json=body)
+
+    app.dependency_overrides[get_provider] = lambda: _provider(
+        key_limit, retry=NO_BACKOFF
+    )
+    created = await client.post(
+        "/conversations", headers=auth_headers, json={"prompt": "first"}
+    )
+
+    assert created.status_code == 503
+    assert created.json()["detail"] == OUT_OF_CREDITS
