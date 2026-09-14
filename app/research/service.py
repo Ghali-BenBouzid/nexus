@@ -164,6 +164,7 @@ async def run_research_job(
             max_concurrency=settings.max_concurrency,
             per_researcher_timeout=settings.per_researcher_timeout,
             research_budget=settings.research_budget,
+            writer_timeout=settings.writer_timeout,
             retry_cap=settings.planner_retry_cap,
             **kw,
         ),
@@ -242,6 +243,7 @@ async def run_compose_job(
                         provider=ThinkingProvider(provider, emit, agent="writer"),
                         emit=emit,
                         guidance=instructions,
+                        timeout=settings.writer_timeout,
                     ),
                     timeout=settings.global_timeout,
                 )
@@ -299,6 +301,7 @@ async def run_research_from_plan_job(
             max_concurrency=settings.max_concurrency,
             per_researcher_timeout=settings.per_researcher_timeout,
             research_budget=settings.research_budget,
+            writer_timeout=settings.writer_timeout,
             **kw,
         ),
     )

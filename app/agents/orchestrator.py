@@ -62,6 +62,7 @@ async def run(
     per_researcher_timeout: float,
     retry_cap: int,
     research_budget: float | None = None,
+    writer_timeout: float | None = None,
 ) -> tuple[Report, ResearchResult]:
     """Pure orchestrator (no DB): plan -> fan out researchers -> consolidate ->
     write. Resilient: a researcher that fails or times out becomes a reported
@@ -93,6 +94,7 @@ async def run(
         max_concurrency=max_concurrency,
         per_researcher_timeout=per_researcher_timeout,
         research_budget=research_budget,
+        writer_timeout=writer_timeout,
     )
 
 
@@ -108,6 +110,7 @@ async def research_from_plan(
     max_concurrency: int,
     per_researcher_timeout: float,
     research_budget: float | None = None,
+    writer_timeout: float | None = None,
 ) -> tuple[Report, ResearchResult]:
     """The post-plan half of the pipeline: fan out researchers over a given plan,
     consolidate, write. Split out from ``run`` so a confirmed (human-in-the-loop)
@@ -222,5 +225,6 @@ async def research_from_plan(
         research_result,
         provider=ThinkingProvider(provider, emit, agent="writer"),
         emit=emit,
+        timeout=writer_timeout,
     )
     return report, research_result

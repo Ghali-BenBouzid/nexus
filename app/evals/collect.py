@@ -118,7 +118,7 @@ async def _run(
         for claim in point.claims
     ]
     provider.stage = "write"
-    report = await write(result, provider=provider)
+    report = await write(result, provider=provider, timeout=settings.writer_timeout)
     trace.report = report.content
     trace.sources = [SourceRecord(title=s.title, url=s.url) for s in report.sources]
 
