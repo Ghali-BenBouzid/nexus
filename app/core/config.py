@@ -67,6 +67,11 @@ class Settings(BaseSettings):
     langsmith_project: str = "nexus"
     langsmith_endpoint: str | None = None  # set for self-hosted / EU LangSmith
 
+    # Evals (python -m app.evals): the judge that scores recorded runs, any
+    # OpenRouter model id, billed to OPENROUTER_API_KEY. Deliberately a different
+    # model family from the one under test, to limit self-preference bias.
+    eval_judge_model: str = "openai/gpt-5-mini"
+
     @property
     def cors_origin_list(self) -> list[str]:
         return [

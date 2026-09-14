@@ -105,17 +105,27 @@ cd frontend && npm run build   # type-check + production build
 The suite is fully offline: a `FakeLLMProvider` and fake tools script the agents,
 so it is deterministic and CI-safe.
 
-### Evaluating report quality
+### Evaluating quality
 
 ```bash
-uv run python -m app.evals.live            # run the curated prompts, score them
-uv run python -m app.evals.live --no-judge # Tier 1 only (no LLM-judge cost)
+uv run python -m app.evals run                          # every golden, then score
+uv run python -m app.evals run --category owner,current # a slice
+uv run python -m app.evals score evals_runs/<run id>    # re-score saved traces
 ```
 
-This drives the real pipeline over a curated prompt set, scores each report on
-citation integrity, coverage, faithfulness, relevance, and coverage quality, and
-writes the reports to `evals_runs/` for reading. It spends provider and search
-quota.
+`app/evals/goldens.toml` holds about 60 realistic first messages (questions
+about the app and its author, time-sensitive questions, facts, comparisons,
+false premises, unanswerable and multilingual queries), each with the behavior a
+good response shows. `collect` runs them through the real pipeline and records
+every stage: the routing decision, the plan, each researcher's searches, pages
+and claims, the report and its cost. `score` then measures each stage with
+deterministic checks and DeepEval metrics judged by `EVAL_JUDGE_MODEL`: plan
+relevance and searchability, researcher success and search yield, retrieval
+relevance and faithfulness, report completeness, depth, concision and gap
+honesty, and whether the final response does what the golden expects. Results
+land in `evals_runs/<run id>/summary.md`.
+
+Collecting spends provider and Tavily credits; scoring spends judge credits.
 
 ## Deployment
 
