@@ -49,6 +49,11 @@ class Query(Base):
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # Refreshed every few seconds while a job works on the query, so the UI can
+    # tell a long step from a dead job and a worker can reap jobs that died.
+    heartbeat_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 class QueryEvent(Base):

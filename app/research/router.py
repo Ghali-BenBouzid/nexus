@@ -1,4 +1,5 @@
 import logging
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import ValidationError
@@ -26,6 +27,14 @@ from app.research.schemas import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/research")
+
+
+def _seconds_since(moment: datetime | None) -> float | None:
+    if moment is None:
+        return None
+    if moment.tzinfo is None:  # SQLite (the tests) drops the zone; it is UTC
+        moment = moment.replace(tzinfo=UTC)
+    return round((datetime.now(UTC) - moment).total_seconds(), 1)
 
 
 def _load_result(raw: dict | None, query_id: int) -> ResearchResult | None:
@@ -153,6 +162,8 @@ async def get_query(
         gaps=result.gaps if result else [],
         created_at=query.created_at,
         completed_at=query.completed_at,
+        # Computed here, not from a timestamp, so the client's clock never matters.
+        seconds_since_heartbeat=_seconds_since(query.heartbeat_at),
     )
 
 

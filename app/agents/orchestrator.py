@@ -4,6 +4,7 @@ import time
 from collections.abc import Awaitable, Callable
 
 from app.agents.consolidator import consolidate
+from app.agents.narration import ThinkingProvider
 from app.agents.planner import plan
 from app.agents.provider import LLMProvider, ProviderCreditsError
 from app.agents.researcher import research
@@ -60,7 +61,11 @@ async def run(
     be re-rendered later without re-running the research.
     """
     sub_questions = await plan(
-        prompt, provider=provider, emit=emit, cap=cap, retry_cap=retry_cap
+        prompt,
+        provider=ThinkingProvider(provider, emit, agent="planner"),
+        emit=emit,
+        cap=cap,
+        retry_cap=retry_cap,
     )
 
     if should_cancel():
@@ -124,7 +129,9 @@ async def research_from_plan(
             finding = await asyncio.wait_for(
                 research(
                     sub_question,
-                    provider=provider,
+                    provider=ThinkingProvider(
+                        provider, emit, agent="researcher", index=index, total=total
+                    ),
                     tools=tools,
                     emit=emit,
                     should_cancel=should_cancel,
@@ -200,5 +207,9 @@ async def research_from_plan(
         raise OrchestratorError("all researchers failed")
 
     research_result = consolidate(findings, failed)
-    report = await write(research_result, provider=provider, emit=emit)
+    report = await write(
+        research_result,
+        provider=ThinkingProvider(provider, emit, agent="writer"),
+        emit=emit,
+    )
     return report, research_result

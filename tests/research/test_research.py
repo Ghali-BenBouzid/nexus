@@ -150,6 +150,30 @@ async def test_create_returns_202_pending_then_completes(
     assert detail.json()["consulted_sources"] == []
 
 
+async def test_a_run_shows_signs_of_life(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    # The live UI needs two signals: which agent is waiting on the model (a
+    # "thinking" event before every call) and whether the job is alive at all.
+    _use_fake_pipeline(sub_questions=["q1", "q2"])
+    created = await client.post(
+        "/research/query", headers=auth_headers, json={"prompt": "a prompt"}
+    )
+    query_id = created.json()["id"]
+
+    detail = await client.get(f"/research/query/{query_id}", headers=auth_headers)
+    events = await client.get(
+        f"/research/query/{query_id}/events", headers=auth_headers
+    )
+
+    assert detail.json()["seconds_since_heartbeat"] is not None
+    thinking = [e["data"] for e in events.json() if e["type"] == "thinking"]
+    assert {"agent": "planner"} in thinking
+    assert {"agent": "researcher", "index": 1, "total": 2} in thinking
+    assert {"agent": "researcher", "index": 2, "total": 2} in thinking
+    assert {"agent": "writer"} in thinking
+
+
 class _ProvenanceProvider:
     """Searches once (consulting two sources) then cites only the first, so the
     consulted set is a strict superset of the cited set."""
