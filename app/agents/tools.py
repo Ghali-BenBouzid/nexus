@@ -46,6 +46,30 @@ class Tool(ToolSpec, Protocol):
     async def execute(self, **kwargs: Any) -> ToolResult: ...
 
 
+def inline_refs(schema: dict[str, Any]) -> dict[str, Any]:
+    """The same JSON schema with every ``$ref`` replaced by the definition it
+    points to, and ``$defs`` dropped.
+
+    Pydantic moves nested models into ``$defs`` and points at them with ``$ref``.
+    Some providers (Gemini behind OpenRouter) never follow the reference and guess
+    the shape instead: submit_finding's claims came back as plain strings, so every
+    researcher's finding was rejected. Spelling the shape out works everywhere.
+    Assumes no self-referencing model (none exists); one would recurse endlessly.
+    """
+    definitions = schema.get("$defs", {})
+
+    def resolve(node: Any) -> Any:
+        if isinstance(node, dict):
+            if "$ref" in node:
+                return resolve(definitions[node["$ref"].rsplit("/", 1)[-1]])
+            return {k: resolve(v) for k, v in node.items() if k != "$defs"}
+        if isinstance(node, list):
+            return [resolve(item) for item in node]
+        return node
+
+    return resolve(schema)
+
+
 class BaseToolSpec(ABC):
     """Shared spec plumbing: the JSON-schema parameters are derived from
     args_model, so each tool only declares its name, description, and args."""
@@ -56,7 +80,8 @@ class BaseToolSpec(ABC):
 
     @property
     def parameters(self) -> dict[str, Any]:
-        return self.args_model.model_json_schema()
+        # Self-contained on purpose: see inline_refs for the failure it prevents.
+        return inline_refs(self.args_model.model_json_schema())
 
 
 class BaseTool(BaseToolSpec):
