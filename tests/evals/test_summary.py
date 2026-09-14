@@ -9,8 +9,7 @@ def test_a_metric_whose_judgments_all_failed_is_flagged_not_shown_as_empty() -> 
         reason="judge failed: HTTPStatusError: Client error '400 Bad Request'",
     )
     scores = [
-        RunScore(golden_id=f"g{i}", category="fact", metrics=[failed])
-        for i in range(3)
+        RunScore(golden_id=f"g{i}", category="fact", metrics=[failed]) for i in range(3)
     ]
 
     summary = summarize(scores, [], meta={})
