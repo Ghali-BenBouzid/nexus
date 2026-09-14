@@ -8,7 +8,7 @@ Existing rows (the old auto-created browser accounts) are kept with their email 
 their name, but they have no invite token, so nobody can sign into them anymore.
 
 Revision ID: a8b9c0d1e2f3
-Revises: f0a1b2c3d4e5
+Revises: a1b2c3d4e5f6
 Create Date: 2026-09-13 00:00:00.000000
 
 """
@@ -21,7 +21,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "a8b9c0d1e2f3"
-down_revision: str | Sequence[str] | None = "f0a1b2c3d4e5"
+down_revision: str | Sequence[str] | None = "a1b2c3d4e5f6"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
