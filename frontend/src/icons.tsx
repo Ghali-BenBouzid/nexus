@@ -29,6 +29,11 @@ export const I: Record<string, ReactElement> = {
       <path d="M12 5v14M19 12l-7 7-7-7" />
     </svg>
   ),
+  chevron: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 9l6 6 6-6" />
+    </svg>
+  ),
   copy: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <rect x="9" y="9" width="11" height="11" rx="2" />

@@ -642,7 +642,8 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .pb.stale .pb-icon { color: var(--warn); }
 .pb-head { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
 .pb-label {
-  min-width: 0; font-size: 14.5px; font-weight: 500; color: var(--fg);
+  /* The stage never truncates for the detail beside it; the detail gives way. */
+  flex-shrink: 0; max-width: 100%; font-size: 14.5px; font-weight: 500; color: var(--fg);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: pbIn 0.25s var(--ease);
 }
 /* A light sweep across the live stage, like a chat app's "thinking" line. */
@@ -668,14 +669,14 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   padding: 7px 0; font-size: 13.5px; color: var(--fg);
 }
 .pb-mark { display: inline-flex; width: 15px; height: 15px; color: var(--ok); }
-.pb-step.warn .pb-mark { color: var(--warn); }
+.pb-step-warn .pb-mark { color: var(--warn); }
 .pb-step-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .pb-num { font-family: var(--font-mono); font-size: 11.5px; color: var(--accent); margin-right: 8px; }
 .pb-step-state {
   max-width: 26ch; font-family: var(--font-mono); font-size: 12px; color: var(--faint);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.pb-step.run .pb-step-state { color: var(--muted); }
+.pb-step-run .pb-step-state { color: var(--muted); }
 @keyframes pbIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 @keyframes pbShimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
 @media (max-width: 560px) {

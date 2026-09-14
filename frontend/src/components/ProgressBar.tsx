@@ -62,7 +62,8 @@ type Mark = "run" | "ok" | "warn";
 
 function Step({ mark, children, state }: { mark: Mark; children: React.ReactNode; state?: string | null }) {
   return (
-    <li className={"pb-step " + mark}>
+    // Prefixed modifiers: a bare "run" collides with the page-level .run class.
+    <li className={"pb-step pb-step-" + mark}>
       <span className="pb-mark" aria-hidden="true">
         {mark === "run" ? <span className="spin" /> : mark === "ok" ? I.check : I.warn}
       </span>
@@ -92,7 +93,15 @@ export function ProgressBar({ turn, now }: { turn: Turn; now: number }) {
   const label = headline(p, turn);
   const sub = stale ? t.progress.stale(clock(age)) : running ? detail(p, now) : null;
 
-  const icon = running ? <span className="spin" /> : turn.status === "complete" ? I.check : turn.stopped ? I.stop : I.warn;
+  const icon = running
+    ? <span className="spin" />
+    : turn.status === "awaiting_plan"
+      ? I.plan // paused for the user, not an error
+      : turn.status === "complete"
+        ? I.check
+        : turn.stopped
+          ? I.stop
+          : I.warn;
   const planDone = p.planSize != null || p.stage === "researching" || p.stage === "writing" || p.stage === "done";
 
   return (
@@ -105,7 +114,7 @@ export function ProgressBar({ turn, now }: { turn: Turn; now: number }) {
           {sub && <span key={sub.split(" ")[0]} className="pb-detail">{sub}</span>}
         </span>
         <span className="pb-time">{clock(elapsed)}</span>
-        <span className="pb-chevron" aria-hidden="true">{I.arrowDown}</span>
+        <span className="pb-chevron" aria-hidden="true">{I.chevron}</span>
       </button>
 
       {open && (
