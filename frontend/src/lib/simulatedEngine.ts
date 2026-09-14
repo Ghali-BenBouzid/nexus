@@ -255,15 +255,8 @@ export function toTimeline(run: Run): { timeline: TimelineEvent[]; result: Resul
   const push = (e: AgentEvent, delay: number) =>
     ev.push({ ...e, id: id++, delay } as TimelineEvent);
 
-  push(
-    {
-      kind: "planner",
-      state: "start",
-      title: "Planning your research",
-      sub: "Decomposing the question into sub-questions to research in parallel.",
-    },
-    500,
-  );
+  push({ kind: "planner", state: "start" }, 500);
+  push({ kind: "thinking", agent: "planner" }, 300);
   push({ kind: "plan", items: run.plan }, 1300);
 
   run.researchers.forEach((r, i) => {
@@ -272,24 +265,14 @@ export function toTimeline(run: Run): { timeline: TimelineEvent[]; result: Resul
       900,
     );
     r.tools.forEach((tool) => {
-      push({ kind: "tool", ...tool }, tool.action === "read" ? 850 : 700);
+      push({ kind: "tool", ...tool, index: i + 1 }, tool.action === "read" ? 850 : 700);
     });
-    const sub = r.gap
-      ? `Found ${r.found} relevant source${r.found === 1 ? "" : "s"} · 1 lead degraded to a gap`
-      : `Found ${r.found} relevant source${r.found === 1 ? "" : "s"}`;
-    push({ kind: "researcher", state: "done", index: i + 1, question: r.q, sub, hasGap: !!r.gap }, 650);
+    push({ kind: "researcher", state: "done", index: i + 1, question: r.q, outcome: "found" }, 650);
   });
 
-  push(
-    {
-      kind: "writer",
-      state: "start",
-      title: "Writing the report",
-      sub: `Synthesizing ${run.researchers.length} findings into a single cited report.`,
-    },
-    1000,
-  );
-  push({ kind: "writer", state: "done", title: "Report ready", sub: "Citations linked to sources." }, 1600);
+  push({ kind: "writer", state: "start" }, 1000);
+  push({ kind: "thinking", agent: "writer" }, 200);
+  push({ kind: "writer", state: "done" }, 1400);
 
   const gaps = run.researchers.filter((r) => r.gap).map((r) => r.gap as string);
   const result: Result = { ...run.result, gaps: gaps.concat(run.result.gaps || []) };

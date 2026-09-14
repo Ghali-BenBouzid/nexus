@@ -624,56 +624,69 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .run-status.failed .sd { background: var(--bad); }
 .run-status .elapsed { color: var(--faint); }
 
-/* feed */
-.feed-shell {
-  background: var(--panel); border: 1px solid var(--line);
-  border-radius: var(--r-lg); backdrop-filter: blur(20px) saturate(1.4);
-  box-shadow: var(--shadow); overflow: hidden;
+.src-list::-webkit-scrollbar { width: 8px; }
+.src-list::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px; }
+.src-list::-webkit-scrollbar-track { background: transparent; }
+
+/* Run progress: one line that follows the run's stage, expandable into its steps. */
+.pb { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); overflow: hidden; }
+.pb-bar {
+  display: flex; align-items: center; gap: 11px; width: 100%;
+  padding: 10px 14px; border: none; background: transparent; color: var(--muted);
+  font: inherit; text-align: left; cursor: pointer;
 }
-.feed-bar {
-  display: flex; align-items: center; justify-content: space-between;
-  width: 100%; padding: 16px 22px; border: none; border-bottom: 1px solid var(--line);
-  background: transparent; cursor: pointer; text-align: left;
-  font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.05em; color: var(--faint);
-  text-transform: uppercase; transition: color 0.15s ease;
+.pb-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-md); }
+.pb-bar:hover .pb-chevron { color: var(--fg); }
+.pb-icon { display: inline-flex; width: 15px; height: 15px; flex: none; color: var(--ok); }
+.pb-icon svg, .pb-mark svg { width: 15px; height: 15px; }
+.pb.stale .pb-icon { color: var(--warn); }
+.pb-head { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.pb-label {
+  min-width: 0; font-size: 14.5px; font-weight: 500; color: var(--fg);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: pbIn 0.25s var(--ease);
 }
-.feed-bar:hover { color: var(--muted); }
-.feed-bar-main { display: inline-flex; align-items: center; gap: 9px; }
-.feed-chevron { display: inline-flex; width: 13px; height: 13px; transition: transform 0.18s ease; }
-.feed-bar.collapsed .feed-chevron { transform: rotate(-90deg); }
-.feed-count { color: var(--faint); text-transform: none; letter-spacing: 0; }
-.feed-bar .demo-tag { color: var(--accent-2); display: inline-flex; gap: 7px; align-items: center; }
-.feed-bar .demo-tag .pip { width: 6px; height: 6px; border-radius: 50%; background: var(--accent-2); }
-.feed { padding: 20px 22px 26px; display: flex; flex-direction: column; gap: 2px; max-height: 60vh; overflow-y: auto; overflow-x: hidden; }
-.feed::-webkit-scrollbar, .src-list::-webkit-scrollbar { width: 8px; }
-.feed::-webkit-scrollbar-thumb, .src-list::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px; }
-.feed::-webkit-scrollbar-track, .src-list::-webkit-scrollbar-track { background: transparent; }
-
-.ev { display: grid; grid-template-columns: 26px 1fr; gap: 12px; padding: 7px 0; }
-.ev-rail { display: flex; flex-direction: column; align-items: center; }
-.ev-dot { width: 11px; height: 11px; border-radius: 50%; margin-top: 4px; flex: none; background: var(--faint); position: relative; z-index: 1; }
-.ev-dot.accent { background: var(--accent); }
-.ev-dot.ok { background: var(--ok); }
-.ev-dot.warn { background: var(--warn); }
-.ev-dot.pulse { box-shadow: 0 0 0 4px var(--accent-soft); animation: pulse 1.3s infinite; }
-.ev-line { width: 2px; flex: 1; background: var(--line); margin-top: 4px; min-height: 8px; }
-.ev-body { padding-bottom: 4px; }
-.ev-title { font-size: 15px; color: var(--fg); font-weight: 500; display: flex; align-items: center; gap: 9px; }
-.ev-title .role { font-family: var(--font-mono); font-size: 11px; color: var(--accent-2); border: 1px solid var(--line); padding: 2px 7px; border-radius: 6px; letter-spacing: 0.04em; }
-.ev-sub { font-size: 13.5px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
-
-.ev.tool .ev-body { padding-bottom: 2px; }
-.ev.tool .tool-line { font-family: var(--font-mono); font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
-.ev.tool .tool-line span { word-break: break-word; }
-.ev.tool .tool-line .tk { color: var(--accent-2); }
-.ev.tool.err .tool-line { color: var(--warn); }
-.ev.tool .dom { color: var(--fg); }
-
-.plan-card { margin-top: 8px; background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-md); padding: 14px 16px; display: grid; gap: 9px; }
-.plan-card .pq { display: flex; gap: 11px; font-size: 14px; color: var(--fg); line-height: 1.45; }
-.plan-card .pq .pn { font-family: var(--font-mono); font-size: 12px; color: var(--accent); flex: none; }
-
-.caret { display: inline-block; width: 8px; height: 15px; background: var(--accent-2); margin-left: 2px; vertical-align: text-bottom; animation: blink 1s steps(1) infinite; border-radius: 1px; }
+/* A light sweep across the live stage, like a chat app's "thinking" line. */
+.pb-label.live {
+  background: linear-gradient(90deg, var(--muted) 0%, var(--muted) 38%, var(--fg) 50%, var(--muted) 62%, var(--muted) 100%);
+  background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
+  animation: pbIn 0.25s var(--ease), pbShimmer 2.4s linear infinite;
+}
+.pb-detail {
+  min-width: 0; font-family: var(--font-mono); font-size: 12px; color: var(--faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: pbIn 0.25s var(--ease);
+}
+.pb.stale .pb-detail { color: var(--warn); }
+.pb-time { flex: none; font-family: var(--font-mono); font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.pb-chevron {
+  flex: none; display: inline-flex; width: 13px; height: 13px; color: var(--faint);
+  transform: rotate(-90deg); transition: transform 0.18s ease, color 0.15s ease;
+}
+.pb.open .pb-chevron { transform: none; }
+.pb-steps { list-style: none; margin: 0; padding: 4px 14px 10px; border-top: 1px solid var(--line); display: grid; }
+.pb-step {
+  display: grid; grid-template-columns: 15px minmax(0, 1fr) auto; align-items: center; gap: 11px;
+  padding: 7px 0; font-size: 13.5px; color: var(--fg);
+}
+.pb-mark { display: inline-flex; width: 15px; height: 15px; color: var(--ok); }
+.pb-step.warn .pb-mark { color: var(--warn); }
+.pb-step-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.pb-num { font-family: var(--font-mono); font-size: 11.5px; color: var(--accent); margin-right: 8px; }
+.pb-step-state {
+  max-width: 26ch; font-family: var(--font-mono); font-size: 12px; color: var(--faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pb-step.run .pb-step-state { color: var(--muted); }
+@keyframes pbIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@keyframes pbShimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+@media (max-width: 560px) {
+  /* Too narrow for stage and detail side by side: stack them. */
+  .pb-head { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .pb-label, .pb-detail { max-width: 100%; }
+  .pb-step-state { max-width: 14ch; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pb-label, .pb-label.live, .pb-detail { animation: none; }
+}
 
 /* ============================================================
    Report
@@ -881,16 +894,9 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   border: 1px solid var(--line); color: var(--fg); font-size: 14.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
 .assistant-reply { width: 100%; display: flex; flex-direction: column; gap: 10px; }
 
-.reply-thinking { display: flex; align-items: center; gap: 11px; color: var(--muted); font-size: 14.5px; }
 .spin { width: 15px; height: 15px; border-radius: 50%; flex: none;
   border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
 
-.activity-reply .feed-shell { border: none; border-radius: 0; background: transparent; box-shadow: none; backdrop-filter: none; }
-/* In the chat thread the bar is a slim collapse toggle (no full header chrome). */
-.activity-reply .feed-bar { padding: 4px 0; border-bottom: none; }
-.activity-reply .feed { padding: 8px 0 0; max-height: none; }
-
-.reply-status { font-family: var(--font-mono); font-size: 11.5px; letter-spacing: 0.03em; color: var(--faint); }
 /* A supervisor answer (no research): the reply rendered as prose in the thread. */
 .reply-text { font-size: 15px; line-height: 1.65; color: var(--fg); }
 .reply-text .doc > :first-child { margin-top: 0; }

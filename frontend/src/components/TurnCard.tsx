@@ -3,18 +3,15 @@ import { useState } from "react";
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import type { Turn } from "../types";
-import { AgentFeed } from "./AgentFeed";
 import { Markdown } from "./Markdown";
 import { NexusMark } from "./NexusLogo";
+import { ProgressBar } from "./ProgressBar";
 
 const noop = () => {};
-
-const fmt = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 
 type TurnCardProps = {
   turn: Turn;
   now: number;
-  feedTag: string;
   inSplit: boolean;
   focused?: boolean;
   onSelect?: () => void; // split: focus this turn's report in the side panel
@@ -26,24 +23,18 @@ type TurnCardProps = {
 };
 
 // One conversation turn rendered as chat: the user's query as a bubble, and the
-// agent's live activity log AS the assistant's reply. The finished report is not
-// shown here, it opens in the side panel (a "Report ready" card links to it).
-export function TurnCard({ turn, now, feedTag, inSplit, focused, onSelect, onOpenReport, onRerun, onConfirmPlan, onRevisePlan, onDiscardPlan }: TurnCardProps) {
+// run's progress bar AS the assistant's reply. The finished report is not shown
+// here, it opens in the side panel (a "Report ready" card links to it).
+export function TurnCard({ turn, now, inSplit, focused, onSelect, onOpenReport, onRerun, onConfirmPlan, onRevisePlan, onDiscardPlan }: TurnCardProps) {
   const [revising, setRevising] = useState(false);
   const [feedback, setFeedback] = useState("");
   const awaitingPlan = turn.status === "awaiting_plan";
   const running = turn.status === "running" || turn.status === "pending";
-  const elapsed = ((turn.endedAt ?? now) - turn.startedAt) / 1000;
 
   const hasReport = turn.status === "complete" && turn.outcome === "ok" && !!turn.result;
   const isEmpty = turn.status === "complete" && turn.outcome === "empty";
   const isFailed = !turn.stopped && (turn.status === "failed" || turn.outcome === "failed");
-
-  // While the plan awaits confirmation the proposed sub-questions live only in the
-  // confirm card below; suppress the duplicate "plan" feed event until the user
-  // acts, after which it rejoins the timeline like any other event.
-  const feedEvents = awaitingPlan ? turn.events.filter((e) => e.kind !== "plan") : turn.events;
-  const hasActivity = feedEvents.length > 0;
+  const hasActivity = turn.events.length > 0;
 
   return (
     <div className={"msg-turn" + (focused && inSplit ? " focused" : "")} onClick={inSplit ? onSelect : undefined}>
@@ -61,17 +52,7 @@ export function TurnCard({ turn, now, feedTag, inSplit, focused, onSelect, onOpe
             </div>
           )}
 
-          {turn.reply == null && running && !hasActivity && (
-            <div className="reply-thinking">
-              <span className="spin" />{t.turn.planning}
-            </div>
-          )}
-
-          {hasActivity && (
-            <div className="activity-reply">
-              <AgentFeed events={feedEvents} status={turn.status} compact tag={feedTag} />
-            </div>
-          )}
+          {turn.reply == null && (running || hasActivity) && <ProgressBar turn={turn} now={now} />}
 
           {/* The plan-confirmation prompt sits at the bottom of the timeline, like a
               new message, and is the only place the proposed sub-questions appear
@@ -103,19 +84,6 @@ export function TurnCard({ turn, now, feedTag, inSplit, focused, onSelect, onOpe
                   </div>
                 </div>
               )}
-            </div>
-          )}
-
-          {turn.reply == null && !awaitingPlan && (running || elapsed > 0.2) && (
-            <div className="reply-status">
-              {running
-                ? t.turn.researching
-                : turn.stopped
-                  ? t.turn.stopped
-                  : isFailed
-                    ? t.turn.failed
-                    : t.turn.done}{" "}
-              · {fmt(elapsed)}
             </div>
           )}
 
