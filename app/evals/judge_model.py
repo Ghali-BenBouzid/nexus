@@ -6,6 +6,7 @@ the reply back into that schema, and keeps a running total of what judging cost.
 """
 
 import asyncio
+import logging
 import re
 from typing import Any
 
@@ -16,6 +17,8 @@ from pydantic import BaseModel, ValidationError
 from app.agents.retry import RetryPolicy, is_transient, retry_async
 from app.agents.tools import inline_refs
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
 # A reply that wraps its JSON in prose or a code fence still carries one object.
@@ -89,6 +92,7 @@ class JudgeModel(DeepEvalBaseLLM):
         self.retry = retry
         self.transport = transport
         self.cost_usd = 0.0
+        self._reasoning: bool | None = None  # looked up on the first judgment
         super().__init__(model or settings.eval_judge_model)
 
     def load_model(self) -> "JudgeModel":
@@ -112,13 +116,17 @@ class JudgeModel(DeepEvalBaseLLM):
     async def a_generate(
         self, prompt: str, schema: type[BaseModel] | None = None
     ) -> str | BaseModel:
+        if self._reasoning is None:
+            # ponytail: concurrent first judgments may each look it up; harmless.
+            self._reasoning = await self._supports_reasoning()
         payload: dict = {
             "model": self.name,
             "messages": [{"role": "user", "content": prompt}],
-            # Verdicts need care, not long deliberation: keeps the judge fast and
-            # cheap on reasoning models, and is ignored by the others.
-            "reasoning": {"effort": "low"},
         }
+        if self._reasoning:
+            # Verdicts need care, not long deliberation: keeps the judge fast and
+            # cheap on reasoning models.
+            payload["reasoning"] = {"effort": "low"}
         if schema is not None:
             payload["response_format"] = {
                 "type": "json_schema",
@@ -137,15 +145,36 @@ class JudgeModel(DeepEvalBaseLLM):
 
         return await retry_async(attempt, policy=self.retry, transient=_retryable)
 
-    async def _complete(self, payload: dict) -> str:
+    def _client(self) -> httpx.AsyncClient:
         # ponytail: one client per call, simplest correct lifecycle; share a client
         # if judging thousands of cases makes the handshakes add up.
-        async with httpx.AsyncClient(
+        return httpx.AsyncClient(
             base_url=OPENROUTER_URL,
             headers={"Authorization": f"Bearer {self.api_key}"},
             timeout=120.0,
             transport=self.transport,
-        ) as client:
+        )
+
+    async def _supports_reasoning(self) -> bool:
+        """Whether a provider serving the judge model takes ``reasoning`` along
+        with structured outputs. With require_parameters, sending ``reasoning`` to
+        a model that has none (Mistral, Qwen instruct) left no provider: every
+        judgment failed with 404. A failed lookup just leaves reasoning out."""
+        try:
+            async with self._client() as client:
+                response = await client.get(f"/models/{self.name}/endpoints")
+                response.raise_for_status()
+                endpoints = response.json()["data"]["endpoints"]
+        except (httpx.HTTPError, KeyError, TypeError, ValueError) as exc:
+            logger.warning("could not look up %s's parameters: %s", self.name, exc)
+            return False
+        needed = {"reasoning", "structured_outputs"}
+        return any(
+            needed <= set(e.get("supported_parameters") or []) for e in endpoints
+        )
+
+    async def _complete(self, payload: dict) -> str:
+        async with self._client() as client:
             response = await client.post("/chat/completions", json=payload)
             response.raise_for_status()
             data = response.json()

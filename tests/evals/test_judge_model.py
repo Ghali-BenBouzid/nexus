@@ -23,13 +23,59 @@ def _reply(content: str, cost: float = 0.001) -> httpx.Response:
     )
 
 
-def _judge(handler) -> JudgeModel:
+def _judge(
+    handler, *, params: tuple[str, ...] = ("reasoning", "structured_outputs")
+) -> JudgeModel:
+    """A judge whose chat calls go to ``handler``, on a model whose provider
+    supports ``params`` (what OpenRouter's endpoints lookup reports)."""
+
+    def route(request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/endpoints"):
+            endpoints = [{"supported_parameters": list(params)}]
+            return httpx.Response(200, json={"data": {"endpoints": endpoints}})
+        return handler(request)
+
     return JudgeModel(
         "judge/model",
         api_key="k",
         retry=NO_BACKOFF,
-        transport=httpx.MockTransport(handler),
+        transport=httpx.MockTransport(route),
     )
+
+
+async def test_reasoning_is_only_requested_from_models_that_support_it() -> None:
+    # With require_parameters, asking a model without reasoning (Mistral Small,
+    # Qwen instruct) for it left no provider: every judgment failed with 404.
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        return _reply('{"score": 1, "reason": "r"}')
+
+    await _judge(handler).a_generate("rate", schema=Verdict)
+    await _judge(handler, params=("structured_outputs",)).a_generate("rate", Verdict)
+
+    assert sent[0]["reasoning"] == {"effort": "low"}
+    assert "reasoning" not in sent[1]
+
+
+async def test_a_failed_lookup_leaves_reasoning_out() -> None:
+    sent: list[dict] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "GET":
+            return httpx.Response(503)
+        sent.append(json.loads(request.content))
+        return _reply('{"score": 1, "reason": "r"}')
+
+    judge = JudgeModel(
+        "judge/model", api_key="k", transport=httpx.MockTransport(handler)
+    )
+
+    verdict = await judge.a_generate("rate", schema=Verdict)
+
+    assert verdict == Verdict(score=1, reason="r")
+    assert "reasoning" not in sent[0]
 
 
 async def test_structured_verdict_is_parsed_into_the_schema_and_costed() -> None:
