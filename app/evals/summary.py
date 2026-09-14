@@ -33,6 +33,10 @@ def _mean_score(results: list[MetricResult]) -> float | None:
     return mean(values) if values else None
 
 
+def _judge_failed(result: MetricResult) -> bool:
+    return result.reason.startswith("judge failed")
+
+
 def _pass_rate(results: list[MetricResult]) -> float | None:
     verdicts = [r.passed for r in results if r.passed is not None]
     return sum(verdicts) / len(verdicts) if verdicts else None
@@ -50,25 +54,33 @@ def summarize(scores: list[RunScore], traces: list[RunTrace], *, meta: dict) -> 
         "",
     ]
 
+    judge_errors = [m for s in scores for m in s.metrics if _judge_failed(m)]
+    if judge_errors:
+        first = judge_errors[0].reason.replace("\n", " ")[:300]
+        lines += [
+            f"- **{len(judge_errors)} judgments failed** and are left out of the "
+            f"means below. First error: {first}",
+            "",
+        ]
+
     lines += ["## By stage", ""]
     rows = []
     for stage in STAGES:
         names = sorted({m.name for s in scores for m in s.metrics if m.stage == stage})
         for name in names:
             results = _results(scores, name)
+            failed = sum(_judge_failed(r) for r in results)
+            errors = f" ({failed} judge errors)" if failed else ""
             if all(r.score is None for r in results):
                 values = [r.value for r in results if r.value is not None]
                 rows.append(
                     [stage, name, str(len(values)), f"mean {_num(mean(values))}", "-"]
                     if values
-                    else [stage, name, "0", "n/a", "-"]
+                    else [stage, name, f"0{errors}", "n/a", "n/a"]
                 )
                 continue
             scored = [r for r in results if r.score is not None]
-            failed_judgments = sum(r.reason.startswith("judge failed") for r in results)
-            count = f"{len(scored)}" + (
-                f" ({failed_judgments} judge errors)" if failed_judgments else ""
-            )
+            count = f"{len(scored)}{errors}"
             rows.append(
                 [
                     stage,

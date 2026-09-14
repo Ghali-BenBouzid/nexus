@@ -46,6 +46,10 @@ def _why_failed(researcher: ResearcherTrace) -> str:
         return "never searched"
     if not any(search.hits for search in researcher.searches):
         return "every search came back empty"
+    # Checked before found_info: a researcher whose submission never validates
+    # ends with found_info=False too, which would read as "found nothing".
+    if any(event.startswith("submit_invalid") for event in researcher.events):
+        return "its findings were rejected as malformed (submit_finding invalid)"
     if not researcher.found_info:
         return "reported that it found nothing"
     return "no claim cited a source"

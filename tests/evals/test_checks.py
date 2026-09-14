@@ -62,6 +62,25 @@ def test_research_checks_explain_why_a_researcher_failed() -> None:
     assert checks["run_completed"].passed
 
 
+def test_a_rejected_submission_is_named_as_the_reason_not_nothing_found() -> None:
+    # The researcher searched and got results, but its submit_finding call was
+    # malformed on every try, so it ended with found_info=False and no claims.
+    trace = _research_trace()
+    trace.researchers[1] = ResearcherTrace(
+        sub_question="b",
+        searches=[SearchCall(query="b", hits=[HIT])],
+        events=[
+            "submit_invalid: submit_finding was malformed: ...",
+            "researcher_forced: Max iterations reached",
+        ],
+    )
+
+    reason = _by_name(_golden(), trace)["researcher_success"].reason
+
+    assert "rejected as malformed" in reason
+    assert "found nothing" not in reason
+
+
 def test_researching_a_message_that_needed_a_direct_answer_is_a_routing_miss() -> None:
     checks = _by_name(_golden(expected_route="answer"), _research_trace())
 

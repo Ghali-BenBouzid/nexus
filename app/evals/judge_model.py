@@ -7,12 +7,14 @@ the reply back into that schema, and keeps a running total of what judging cost.
 
 import asyncio
 import re
+from typing import Any
 
 import httpx
 from deepeval.models import DeepEvalBaseLLM
 from pydantic import BaseModel, ValidationError
 
 from app.agents.retry import RetryPolicy, is_transient, retry_async
+from app.agents.tools import inline_refs
 from app.core.config import settings
 
 OPENROUTER_URL = "https://openrouter.ai/api/v1"
@@ -27,6 +29,34 @@ class JudgeOutputError(Exception):
 
 def _retryable(exc: Exception) -> bool:
     return isinstance(exc, JudgeOutputError) or is_transient(exc)
+
+
+def _tighten(node: Any) -> Any:
+    if isinstance(node, list):
+        return [_tighten(item) for item in node]
+    if not isinstance(node, dict):
+        return node
+    out: dict[str, Any] = {}
+    for key, value in node.items():
+        if key == "default":  # the keyword; strict mode rejects it
+            continue
+        if key == "properties":  # field names, kept even if one is "default"
+            out[key] = {name: _tighten(sub) for name, sub in value.items()}
+        else:
+            out[key] = _tighten(value)
+    if out.get("type") == "object" and "properties" in out:
+        out["additionalProperties"] = False
+        out["required"] = list(out["properties"])
+    return out
+
+
+def strict_schema(schema: type[BaseModel]) -> dict[str, Any]:
+    """The model's JSON schema in the form OpenAI's strict structured outputs
+    accept, since OpenRouter routes gpt judges to OpenAI or Azure: references
+    inlined, every object closed to extra keys, every property required (an
+    optional one stays nullable, so the judge answers null) and no defaults.
+    Without it every DeepEval metric with a nested verdict schema failed with 400."""
+    return _tighten(inline_refs(schema.model_json_schema()))
 
 
 def _parse(content: str, schema: type[BaseModel]) -> BaseModel:
@@ -94,7 +124,8 @@ class JudgeModel(DeepEvalBaseLLM):
                 "type": "json_schema",
                 "json_schema": {
                     "name": schema.__name__,
-                    "schema": schema.model_json_schema(),
+                    "strict": True,
+                    "schema": strict_schema(schema),
                 },
             }
             # Only route to providers that honour the schema.

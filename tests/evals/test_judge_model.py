@@ -49,6 +49,41 @@ async def test_structured_verdict_is_parsed_into_the_schema_and_costed() -> None
     assert sent["provider"] == {"require_parameters": True}
 
 
+class Item(BaseModel):
+    verdict: str
+    reason: str | None = None  # optional, like DeepEval's verdict reasons
+    default: str = "kept"  # a field that happens to be named like the keyword
+
+
+class Items(BaseModel):
+    items: list[Item]
+
+
+async def test_the_schema_is_sent_in_the_strict_form_openai_requires() -> None:
+    # OpenRouter routes gpt judges to OpenAI/Azure, which reject a nested schema
+    # unless every object is closed and lists all its properties as required.
+    sent: dict = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        sent.update(json.loads(request.content))
+        return _reply('{"items": [{"verdict": "yes", "reason": null, "default": "x"}]}')
+
+    verdict = await _judge(handler).a_generate("rate", schema=Items)
+
+    assert verdict == Items(items=[Item(verdict="yes", reason=None, default="x")])
+    spec = sent["response_format"]["json_schema"]
+    assert spec["strict"] is True
+    schema = spec["schema"]
+    text = json.dumps(schema)
+    assert "$ref" not in text and "$defs" not in text
+    assert schema["additionalProperties"] is False
+    item = schema["properties"]["items"]["items"]
+    assert item["additionalProperties"] is False
+    assert item["required"] == ["verdict", "reason", "default"]
+    assert "default" not in item["properties"]["reason"]  # the keyword is dropped
+    assert "default" in item["properties"]  # the field is not
+
+
 async def test_json_wrapped_in_a_code_fence_still_parses() -> None:
     judge = _judge(lambda r: _reply('```json\n{"score": 2, "reason": "thin"}\n```'))
 
