@@ -74,6 +74,7 @@ async def _collect(goldens: list[Golden], run_dir: Path, concurrency: int) -> No
             "max_iters": settings.max_iters,
             "max_concurrency": settings.max_concurrency,
             "planner_retry_cap": settings.planner_retry_cap,
+            "research_budget": settings.research_budget,
             "per_researcher_timeout": settings.per_researcher_timeout,
             "global_timeout": settings.global_timeout,
         },

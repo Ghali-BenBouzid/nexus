@@ -133,6 +133,7 @@ async def run_research_job(
             max_iters=settings.max_iters,
             max_concurrency=settings.max_concurrency,
             per_researcher_timeout=settings.per_researcher_timeout,
+            research_budget=settings.research_budget,
             retry_cap=settings.planner_retry_cap,
             **kw,
         ),
@@ -263,6 +264,7 @@ async def run_research_from_plan_job(
             max_iters=settings.max_iters,
             max_concurrency=settings.max_concurrency,
             per_researcher_timeout=settings.per_researcher_timeout,
+            research_budget=settings.research_budget,
             **kw,
         ),
     )

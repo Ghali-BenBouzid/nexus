@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
 
 from app.agents.consolidator import consolidate
@@ -47,6 +48,7 @@ async def run(
     max_concurrency: int,
     per_researcher_timeout: float,
     retry_cap: int,
+    research_budget: float | None = None,
 ) -> tuple[Report, ResearchResult]:
     """Pure orchestrator (no DB): plan -> fan out researchers -> consolidate ->
     write. Resilient: a researcher that fails or times out becomes a reported
@@ -73,6 +75,7 @@ async def run(
         max_iters=max_iters,
         max_concurrency=max_concurrency,
         per_researcher_timeout=per_researcher_timeout,
+        research_budget=research_budget,
     )
 
 
@@ -87,12 +90,20 @@ async def research_from_plan(
     max_iters: int,
     max_concurrency: int,
     per_researcher_timeout: float,
+    research_budget: float | None = None,
 ) -> tuple[Report, ResearchResult]:
     """The post-plan half of the pipeline: fan out researchers over a given plan,
     consolidate, write. Split out from ``run`` so a confirmed (human-in-the-loop)
-    plan can be executed without re-planning."""
+    plan can be executed without re-planning.
+
+    ``research_budget`` (seconds) is a soft deadline shared by the fan-out: past
+    it, researchers submit what they have, so a slow model still gets a report
+    written. ``per_researcher_timeout`` is the hard stop for a stuck researcher."""
     total = len(sub_questions)
     semaphore = asyncio.Semaphore(max_concurrency)
+    deadline = (
+        time.monotonic() + research_budget if research_budget is not None else None
+    )
 
     async def run_one(index: int, sub_question: str) -> Finding:
         # Emit the lifecycle here (not in the researcher leaf): this is the only
@@ -118,6 +129,7 @@ async def research_from_plan(
                     emit=emit,
                     should_cancel=should_cancel,
                     max_iters=max_iters,
+                    deadline=deadline,
                 ),
                 timeout=per_researcher_timeout,
             )

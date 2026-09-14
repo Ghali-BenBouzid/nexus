@@ -1,3 +1,6 @@
+import asyncio
+import time
+
 from app.agents.provider import FakeLLMProvider, LLMResponse, ToolCall
 from app.agents.researcher import research
 from app.agents.schemas import AgentEvent
@@ -154,6 +157,48 @@ async def test_research_forces_finding_on_cap() -> None:
     assert finding.found_info is False
     # the final call forced the specific tool
     assert provider.calls[-1][2] == "submit_finding"
+
+
+class SlowSearchBackend(FakeSearchBackend):
+    async def search(self, query: str, max_results: int) -> list[SearchHit]:
+        await asyncio.sleep(0.05)
+        return await super().search(query, max_results)
+
+
+async def test_research_out_of_time_submits_what_it_has_read() -> None:
+    # The deadline passes during the first search: instead of searching again, the
+    # researcher is forced to submit, and can still cite what it already read.
+    hits = [SearchHit(title="A", url="http://a", content="alpha")]
+    search = LLMResponse(tool_calls=[_call("web_search", query="q", max_results=5)])
+    salvaged = LLMResponse(
+        tool_calls=[
+            _call(
+                "submit_finding",
+                claims=[{"text": "from the first search", "cited_source_ids": [0]}],
+                found_info=True,
+            )
+        ]
+    )
+    provider = FakeLLMProvider(responses=[search, salvaged])
+    events: list[AgentEvent] = []
+
+    async def emit(event: AgentEvent) -> None:
+        events.append(event)
+
+    finding = await research(
+        "sub q",
+        provider=provider,
+        tools=[WebSearch(backend=SlowSearchBackend(hits))],
+        emit=emit,
+        max_iters=5,
+        deadline=time.monotonic() + 0.01,
+    )
+
+    assert [s.url for s in finding.cited_sources] == ["http://a"]
+    assert len(provider.calls) == 2  # one search round, then the forced submit
+    assert provider.calls[-1][2] == "submit_finding"
+    forced = [e.message for e in events if e.type == "researcher_forced"]
+    assert forced == ["Time budget reached"]
 
 
 async def test_research_emits_events() -> None:

@@ -1,3 +1,4 @@
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -52,12 +53,14 @@ async def research(
     emit: Emit = _noop,
     should_cancel: Callable[[], bool] = _never_cancel,
     max_iters: int,
+    deadline: float | None = None,
 ) -> Finding:
     """Run the ReAct tool-use loop for one sub-question and return a Finding.
 
     The model is given the executable ``tools`` plus the ``submit_finding``
     control tool; it searches/reads until it calls ``submit_finding`` (the
-    terminal step) or the iteration cap forces a final answer.
+    terminal step), or the iteration cap or the ``deadline`` (a
+    ``time.monotonic()`` instant) forces a final answer from what it has read.
     """
     submit = SubmitFinding()
     specs = [*tools, submit]
@@ -74,6 +77,7 @@ async def research(
     # The researcher_start/done lifecycle is emitted by the orchestrator, which
     # knows this researcher's index and the total. The leaf emits only its own
     # internal steps (tool calls, errors, forced finish).
+    out_of_time = False
     for _ in range(max_iters):
         # Cooperative cancel: bail before the next (expensive) model/tool round so a
         # stopped run stops spending quota. The empty finding becomes a gap, and the
@@ -85,6 +89,11 @@ async def research(
                 consulted_sources=consulted,
                 found_info=False,
             )
+        # Out of time: stop searching and submit what was read so far (below),
+        # rather than start a round that would push the whole run past its budget.
+        if deadline is not None and time.monotonic() >= deadline:
+            out_of_time = True
+            break
         response = await provider.generate(messages, tools=specs, tool_choice="auto")
         messages.append(_assistant_message(response))
 
@@ -134,9 +143,11 @@ async def research(
                 )
             )
 
-    # Iteration cap hit: force one final submit_finding (found_info is the escape
-    # hatch so the model can honestly say it found nothing instead of confabulating).
-    await emit(AgentEvent(type="researcher_forced", message="Max iterations reached"))
+    # Iteration cap or deadline hit: force one final submit_finding (found_info is
+    # the escape hatch so the model can honestly say it found nothing instead of
+    # confabulating).
+    reason = "Time budget reached" if out_of_time else "Max iterations reached"
+    await emit(AgentEvent(type="researcher_forced", message=reason))
     response = await provider.generate(
         messages, tools=[submit], tool_choice=submit.name
     )

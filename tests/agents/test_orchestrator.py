@@ -97,6 +97,29 @@ async def test_run_degrades_on_partial_failure() -> None:
     assert [p.sub_question for p in research_result.points] == ["q1"]
 
 
+async def test_run_writes_a_report_when_the_research_budget_runs_out() -> None:
+    # Past the budget, each researcher submits what it has instead of searching
+    # on, so a slow model still gets a report written instead of a timeout.
+    events: list[AgentEvent] = []
+
+    async def emit(event: AgentEvent) -> None:
+        events.append(event)
+
+    provider = RoleProvider(sub_questions=["q1", "q2"])
+    report, _ = await run(
+        "big question",
+        provider=provider,
+        tools=[],
+        emit=emit,
+        research_budget=0.0,
+        **_KNOBS,
+    )
+
+    assert report.content == "FINAL REPORT"
+    forced = [e.message for e in events if e.type == "researcher_forced"]
+    assert forced == ["Time budget reached", "Time budget reached"]
+
+
 async def test_run_raises_when_all_researchers_fail() -> None:
     provider = RoleProvider(sub_questions=["q1", "q2"], fail={"q1", "q2"})
 
