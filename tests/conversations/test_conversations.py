@@ -51,13 +51,12 @@ async def test_create_conversation_plans_then_confirms(
     query_id = body["messages"][1]["query_id"]
     assert query_id is not None
 
-    # the supervisor named the report; the conversation takes that title too
-    assert body["title"] == "Research Topic"
-    assert body["messages"][1]["query"]["title"] == "Research Topic"
-
-    # human-in-the-loop: the plan job ran and the turn is awaiting confirmation
+    # the routing job ran after the response: it named the report (and the
+    # conversation), planned, and paused the turn for confirmation
     detail = await client.get(f"/conversations/{body['id']}", headers=auth_headers)
+    assert detail.json()["title"] == "Research Topic"
     awaiting = detail.json()["messages"][1]["query"]
+    assert awaiting["title"] == "Research Topic"
     assert awaiting["status"] == "awaiting_plan"
     assert awaiting["plan"] == ["q1"]
 
@@ -164,10 +163,15 @@ async def test_supervisor_answers_from_context_without_research(
         json={"content": "what did the report say?"},
     )
 
-    last = followed.json()["messages"][-1]
+    assert followed.status_code == 200
+    # the turn is tracked by a query like any other; it ends with the reply
+    detail = await client.get(f"/conversations/{conversation_id}", headers=auth_headers)
+    last = detail.json()["messages"][-1]
     assert last["role"] == "assistant"
-    assert last["query_id"] is None
     assert last["content"] == "Answer from the report."
+    assert last["query"]["status"] == "complete"
+    assert last["query"]["reply"] == "Answer from the report."
+    assert last["query"]["report"] is None
 
 
 class _ComposeProvider:
@@ -278,7 +282,7 @@ class _DownProvider:
         raise ProviderError("LLM request failed")
 
 
-async def test_provider_outage_is_a_503_and_leaves_no_orphan_message(
+async def test_a_provider_outage_fails_the_turn_with_a_clear_message(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
     _use_fake_pipeline(sub_questions=["q1"])
@@ -294,10 +298,13 @@ async def test_provider_outage_is_a_503_and_leaves_no_orphan_message(
         json={"content": "and then?"},
     )
 
-    assert followed.status_code == 503
-    assert followed.json()["detail"] == PROVIDER_DOWN
+    # Routing runs off the request, so the message is accepted and its turn then
+    # fails with a message the user can act on.
+    assert followed.status_code == 200
     detail = await client.get(f"/conversations/{conversation_id}", headers=auth_headers)
-    assert len(detail.json()["messages"]) == 2  # the failed message was not stored
+    turn = detail.json()["messages"][-1]["query"]
+    assert turn["status"] == "failed"
+    assert turn["error"] == PROVIDER_DOWN
 
 
 async def test_a_key_over_its_credit_limit_tells_the_user_credits_ran_out(
@@ -317,5 +324,10 @@ async def test_a_key_over_its_credit_limit_tells_the_user_credits_ran_out(
         "/conversations", headers=auth_headers, json={"prompt": "first"}
     )
 
-    assert created.status_code == 503
-    assert created.json()["detail"] == OUT_OF_CREDITS
+    assert created.status_code == 201
+    detail = await client.get(
+        f"/conversations/{created.json()['id']}", headers=auth_headers
+    )
+    turn = detail.json()["messages"][1]["query"]
+    assert turn["status"] == "failed"
+    assert turn["error"] == OUT_OF_CREDITS

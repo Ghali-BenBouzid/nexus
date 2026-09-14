@@ -27,6 +27,8 @@ type QueryDetail = {
   sources: Source[];
   consulted_sources: Source[];
   gaps: string[];
+  // The supervisor's direct answer, when the turn needed no research.
+  reply?: string | null;
   // How long ago the job last showed signs of life (null before it starts).
   seconds_since_heartbeat?: number | null;
 };
@@ -272,6 +274,7 @@ type ConvMessageQuery = {
   status: Status;
   title: string | null;
   report: string | null;
+  reply?: string | null;
   error: string | null;
   plan: string[] | null;
   sources: Source[];
@@ -379,10 +382,16 @@ async function pollQuery(
 
   // Poll until terminal.
   const giveUpAt = Date.now() + MAX_POLL_MS;
+  let title: string | null = null;
   while (Date.now() < giveUpAt) {
     if (cb.isCancelled()) return null;
     const detail = await getQuery(id, token);
     cb.onHeartbeat?.(detail.seconds_since_heartbeat ?? null);
+    // The routing job names the report once it has decided; show it as it lands.
+    if (detail.title && detail.title !== title) {
+      title = detail.title;
+      cb.onTitle?.(title);
+    }
     await drainEvents();
 
     // Human-in-the-loop: the run paused for the user to confirm the plan. End the
@@ -397,6 +406,14 @@ async function pollQuery(
     }
 
     if (detail.status === "complete") {
+      // The supervisor answered directly: a reply, and no report to open.
+      if (detail.reply != null && !detail.report) {
+        return {
+          result: { report: "", sources: [], consulted: [], gaps: [] },
+          outcome: "ok",
+          reply: detail.reply,
+        };
+      }
       const result: Result = {
         report: detail.report ?? "",
         sources: detail.sources,
@@ -553,15 +570,16 @@ export async function loadConversation(id: number): Promise<LoadedConversation |
       prompt = m.content;
       continue;
     }
-    // An assistant message with no query is a supervisor answer.
-    if (m.query_id == null) {
+    // A supervisor answer: older ones carry no query, newer ones a finished query
+    // holding the reply.
+    if (m.query_id == null || m.query?.reply) {
       turns.push({
-        queryId: null,
+        queryId: m.query_id,
         query: prompt,
         status: "complete",
         error: null,
         result: { report: "", sources: [], consulted: [], gaps: [] },
-        reply: m.content,
+        reply: m.query?.reply ?? m.content,
       });
       continue;
     }

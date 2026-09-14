@@ -46,6 +46,10 @@ async def client(tmp_path) -> AsyncGenerator[AsyncClient]:
     # via db_session.SessionLocal (not a Depends), so point it at the test engine.
     original_session_local = db_session.SessionLocal
     db_session.SessionLocal = session_local
+    # No Redis in the tests: jobs run in-process after each response, with the
+    # request's (fake) provider and backend.
+    original_queue = settings.job_queue
+    settings.job_queue = "inline"
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)  # creating tables
@@ -58,6 +62,7 @@ async def client(tmp_path) -> AsyncGenerator[AsyncClient]:
         await conn.run_sync(Base.metadata.drop_all)  # cleaning up
     await engine.dispose()
     db_session.SessionLocal = original_session_local
+    settings.job_queue = original_queue
     app.dependency_overrides.clear()
 
 

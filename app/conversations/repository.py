@@ -64,13 +64,23 @@ async def add_message(
     return message
 
 
+async def set_content(db: AsyncSession, message_id: int, content: str) -> None:
+    """Fill in an assistant message once its turn has produced a reply."""
+    await db.execute(
+        update(Message).where(Message.id == message_id).values(content=content)
+    )
+    await db.commit()
+
+
 async def set_title(db: AsyncSession, conversation_id: int, title: str) -> None:
     """Name the conversation (once), so the sidebar shows a real title instead of
-    the fallback. Called with the first report's supervisor-given title."""
-    conversation = await db.get(Conversation, conversation_id)
-    if conversation is None:
-        return
-    conversation.title = title
+    the fallback. Called with the first report's supervisor-given title. Naming is
+    not activity, so updated_at (the sidebar's order) is left as it was."""
+    await db.execute(
+        update(Conversation)
+        .where(Conversation.id == conversation_id)
+        .values(title=title, updated_at=Conversation.updated_at)
+    )
     await db.commit()
 
 

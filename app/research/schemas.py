@@ -44,6 +44,7 @@ class QueryDetail(BaseSchema):
     title: str | None = None  # the supervisor-given report title
     status: QueryStatus
     report: str | None
+    reply: str | None = None  # the supervisor's direct answer, on an answer turn
     error: str | None
     plan: list[str] | None = None  # proposed sub-questions while awaiting_plan
     sources: list[Source]  # cited sources backing the report
