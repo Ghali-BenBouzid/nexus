@@ -21,6 +21,8 @@ REQUIRED_CATEGORIES = {
     "niche",
     "safety",
     "multilingual",
+    "edge",
+    "compound",
 }
 
 
@@ -28,11 +30,13 @@ def test_golden_set_loads_and_covers_the_use_cases() -> None:
     goldens = load_goldens()
     categories = Counter(g.category for g in goldens)
 
-    assert len(goldens) >= 50
+    # ~150 so a change of a few points between two runs is signal, not noise.
+    assert len(goldens) >= 150
     assert REQUIRED_CATEGORIES <= set(categories)
-    assert categories["owner"] >= 4  # the "who is Ghali?" pattern seen in testing
-    assert categories["app"] >= 4
-    assert sum(g.time_sensitive for g in goldens) >= 10
+    assert min(categories.values()) >= 4  # a per-category mean needs a few runs
+    assert categories["owner"] >= 8  # the "who is Ghali?" pattern seen in testing
+    assert categories["app"] >= 8
+    assert sum(g.time_sensitive for g in goldens) >= 30
     assert {g.language for g in goldens} >= {"English", "French"}
 
 
