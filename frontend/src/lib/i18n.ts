@@ -192,7 +192,6 @@ const en = {
     later: "Not now",
   },
   turn: {
-    brand: "Nexus",
     planTitle: "Here's the plan. Confirm to research, or revise it.",
     confirmPlan: "Confirm & research",
     revisePlan: "Revise",
@@ -423,7 +422,6 @@ const fr: Dict = {
     later: "Plus tard",
   },
   turn: {
-    brand: "Nexus",
     planTitle: "Voici le plan. Confirmez pour lancer la recherche, ou révisez-le.",
     confirmPlan: "Confirmer et rechercher",
     revisePlan: "Réviser",

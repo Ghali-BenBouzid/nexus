@@ -135,9 +135,9 @@ body[data-stage="report"] #bg-scrim,
 body[data-stage="chat"] #bg-scrim {
   opacity: 1;
   background: linear-gradient(180deg,
-    color-mix(in srgb, var(--bg) 86%, transparent) 0%,
-    color-mix(in srgb, var(--bg) 58%, transparent) 38%,
-    color-mix(in srgb, var(--bg) 80%, transparent) 100%);
+    color-mix(in srgb, var(--bg) 96%, transparent) 0%,
+    color-mix(in srgb, var(--bg) 92%, transparent) 38%,
+    color-mix(in srgb, var(--bg) 96%, transparent) 100%);
 }
 
 #root { position: relative; z-index: 2; }
@@ -846,11 +846,6 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   transition: border-color 0.2s, color 0.2s, background 0.2s; }
 .artifact-fab:hover { color: var(--fg); border-color: var(--line-strong); background: var(--surface-2); }
 .artifact-fab svg { width: 20px; height: 20px; }
-
-/* assistant identity on each reply, so the activity reads as Nexus speaking */
-.reply-agent { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
-.reply-mark { width: 20px; height: 20px; border-radius: 6px; flex: none; display: grid; place-items: center;
-  background: var(--accent-soft); color: var(--accent); font-size: 13px; line-height: 1; }
 
 /* shell: chat column (scrolls) + optional report panel (scrolls) */
 .chat-main { flex: 1; min-height: 0; display: flex; position: relative; }
