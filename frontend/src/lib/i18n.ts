@@ -71,9 +71,9 @@ const en = {
     proof: ["Open source", "Invite-only live demo", "A real run takes ~1min"],
     builtWithLabel: "Built with",
     builtWith: [
-      { label: "Backend", items: ["FastAPI", "Python", "Postgres"] },
+      { label: "Backend", items: ["FastAPI", "Python", "LangGraph", "Postgres"] },
       { label: "Frontend", items: ["React", "TypeScript", "three.js"] },
-      { label: "Deployment", items: ["Railway", "Neon", "Cloudflare"] },
+      { label: "Deployment", items: ["Railway", "Redis", "Neon", "Cloudflare"] },
     ],
     sourceLink: "Source on GitHub",
   },
@@ -137,7 +137,7 @@ const en = {
       },
       {
         problem: "Knowing whether a change actually helps.",
-        how: "Prompt and pipeline tweaks feel better without being better. An eval harness with a fixed set of graded questions and an LLM-as-a-judge pass scores each change before it ships.",
+        how: "Prompt and pipeline tweaks feel better without being better. An eval harness runs 150 graded questions through the real pipeline, scores each stage, and adds an LLM-as-a-judge pass, before a change ships.",
         why: "Measure before you tune: 'seems nicer' becomes a number I can compare across runs.",
       },
       {
@@ -146,14 +146,19 @@ const en = {
         why: "The agents never know which backend they run on, so switching provider is a config change, not a rewrite.",
       },
       {
-        problem: "Free-tier LLM limits, on three axes at once.",
-        how: "Free tiers cap requests, tokens, and daily totals, and one run can trip any of them. A token-aware rate limiter with a per-model profile paces the orchestrator's own calls under every ceiling.",
-        why: "A real run never dies on a rate-limit error in front of someone.",
+        problem: "Letting strangers spend real model credits.",
+        how: "The live demo runs paid models, so access is invite-only and every account carries its own dollar budget. Each model call is priced and written to a ledger as it happens, and the provider key has a hard ceiling of its own.",
+        why: "Anyone can be handed a working demo without leaving my wallet open behind it.",
       },
       {
-        problem: "Built for concurrency.",
-        how: "The orchestrator dispatches researchers as concurrent, non-blocking tasks, down through the providers and the database, with one cap on how many run at once.",
-        why: "Researchers work side by side, and the cap is a single knob, so it scales with the budget instead of a rewrite.",
+        problem: "A research run outlives the request that asked for it.",
+        how: "A run takes minutes, so nothing waits on the HTTP request: the API records the turn and queues a job on Redis, and a worker runs it, beating a heartbeat as it goes. Inside a run, the researchers fan out as concurrent tasks under one cap.",
+        why: "Redeploying the API never kills a run in flight, and more load means more workers rather than a bigger box.",
+      },
+      {
+        problem: "Pausing a run to wait for a human.",
+        how: "The pipeline is a LangGraph graph, so the plan step interrupts and the paused run is checkpointed in Postgres. Confirming or revising the plan resumes that same run, minutes later and on whichever worker picks it up.",
+        why: "The approval step is one edge in the graph instead of a second pipeline stitched together out of database columns.",
       },
     ],
     nextTitle: "What's next",
@@ -171,7 +176,7 @@ const en = {
     codeTitle: "Code",
     source: "Source on GitHub",
     agentOrch: "Agent orchestration",
-    note: "Nexus, deep research, cited. FastAPI and Python on the back, React on the front, agent orchestration on OpenRouter.",
+    note: "Nexus, deep research, cited. FastAPI and Python on the back, React on the front, agent orchestration on LangGraph and OpenRouter.",
   },
   chat: {
     runningPlaceholder: "Researching… stop to ask something new",
@@ -300,9 +305,9 @@ const fr: Dict = {
     proof: ["Open source", "Démo en direct sur invitation", "Une vraie recherche prend ~1min"],
     builtWithLabel: "Construit avec",
     builtWith: [
-      { label: "Partie serveur", items: ["FastAPI", "Python", "Postgres"] },
+      { label: "Partie serveur", items: ["FastAPI", "Python", "LangGraph", "Postgres"] },
       { label: "Interface", items: ["React", "TypeScript", "three.js"] },
-      { label: "Déploiement", items: ["Railway", "Neon", "Cloudflare"] },
+      { label: "Déploiement", items: ["Railway", "Redis", "Neon", "Cloudflare"] },
     ],
     sourceLink: "Code sur GitHub",
   },
@@ -366,7 +371,7 @@ const fr: Dict = {
       },
       {
         problem: "Savoir si un changement aide vraiment.",
-        how: "Les retouches de prompt semblent meilleures sans forcément l'être. Un protocole d'évaluation, avec un jeu de questions notées et une passe de LLM-as-a-judge, mesure chaque changement avant sa mise en ligne.",
+        how: "Les retouches de prompt semblent meilleures sans forcément l'être. Un protocole d'évaluation passe 150 questions notées dans le vrai pipeline, note chaque étape et ajoute une passe de LLM-as-a-judge, avant toute mise en ligne.",
         why: "Mesurer avant d'ajuster : « ça a l'air mieux » devient un chiffre comparable d'une recherche à l'autre.",
       },
       {
@@ -375,14 +380,19 @@ const fr: Dict = {
         why: "Les agents ne savent pas quel fournisseur ils utilisent : en changer relève de la configuration, pas d'une réécriture.",
       },
       {
-        problem: "Les limites des offres LLM gratuites, sur trois axes à la fois.",
-        how: "Les offres gratuites plafonnent les requêtes, les tokens et un total quotidien, et une seule recherche peut faire sauter n'importe lequel des trois. Un limiteur de débit par modèle, qui tient compte des tokens, cadence les appels pour rester sous chaque plafond.",
-        why: "Une vraie recherche ne plante jamais sur une erreur de quota sous les yeux de quelqu'un.",
+        problem: "Laisser des inconnus dépenser de vrais crédits de modèles.",
+        how: "La démo en direct utilise des modèles payants : l'accès se fait sur invitation et chaque compte dispose de son propre budget en dollars. Chaque appel de modèle est valorisé et inscrit dans un registre au fil de l'eau, et la clé du fournisseur a elle-même un plafond strict.",
+        why: "N'importe qui peut recevoir une démo qui fonctionne sans que mon portefeuille reste ouvert derrière.",
       },
       {
-        problem: "Conçu pour l'exécution concurrente.",
-        how: "L'orchestrateur lance les chercheurs comme des tâches concurrentes, et toute la chaîne reste non bloquante, jusqu'aux fournisseurs et à la base de données, avec un seul plafond sur le nombre exécuté en même temps.",
-        why: "Les chercheurs travaillent côte à côte, et le plafond tient à un seul réglage, donc le système monte en charge avec le budget au lieu d'exiger une réécriture.",
+        problem: "Une recherche survit à la requête qui l'a lancée.",
+        how: "Une recherche dure plusieurs minutes : rien n'attend la requête HTTP. L'API enregistre le tour et met un job en file sur Redis, puis un worker l'exécute en émettant un battement de cœur. Pendant la recherche, les chercheurs s'exécutent en parallèle sous un seul plafond.",
+        why: "Redéployer l'API ne tue jamais une recherche en cours, et absorber la charge revient à ajouter des workers plutôt qu'une plus grosse machine.",
+      },
+      {
+        problem: "Mettre une recherche en pause en attendant un humain.",
+        how: "Le pipeline est un graphe LangGraph : l'étape de planification s'interrompt et la recherche en pause est enregistrée dans Postgres. Confirmer ou réviser le plan reprend cette même recherche, plusieurs minutes plus tard et sur n'importe quel worker.",
+        why: "La validation est une simple transition du graphe, et non un second pipeline recousu à partir de colonnes en base.",
       },
     ],
     nextTitle: "La suite",
@@ -400,7 +410,7 @@ const fr: Dict = {
     codeTitle: "Code",
     source: "Code sur GitHub",
     agentOrch: "Orchestration des agents",
-    note: "Nexus, recherche approfondie, sourcée. FastAPI et Python côté serveur, React côté interface, orchestration d'agents sur OpenRouter.",
+    note: "Nexus, recherche approfondie, sourcée. FastAPI et Python côté serveur, React côté interface, orchestration d'agents avec LangGraph sur OpenRouter.",
   },
   chat: {
     runningPlaceholder: "Recherche en cours… arrêtez pour poser autre chose",
