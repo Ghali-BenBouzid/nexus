@@ -1,16 +1,15 @@
 import logging
+from typing import Any
 
 from fastapi import BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import jobs
-from app.agents import supervisor
-from app.agents.narration import ThinkingProvider
-from app.agents.provider import LLMProvider, ProviderCreditsError, ProviderError
+from app.agents.orchestrator import PriorReport
+from app.agents.provider import LLMProvider
 from app.agents.tools import SearchBackend
 from app.billing.metering import MeteredProvider
 from app.conversations import repository
-from app.core.config import settings
 from app.db import session as db_session
 from app.models.conversation import Conversation, Message, MessageRole
 from app.models.query import Query, QueryStatus
@@ -25,8 +24,6 @@ logger = logging.getLogger(__name__)
 # full text of any report on demand via its read_reports tool.
 _MAX_CONTEXT_MESSAGES = 8
 _MAX_REPORT_CHARS = 1200
-
-PROVIDER_DOWN = "The model provider is not responding. Try again in a moment."
 
 
 def _render_context(messages: list[Message], queries: dict[int, Query]) -> str:
@@ -91,19 +88,17 @@ async def route_message(
     provider: LLMProvider | None = None,
     backend: SearchBackend | None = None,
 ) -> None:
-    """The routing job. The supervisor decides what the message needs (answer
-    from the conversation, compose the existing reports, or research), then the
-    turn carries on in this same job. Every model call is billed to the
-    conversation's owner, and each one shows as "thinking" on the turn."""
-    provider = provider or get_provider()
-    backend = backend or get_search_backend()
+    """The job for a new message: runs the research graph from the supervisor,
+    which answers from the conversation, composes its reports into a longer one,
+    or plans research and pauses for the user to review the plan. Every model call
+    is billed to the conversation's owner."""
     async with db_session.SessionLocal() as db:
         conversation = await db.get(Conversation, conversation_id)
         query = await db.get(Query, query_id)
         if conversation is None or query is None:
             return
         user_id = conversation.user_id
-        content = query.prompt
+        untitled = not conversation.title
 
         # The thread before this turn; the user's message is the question itself.
         messages = await repository.list_messages(db, conversation_id)
@@ -119,75 +114,29 @@ async def route_message(
             and queries[m.query_id].status == QueryStatus.complete
             and queries[m.query_id].report
         ]
+        graph_input = {
+            "message": query.prompt,
+            "conversation": _render_context(before, queries),
+            "prior": [
+                PriorReport(prompt=q.prompt, report=q.report or "", result=q.result)
+                for q in completed
+            ],
+        }
 
-        emit = research_service.EventSink(query_id)
-        metered = MeteredProvider(provider, user_id=user_id, query_id=query_id)
-        async with research_service.job_liveness(query_id) as live:
-            if not await research_repository.mark_running(db, query_id):
-                return  # stopped while it waited in the queue
-            try:
-                async with metered, backend:
-                    decision = await supervisor.decide(
-                        content,
-                        _render_context(before, queries),
-                        provider=ThinkingProvider(metered, emit, agent="supervisor"),
-                        backend=backend,
-                        reports=[(q.prompt, q.report or "") for q in completed],
-                        emit=emit,
-                        max_iters=settings.supervisor_max_iters,
-                    )
-            except ProviderCreditsError as exc:
-                await research_repository.fail_query(db, query_id, str(exc))
-                return
-            except ProviderError:
-                await research_repository.fail_query(db, query_id, PROVIDER_DOWN)
-                return
-            except Exception:
-                logger.exception("routing crashed for query %s", query_id)
-                await research_repository.fail_query(
-                    db, query_id, "Routing failed due to an internal error."
-                )
-                return
-            if live.stopped:
-                return
+    async def on_route(db: AsyncSession, decision: dict[str, Any]) -> None:
+        if decision["route"] == "answer":
+            await repository.set_content(db, message_id, decision["reply"])
+        elif untitled and decision["title"]:
+            # The first report names the conversation. Later turns keep the
+            # original title, so the sidebar label stays stable.
+            await repository.set_title(db, conversation_id, decision["title"])
 
-        if decision.action == "answer":
-            await repository.set_content(db, message_id, decision.reply)
-            await research_repository.complete_answer(db, query_id, decision.reply)
-            return
-
-        if decision.action == "compose" and completed:
-            # Merge the existing reports into one new, longer report (no search).
-            instructions = decision.instructions or content
-            await research_repository.update_turn(
-                db, query_id, prompt=instructions, title=decision.title or None
-            )
-            await _title_conversation(db, conversation, decision.title)
-            await research_service.run_compose_job(
-                query_id,
-                instructions,
-                source_query_ids=[q.id for q in completed],
-                user_id=user_id,
-                provider=provider,
-            )
-            return
-
-        # research (the default, and the fallback when compose has nothing to
-        # merge): plan now, then pause for the user to confirm the plan.
-        research_query = decision.query or content
-        await research_repository.update_turn(
-            db, query_id, prompt=research_query, title=decision.title or None
-        )
-        await _title_conversation(db, conversation, decision.title)
-        await research_service.run_plan_job(
-            query_id, research_query, user_id=user_id, provider=provider
-        )
-
-
-async def _title_conversation(
-    db: AsyncSession, conversation: Conversation, title: str
-) -> None:
-    """Name the conversation from its first report's title, once. Later turns keep
-    the original title, so the sidebar label stays stable."""
-    if title and not conversation.title:
-        await repository.set_title(db, conversation.id, title)
+    await research_service.run_graph(
+        query_id,
+        graph_input,
+        provider=MeteredProvider(
+            provider or get_provider(), user_id=user_id, query_id=query_id
+        ),
+        backend=backend or get_search_backend(),
+        on_route=on_route,
+    )

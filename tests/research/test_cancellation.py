@@ -54,13 +54,13 @@ async def test_a_stop_during_planning_wins_over_the_plan(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
     # The proposed plan must not re-surface for confirmation after a stop.
-    qid, user_id = await _make_pending_query(client, auth_headers)
+    qid, _ = await _make_pending_query(client, auth_headers)
 
-    await research_service.run_plan_job(
+    await research_service.run_graph(
         qid,
-        "a question",
-        user_id=user_id,
+        {"message": "a question", "conversation": "", "prior": []},
         provider=_StopWhile(["q1"], qid, "research planner"),
+        backend=FakeBackend(),
     )
 
     query = await _read(qid)
@@ -76,9 +76,9 @@ async def test_a_stop_during_the_write_keeps_the_run_stopped(
     # report from being saved as a completed run.
     qid, user_id = await _make_pending_query(client, auth_headers)
 
-    await research_service.run_research_from_plan_job(
+    await research_service.run_research_job(
         qid,
-        ["q1"],
+        "a question",
         user_id=user_id,
         provider=_StopWhile(["q1"], qid, "research writer"),
         backend=FakeBackend(),
@@ -95,13 +95,37 @@ async def test_a_job_stopped_while_queued_does_nothing(
     qid, user_id = await _make_pending_query(client, auth_headers)
     await _stop(qid)
 
-    await research_service.run_plan_job(
-        qid, "a question", user_id=user_id, provider=RoleProvider(["q1"])
+    await research_service.run_research_job(
+        qid,
+        "a question",
+        user_id=user_id,
+        provider=RoleProvider(["q1"]),
+        backend=FakeBackend(),
     )
 
     query = await _read(qid)
     assert query.status == QueryStatus.failed
     assert query.plan is None
+
+
+async def test_a_review_with_no_paused_run_fails_the_query(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    # A plan proposed before the graph (or whose checkpoint is gone) has nothing
+    # to resume: the user is told to ask again instead of waiting forever.
+    qid, user_id = await _make_pending_query(client, auth_headers)
+
+    await research_service.review_plan_job(
+        qid,
+        user_id=user_id,
+        approved=True,
+        provider=RoleProvider(["q1"]),
+        backend=FakeBackend(),
+    )
+
+    query = await _read(qid)
+    assert query.status == QueryStatus.failed
+    assert query.error == research_service.PLAN_EXPIRED
 
 
 async def test_a_running_job_sees_a_stop_on_its_next_heartbeat(

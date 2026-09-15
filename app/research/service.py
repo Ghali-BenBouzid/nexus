@@ -1,5 +1,10 @@
-"""The research jobs: plan, research, compose. Each runs off the request, on a
-worker (JOB_QUEUE=redis) or in the API process (inline), see app.jobs."""
+"""The jobs that run the research graph (app.agents.orchestrator), on a worker
+(JOB_QUEUE=redis) or in the API process (inline), see app.jobs.
+
+A job runs the graph for one query and mirrors what happens onto the query row,
+which is what the API serves: the supervisor's decision names the turn, a pause
+for the plan sets awaiting_plan, the report completes it. The graph keeps its own
+state in the checkpointer, and only while a run is paused on its plan."""
 
 import asyncio
 import contextlib
@@ -7,27 +12,97 @@ import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from typing import Any
 
-from pydantic import ValidationError
+from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langgraph.graph.state import CompiledStateGraph
+from langgraph.types import Command
+from psycopg.rows import dict_row
+from psycopg_pool import AsyncConnectionPool
+from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents import orchestrator, writer
-from app.agents.consolidator import merge_results
-from app.agents.narration import ThinkingProvider
-from app.agents.orchestrator import OrchestratorCancelledError, OrchestratorError
-from app.agents.planner import PlannerError, plan
-from app.agents.provider import LLMProvider, ProviderCreditsError
-from app.agents.schemas import AgentEvent, Report, ResearchResult
+from app.agents.orchestrator import (
+    SERDE,
+    Deps,
+    OrchestratorCancelledError,
+    OrchestratorError,
+    Review,
+    compile_graph,
+    run_config,
+)
+from app.agents.planner import PlannerError
+from app.agents.provider import LLMProvider, ProviderCreditsError, ProviderError
+from app.agents.schemas import AgentEvent
 from app.agents.search_cache import CachingSearchBackend
-from app.agents.tools import FetchPage, SearchBackend, WebSearch
+from app.agents.tools import SearchBackend
 from app.billing.metering import MeteredProvider
 from app.core.config import settings
 from app.db import session as db_session
-from app.models.query import Query, QueryStatus
+from app.models.query import QueryStatus
 from app.research import repository
 from app.research.dependencies import get_provider, get_search_backend
 
 logger = logging.getLogger(__name__)
+
+PROVIDER_DOWN = "The model provider is not responding. Try again in a moment."
+PLAN_EXPIRED = "This plan is no longer available. Send the question again."
+
+# Called with the supervisor's decision, while the run goes on.
+OnRoute = Callable[[AsyncSession, dict[str, Any]], Awaitable[None]]
+
+
+# --- the graph and its checkpointer -----------------------------------------
+
+_graph: CompiledStateGraph | None = None
+_pool: AsyncConnectionPool | None = None
+
+
+def _conninfo() -> str:
+    """The app's database URL, as psycopg (the checkpointer's driver) takes it."""
+    url = make_url(settings.database_url).set(drivername="postgresql")
+    if settings.database_ssl:
+        url = url.update_query_dict({"sslmode": "require"})
+    return url.render_as_string(hide_password=False)
+
+
+async def open_graph(*, in_memory: bool = False) -> None:
+    """Compile the graph over its checkpointer, once per process that runs jobs:
+    the worker, or the API with JOB_QUEUE=inline. ``in_memory`` is for the tests,
+    whose SQLite database the Postgres checkpointer cannot use."""
+    global _graph, _pool
+    if in_memory:
+        _graph = compile_graph(InMemorySaver(serde=SERDE))
+        return
+    _pool = AsyncConnectionPool(
+        _conninfo(),
+        open=False,
+        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
+    )
+    await _pool.open()
+    checkpointer = AsyncPostgresSaver(_pool, serde=SERDE)
+    # Creates and migrates its own tables, outside Alembic. Idempotent.
+    # ponytail: two workers booting at once can race here; the loser restarts.
+    await checkpointer.setup()
+    _graph = compile_graph(checkpointer)
+
+
+async def close_graph() -> None:
+    global _graph, _pool
+    if _pool is not None:
+        await _pool.close()
+        _pool = None
+    _graph = None
+
+
+def _get_graph() -> CompiledStateGraph:
+    if _graph is None:
+        raise RuntimeError("The research graph is not open (open_graph at startup).")
+    return _graph
+
+
+# --- live feed and liveness ------------------------------------------------
 
 
 class EventSink:
@@ -94,6 +169,9 @@ async def job_liveness(query_id: int) -> AsyncIterator[Liveness]:
         await task
 
 
+# --- running the graph ------------------------------------------------------
+
+
 def _metered(provider: LLMProvider | None, *, user_id: int, query_id: int):
     """The provider a job bills its calls through. An inline job reuses the
     request's (the tests' fakes); a worker builds its own from settings."""
@@ -102,44 +180,53 @@ def _metered(provider: LLMProvider | None, *, user_id: int, query_id: int):
     )
 
 
-async def _run_research_pipeline(
+async def run_graph(
     query_id: int,
+    graph_input: dict[str, Any] | Command,
     *,
     provider: LLMProvider,
     backend: SearchBackend,
-    make_coro: Callable[..., Awaitable[tuple[Report, ResearchResult]]],
+    on_route: OnRoute | None = None,
 ) -> None:
-    """Shared body for the two research-running jobs. Owns its own session, drives
-    the given orchestrator coroutine under the global timeout, and always resolves
-    the status. ``make_coro`` receives the live provider/tools/emit/should_cancel
-    and returns the orchestrator coroutine to run (full ``run`` or the
-    plan-confirmed ``research_from_plan``)."""
+    """Run the graph for one query (or resume it, given a Command) and always
+    resolve the query's status. ``provider`` bills to the query's owner."""
+    graph = _get_graph()
+    config = run_config(query_id)
     async with db_session.SessionLocal() as db, job_liveness(query_id) as live:
         if not await repository.mark_running(db, query_id):
             return  # stopped while it waited in the queue
+        if (
+            isinstance(graph_input, Command)
+            and not (await graph.aget_state(config)).next
+        ):
+            # Nothing is paused under this query: a plan from before the graph.
+            await repository.fail_query(db, query_id, PLAN_EXPIRED)
+            return
+        paused = False
         try:
             backend = CachingSearchBackend(backend)
             async with provider, backend:
-                tools = [WebSearch(backend=backend), FetchPage(backend=backend)]
-                report, research_result = await asyncio.wait_for(
-                    make_coro(
-                        provider=provider,
-                        tools=tools,
-                        emit=EventSink(query_id),
-                        should_cancel=lambda: live.stopped,
-                        # Tag the trace's root run with the query id so a run in
-                        # LangSmith maps back to its row (stripped + ignored when
-                        # tracing is off). Flows through make_coro into the
-                        # @traced_step on orchestrator.run / research_from_plan.
-                        langsmith_extra={"metadata": {"query_id": query_id}},
-                    ),
+                deps = Deps(
+                    provider=provider,
+                    backend=backend,
+                    emit=EventSink(query_id),
+                    should_cancel=lambda: live.stopped,
+                )
+                updates = graph.astream(
+                    graph_input,
+                    config,
+                    context=deps,
+                    stream_mode="updates",
+                    # Checkpoint only when the run stops (a pause, the end), not
+                    # after every step: nothing resumes a run that crashed.
+                    # ponytail: "async" would let a redeployed worker pick one up.
+                    durability="exit",
+                )
+                paused = await asyncio.wait_for(
+                    _mirror(db, query_id, updates, on_route),
                     timeout=settings.global_timeout,
                 )
-            # Only a running query completes, so a stop that landed during the
-            # uncancellable consolidate/write tail keeps the run stopped.
-            await repository.complete_query(db, query_id, report, research_result)
         except TimeoutError:
-            # global_timeout fired (asyncio.wait_for raises TimeoutError)
             logger.warning("research job timed out for query %s", query_id)
             await repository.fail_query(db, query_id, "Research timed out.")
         except OrchestratorCancelledError:
@@ -149,12 +236,65 @@ async def _run_research_pipeline(
             # our own domain errors carry safe, user-meaningful messages
             logger.warning("research job failed for query %s: %s", query_id, exc)
             await repository.fail_query(db, query_id, str(exc))
+        except ProviderError:
+            logger.warning("provider down for query %s", query_id, exc_info=True)
+            await repository.fail_query(db, query_id, PROVIDER_DOWN)
         except Exception:
             # unknown/SDK errors may embed secrets: log full server-side, store generic
             logger.exception("research job crashed for query %s", query_id)
             await repository.fail_query(
                 db, query_id, "Research failed due to an internal error."
             )
+        finally:
+            if not paused:
+                await _forget(graph, query_id)
+
+
+async def _mirror(
+    db: AsyncSession,
+    query_id: int,
+    updates: AsyncIterator[dict[str, Any]],
+    on_route: OnRoute | None,
+) -> bool:
+    """Mirror the run onto the query row as each node finishes. Returns whether
+    the run paused for the user to review the plan."""
+    state: dict[str, Any] = {}
+    paused = False
+    # Read the stream to its end, even past the pause: the graph saves the
+    # paused checkpoint as the stream closes.
+    async for chunk in updates:
+        for node, update in chunk.items():
+            if node == "__interrupt__":
+                paused = True
+                continue
+            state |= update or {}
+            if node == "supervisor":
+                if update["route"] != "answer":
+                    await repository.update_turn(
+                        db, query_id, prompt=update["prompt"], title=update["title"]
+                    )
+                if on_route is not None:
+                    await on_route(db, update)
+
+    # Each write only moves a running query, so a stop that landed meanwhile wins.
+    if paused:
+        await repository.set_plan(db, query_id, state["plan"])
+    elif state.get("route") == "answer":
+        await repository.complete_answer(db, query_id, state["reply"])
+    else:
+        await repository.complete_query(db, query_id, state["report"], state["result"])
+    return paused
+
+
+async def _forget(graph: CompiledStateGraph, query_id: int) -> None:
+    """Drop a finished run's checkpoint: there is nothing left to resume."""
+    try:
+        await graph.checkpointer.adelete_thread(str(query_id))
+    except Exception:
+        logger.exception("could not delete the checkpoint of query %s", query_id)
+
+
+# --- the jobs ---------------------------------------------------------------
 
 
 async def run_research_job(
@@ -165,156 +305,30 @@ async def run_research_job(
     provider: LLMProvider | None = None,
     backend: SearchBackend | None = None,
 ) -> None:
-    """One-shot job: plan, research, consolidate, write."""
-    await _run_research_pipeline(
+    """A one-shot run (POST /research/query): plan, research and write, with no
+    pause for the plan."""
+    await run_graph(
         query_id,
+        {"prompt": prompt, "auto_approve": True},
         provider=_metered(provider, user_id=user_id, query_id=query_id),
         backend=backend or get_search_backend(),
-        make_coro=lambda **kw: orchestrator.run(
-            prompt,
-            cap=settings.cap,
-            max_iters=settings.max_iters,
-            max_concurrency=settings.max_concurrency,
-            per_researcher_timeout=settings.per_researcher_timeout,
-            research_budget=settings.research_budget,
-            writer_timeout=settings.writer_timeout,
-            retry_cap=settings.planner_retry_cap,
-            **kw,
-        ),
     )
 
 
-async def run_plan_job(
+async def review_plan_job(
     query_id: int,
-    prompt: str,
     *,
     user_id: int,
-    feedback: str | None = None,
-    provider: LLMProvider | None = None,
-) -> None:
-    """Phase 1 of a human-in-the-loop run: plan only, then pause for the user to
-    confirm or revise (``status=awaiting_plan``). ``feedback`` re-plans after a
-    rejection. A planner failure resolves the status to failed."""
-    provider = _metered(provider, user_id=user_id, query_id=query_id)
-    async with db_session.SessionLocal() as db, job_liveness(query_id):
-        if not await repository.mark_running(db, query_id):
-            return  # stopped while it waited in the queue
-        try:
-            emit = EventSink(query_id)
-            async with provider:
-                sub_questions = await asyncio.wait_for(
-                    plan(
-                        prompt,
-                        provider=ThinkingProvider(provider, emit, agent="planner"),
-                        emit=emit,
-                        cap=settings.cap,
-                        retry_cap=settings.planner_retry_cap,
-                        feedback=feedback,
-                    ),
-                    timeout=settings.global_timeout,
-                )
-            # Only a running query takes the plan, so a stop that landed during
-            # planning wins and the plan never re-surfaces for confirmation.
-            await repository.set_plan(db, query_id, sub_questions)
-        except TimeoutError:
-            logger.warning("plan job timed out for query %s", query_id)
-            await repository.fail_query(db, query_id, "Planning timed out.")
-        except (PlannerError, ProviderCreditsError) as exc:
-            logger.warning("plan job failed for query %s: %s", query_id, exc)
-            await repository.fail_query(db, query_id, str(exc))
-        except Exception:
-            logger.exception("plan job crashed for query %s", query_id)
-            await repository.fail_query(
-                db, query_id, "Planning failed due to an internal error."
-            )
-
-
-async def run_compose_job(
-    query_id: int,
-    instructions: str,
-    *,
-    source_query_ids: list[int],
-    user_id: int,
-    provider: LLMProvider | None = None,
-) -> None:
-    """Compose a new report by merging the structured results of the conversation's
-    existing reports and re-rendering them (guided by ``instructions``) into one
-    longer report. No web search: it reuses the sources already gathered, so
-    citations stay code-owned. Resolves the status to complete or failed."""
-    provider = _metered(provider, user_id=user_id, query_id=query_id)
-    async with db_session.SessionLocal() as db, job_liveness(query_id):
-        if not await repository.mark_running(db, query_id):
-            return  # stopped while it waited in the queue
-        try:
-            results = await _load_results(db, source_query_ids)
-            if not results:
-                await repository.fail_query(
-                    db, query_id, "There were no reports to compose."
-                )
-                return
-            merged = merge_results(results)
-            emit = EventSink(query_id)
-            async with provider:
-                report = await asyncio.wait_for(
-                    writer.write(
-                        merged,
-                        provider=ThinkingProvider(provider, emit, agent="writer"),
-                        emit=emit,
-                        guidance=instructions,
-                        timeout=settings.writer_timeout,
-                    ),
-                    timeout=settings.global_timeout,
-                )
-            # Only a running query completes: a stop during the write wins.
-            await repository.complete_query(db, query_id, report, merged)
-        except TimeoutError:
-            logger.warning("compose job timed out for query %s", query_id)
-            await repository.fail_query(db, query_id, "Composing the report timed out.")
-        except ProviderCreditsError as exc:
-            logger.warning("compose job failed for query %s: %s", query_id, exc)
-            await repository.fail_query(db, query_id, str(exc))
-        except Exception:
-            logger.exception("compose job crashed for query %s", query_id)
-            await repository.fail_query(
-                db, query_id, "Composing the report failed due to an internal error."
-            )
-
-
-async def _load_results(db: AsyncSession, query_ids: list[int]) -> list[ResearchResult]:
-    """Rehydrate the stored ResearchResult of each source query, skipping any with
-    no result or a malformed blob."""
-    results: list[ResearchResult] = []
-    for query_id in query_ids:
-        query = await db.get(Query, query_id)
-        if query is None or not query.result:
-            continue
-        try:
-            results.append(ResearchResult(**query.result))
-        except ValidationError:
-            logger.warning("skipping unreadable result blob for query %s", query_id)
-    return results
-
-
-async def run_research_from_plan_job(
-    query_id: int,
-    sub_questions: list[str],
-    *,
-    user_id: int,
+    approved: bool,
+    feedback: str = "",
     provider: LLMProvider | None = None,
     backend: SearchBackend | None = None,
 ) -> None:
-    """Phase 2: execute a confirmed plan (research -> consolidate -> write)."""
-    await _run_research_pipeline(
+    """Resume a run paused on its plan with the user's answer. A confirm
+    researches and writes; a revise plans again with the feedback and pauses."""
+    await run_graph(
         query_id,
+        Command(resume=Review(approved=approved, feedback=feedback)),
         provider=_metered(provider, user_id=user_id, query_id=query_id),
         backend=backend or get_search_backend(),
-        make_coro=lambda **kw: orchestrator.research_from_plan(
-            sub_questions,
-            max_iters=settings.max_iters,
-            max_concurrency=settings.max_concurrency,
-            per_researcher_timeout=settings.per_researcher_timeout,
-            research_budget=settings.research_budget,
-            writer_timeout=settings.writer_timeout,
-            **kw,
-        ),
     )

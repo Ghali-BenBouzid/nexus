@@ -190,12 +190,12 @@ async def confirm_plan(
     await repository.set_status(db, query_id, QueryStatus.pending)
     await jobs.submit(
         background_tasks,
-        service.run_research_from_plan_job,
+        service.review_plan_job,
         provider=provider,
         backend=backend,
         query_id=query_id,
-        sub_questions=query.plan,
         user_id=current_user.id,
+        approved=True,
     )
 
 
@@ -207,6 +207,7 @@ async def revise_plan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     provider: LLMProvider = Depends(get_provider),
+    backend: SearchBackend = Depends(get_search_backend),
 ):
     """Reject the plan (optionally with feedback) and re-plan. Loops back to
     awaiting_plan. Only valid while the query is awaiting_plan."""
@@ -221,10 +222,11 @@ async def revise_plan(
     await repository.set_status(db, query_id, QueryStatus.pending)
     await jobs.submit(
         background_tasks,
-        service.run_plan_job,
+        service.review_plan_job,
         provider=provider,
+        backend=backend,
         query_id=query_id,
-        prompt=query.prompt,
         user_id=current_user.id,
+        approved=False,
         feedback=payload.feedback,
     )

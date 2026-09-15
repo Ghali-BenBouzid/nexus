@@ -4,8 +4,8 @@ from httpx import AsyncClient
 from app.agents.openai_provider import OUT_OF_CREDITS
 from app.agents.provider import LLMResponse, ProviderError, ToolCall
 from app.billing.service import BUDGET_EXHAUSTED
-from app.conversations.service import PROVIDER_DOWN
 from app.research.dependencies import get_provider, get_search_backend
+from app.research.service import PROVIDER_DOWN
 from main import app
 from tests.accounts import login_as
 from tests.agents.test_openai_provider import NO_BACKOFF, _provider

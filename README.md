@@ -11,14 +11,24 @@ frontend that streams their progress live and renders the cited report.
 ## How it works
 
 ```
-question -> plan -> research (fan-out) -> consolidate -> write -> cited report
+message -> supervisor -> answer
+                      -> compose -------------------------------------> write
+                      -> plan -> user approves -> research (fan-out) -> consolidate -> write
 ```
 
+The pipeline is a LangGraph graph (`app/agents/orchestrator.py`).
+Each step below is a node that adapts a framework-free agent.
+Pausing for the user to approve the plan is an `interrupt`, and a Postgres
+checkpointer holds the paused run until a later job resumes it.
+
+- **Supervisor** reads the conversation and picks the route: answer from what
+  is already there, compose the earlier reports into a longer one, or research.
 - **Planner** decomposes the question into a small set of self-contained,
   non-overlapping sub-questions (a forced structured call, not prose parsing).
 - **Researchers** run a ReAct tool-use loop (`web_search`, `fetch_page` via
-  Tavily) under an iteration cap, fan out concurrently bounded by a semaphore,
-  and submit findings with the sources that back them.
+  Tavily) under an iteration cap, fan out with one LangGraph `Send` per
+  sub-question (at most `MAX_CONCURRENCY` at once), and submit findings with
+  the sources that back them.
 - **Consolidator** is deterministic code: it dedupes sources by URL into one
   global numbered list and remaps each finding's citations. No LLM ever assigns
   a citation, which keeps the citation surface free of hallucination.
@@ -37,10 +47,10 @@ Agent progress is emitted as events and persisted, so the frontend tails a live
 ## Tech stack
 
 - **Backend:** FastAPI, async SQLAlchemy + asyncpg, Alembic, Pydantic, JWT auth
-- **Agents:** a hand-rolled orchestrator over a provider seam (one
-  OpenAI-compatible adapter for OpenRouter / Gemini / Groq / Cerebras /
-  SambaNova) and a swappable Tavily search backend, with a token +
-  request-aware rate limiter
+- **Agents:** a LangGraph graph with a Postgres checkpointer, over agents that
+  call models through a provider seam (one OpenAI-compatible adapter for
+  OpenRouter / Gemini / Groq / Cerebras / SambaNova) and a swappable Tavily
+  search backend, with a token + request-aware rate limiter
 - **Access and cost:** invite-only demo accounts, each with its own dollar
   budget checked against a ledger of what every model call actually cost
 - **Frontend:** Vite, React, TypeScript, three.js (WebGL background), framework
@@ -153,7 +163,9 @@ records the turn and queues a job on Redis, and the worker runs it.
    with the same variables, the start command
    `arq app.worker.WorkerSettings` and no public domain. Scale it by adding
    replicas; each runs `WORKER_MAX_JOBS` jobs at once. A run whose worker dies
-   is failed after 90 s without a heartbeat instead of hanging.
+   is failed after 90 s without a heartbeat instead of hanging. At startup the
+   worker creates the graph's checkpoint tables (`checkpoint*`) in the same
+   database; they sit outside Alembic and only hold runs paused on a plan.
 5. **Frontend (Cloudflare Pages):** the frontend lives in a subdirectory, so set
    the project's **root directory** to `frontend`. Build command `npm run build`,
    build output directory `dist` (Vite compiles the static site to
