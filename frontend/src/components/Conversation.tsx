@@ -287,7 +287,6 @@ export function Conversation({
                 onSubmit={submit}
                 onStop={onStop}
                 running={running}
-                showHint={false}
                 autoFocus
                 placeholder={running ? t.chat.runningPlaceholder : t.chat.idlePlaceholder}
               />

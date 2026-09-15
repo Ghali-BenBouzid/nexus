@@ -178,7 +178,6 @@ const en = {
     idlePlaceholder: "Ask a follow-up, or start a new search…",
     jumpLatest: "Jump to latest",
     showArtifacts: "Show artifacts",
-    historyHint: "↑↓ history",
   },
   access: {
     credits: (percent: number) => `${percent}% of your demo credits left`,
@@ -408,7 +407,6 @@ const fr: Dict = {
     idlePlaceholder: "Posez une question de suivi, ou lancez une nouvelle recherche…",
     jumpLatest: "Aller au plus récent",
     showArtifacts: "Afficher les rapports",
-    historyHint: "↑↓ historique",
   },
   access: {
     credits: (percent: number) => `Il vous reste ${percent} % de vos crédits de démo`,
