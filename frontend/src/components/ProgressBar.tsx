@@ -2,7 +2,7 @@ import { useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
-import { summarize, type Activity, type Progress, type ResearcherRow } from "../lib/progress";
+import { steps, summarize, type Activity, type Mark, type Progress, type ResearcherRow, type Step as StepRow } from "../lib/progress";
 import type { Turn } from "../types";
 
 // Seconds without a heartbeat before the bar warns that the run may be stuck. The
@@ -58,15 +58,13 @@ function heartbeatAge(turn: Turn, now: number): number | null {
   return turn.heartbeatAge + (now - turn.heartbeatSeenAt) / 1000;
 }
 
-type Mark = "run" | "ok" | "warn";
+const MARKS: Record<Mark, React.ReactNode> = { run: <span className="spin" />, ok: I.check, warn: I.warn, stop: I.stop };
 
 function Step({ mark, children, state }: { mark: Mark; children: React.ReactNode; state?: string | null }) {
   return (
     // Prefixed modifiers: a bare "run" collides with the page-level .run class.
     <li className={"pb-step pb-step-" + mark}>
-      <span className="pb-mark" aria-hidden="true">
-        {mark === "run" ? <span className="spin" /> : mark === "ok" ? I.check : I.warn}
-      </span>
+      <span className="pb-mark" aria-hidden="true">{MARKS[mark]}</span>
       <span className="pb-step-text">{children}</span>
       {state && <span className="pb-step-state">{state}</span>}
     </li>
@@ -78,6 +76,34 @@ function researcherState(r: ResearcherRow, now: number): string {
   if (r.outcome === "empty") return t.progress.empty;
   if (r.outcome === "failed") return t.progress.couldNot;
   return r.activity ? activityText(r.activity, now) : t.progress.starting;
+}
+
+function StepItem({ step, p, now, stopped }: { step: StepRow; p: Progress; now: number; stopped: boolean }) {
+  // A step the run ended in the middle of says so, and nothing about it ticks.
+  const cut = step.cut ? (stopped ? t.progress.stoppedHere : t.progress.unfinished) : null;
+  switch (step.kind) {
+    case "understanding":
+      return <Step mark={step.mark}>{t.progress.understanding}</Step>;
+    case "plan":
+      return (
+        <Step mark={step.mark} state={cut}>
+          {step.size != null ? t.progress.planned(step.size) : t.progress.planning}
+        </Step>
+      );
+    case "researcher":
+      return (
+        <Step mark={step.mark} state={cut ?? researcherState(step.row, now)}>
+          <span className="pb-num">{step.row.index}</span>
+          {step.row.question}
+        </Step>
+      );
+    case "write":
+      return (
+        <Step mark={step.mark} state={cut ?? (step.mark === "run" ? detail(p, now) : null)}>
+          {step.mark === "ok" ? t.progress.written : t.progress.writing}
+        </Step>
+      );
+  }
 }
 
 // A run's progress as one line that changes with each stage, like a chat app's
@@ -102,7 +128,7 @@ export function ProgressBar({ turn, now }: { turn: Turn; now: number }) {
         : turn.stopped
           ? I.stop
           : I.warn;
-  const planDone = p.planSize != null || p.stage === "researching" || p.stage === "writing" || p.stage === "done";
+  const ended = running ? null : turn.stopped ? "stopped" : "failed";
 
   return (
     <div className={"pb" + (open ? " open" : "") + (stale ? " stale" : "")}>
@@ -119,23 +145,15 @@ export function ProgressBar({ turn, now }: { turn: Turn; now: number }) {
 
       {open && (
         <ol className="pb-steps">
-          {p.stage === "starting" && running && <Step mark="run">{t.progress.understanding}</Step>}
-          {(p.stage !== "starting" || p.planSize != null) && (
-            <Step mark={planDone ? "ok" : "run"}>
-              {p.planSize != null ? t.progress.planned(p.planSize) : t.progress.planning}
-            </Step>
-          )}
-          {p.researchers.map((r) => (
-            <Step key={r.index} mark={r.outcome === "running" ? "run" : r.outcome === "found" ? "ok" : "warn"} state={researcherState(r, now)}>
-              <span className="pb-num">{r.index}</span>
-              {r.question}
-            </Step>
+          {steps(p, ended).map((step) => (
+            <StepItem
+              key={step.kind === "researcher" ? `r${step.row.index}` : step.kind}
+              step={step}
+              p={p}
+              now={now}
+              stopped={!!turn.stopped}
+            />
           ))}
-          {(p.stage === "writing" || p.stage === "done") && (
-            <Step mark={p.stage === "done" ? "ok" : "run"} state={p.stage === "writing" ? detail(p, now) : null}>
-              {p.stage === "done" ? t.progress.written : t.progress.writing}
-            </Step>
-          )}
         </ol>
       )}
     </div>

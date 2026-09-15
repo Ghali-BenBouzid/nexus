@@ -19,6 +19,7 @@ from app.models.conversation import Conversation, Message
 from app.models.query import Query
 from app.models.user import User
 from app.research.dependencies import get_provider, get_search_backend
+from app.research.repository import stopped_by_user
 from app.research.router import _load_result
 
 router = APIRouter(prefix="/conversations")
@@ -34,6 +35,7 @@ def _message_query(query: Query | None) -> MessageQuery | None:
         report=query.report,
         reply=query.reply,
         error=query.error,
+        stopped=stopped_by_user(query),
         plan=query.plan,
         sources=result.sources if result else [],
         gaps=result.gaps if result else [],

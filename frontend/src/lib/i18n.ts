@@ -263,6 +263,8 @@ const en = {
     found: "found information",
     empty: "nothing relevant found",
     couldNot: "could not research",
+    stoppedHere: "stopped",
+    unfinished: "did not finish",
     stale: (time: string) => `no response for ${time}, the run may be stuck`,
   },
   count: {
@@ -492,6 +494,8 @@ const fr: Dict = {
     found: "informations trouvées",
     empty: "rien de pertinent",
     couldNot: "recherche impossible",
+    stoppedHere: "arrêté",
+    unfinished: "non terminé",
     stale: (time: string) => `aucune réponse depuis ${time}, la recherche est peut-être bloquée`,
   },
   count: {

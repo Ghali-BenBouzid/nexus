@@ -25,7 +25,7 @@ async def _stop(query_id: int) -> None:
     """What the stop endpoint does. It may run in the API while the job runs on a
     worker, so the stop is only a status change the job has to notice."""
     async with db_session.SessionLocal() as db:
-        await research_repository.fail_query(db, query_id, "Research was stopped.")
+        await research_repository.fail_query(db, query_id, research_repository.STOPPED)
 
 
 async def _read(query_id: int) -> Query:
@@ -87,6 +87,45 @@ async def test_a_stop_during_the_write_keeps_the_run_stopped(
     query = await _read(qid)
     assert query.status == QueryStatus.failed
     assert query.report is None
+
+
+class _SlowWriter(_StopWhile):
+    """The user stops the run while the writer's model call is still going, as
+    with a reasoning model that thinks for minutes."""
+
+    async def generate(self, messages, tools=None, tool_choice="auto"):
+        if "research writer" in (messages[0].content or ""):
+            await _stop(self.query_id)
+            await asyncio.sleep(60)
+        return await super().generate(messages, tools, tool_choice)
+
+
+async def test_a_stop_cancels_the_model_call_in_flight(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    # The stop must end the writer's call, not let it finish a report (billed)
+    # that the stopped run then throws away.
+    monkeypatch.setattr(research_service, "HEARTBEAT_SECONDS", 0.01)
+    qid, user_id = await _make_pending_query(client, auth_headers)
+
+    await asyncio.wait_for(
+        research_service.run_research_job(
+            qid,
+            "a question",
+            user_id=user_id,
+            provider=_SlowWriter(["q1"], qid, "research writer"),
+            backend=FakeBackend(),
+        ),
+        timeout=5,
+    )
+
+    async with db_session.SessionLocal() as db:
+        events = await research_repository.list_events(db, qid, after_id=0)
+    assert "writer_start" in [e.type for e in events]
+    assert "writer_done" not in [e.type for e in events]
+    query = await _read(qid)
+    assert query.status == QueryStatus.failed
+    assert query.error == "Research was stopped."
 
 
 async def test_a_job_stopped_while_queued_does_nothing(
@@ -164,6 +203,12 @@ async def test_cancel_resolves_an_awaiting_plan_query(
 
     after = await client.get(f"/research/query/{query_id}", headers=auth_headers)
     assert after.json()["status"] == "failed"
+    # a reload must show it as stopped, not as a run that broke
+    assert after.json()["stopped"] is True
+    conversation = await client.get(
+        f"/conversations/{created.json()['id']}", headers=auth_headers
+    )
+    assert conversation.json()["messages"][1]["query"]["stopped"] is True
     # confirm is now rejected (no plan awaiting)
     confirm = await client.post(
         f"/research/query/{query_id}/confirm", headers=auth_headers

@@ -276,6 +276,7 @@ type ConvMessageQuery = {
   report: string | null;
   reply?: string | null;
   error: string | null;
+  stopped?: boolean;
   plan: string[] | null;
   sources: Source[];
   gaps: string[];
@@ -549,6 +550,7 @@ export type LoadedTurn = {
   title?: string; // the supervisor-given report title
   status: Status;
   error: string | null;
+  stopped?: boolean; // the user stopped it: not shown as an error
   result: Result;
   reply?: string; // a supervisor answer instead of a research report
   plan?: string[]; // proposed sub-questions, when the turn is awaiting_plan
@@ -590,6 +592,7 @@ export async function loadConversation(id: number): Promise<LoadedConversation |
       title: q?.title ?? undefined,
       status: q?.status ?? "complete",
       error: q?.error ?? null,
+      stopped: q?.stopped,
       plan: q?.plan ?? undefined,
       result: {
         report: q?.report ?? "",

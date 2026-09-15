@@ -11,7 +11,7 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from langgraph.checkpoint.memory import InMemorySaver
@@ -135,7 +135,29 @@ HEARTBEAT_SECONDS = 5.0
 class Liveness:
     """What a job learns while it runs: whether the user stopped its query."""
 
-    stopped: bool = False
+    stop: asyncio.Event = field(default_factory=asyncio.Event)
+
+    @property
+    def stopped(self) -> bool:
+        return self.stop.is_set()
+
+    async def unless_stopped(self, work: Awaitable[Any]) -> Any:
+        """Await ``work``, but cancel it as soon as the user stops the query,
+        wherever it is, a model call included. Checking only between steps let a
+        stopped run's writer finish its report, billed, and then drop it."""
+        task = asyncio.ensure_future(work)
+        stop = asyncio.ensure_future(self.stop.wait())
+        try:
+            await asyncio.wait({task, stop}, return_when=asyncio.FIRST_COMPLETED)
+        finally:
+            stop.cancel()
+            if not task.done():
+                task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await task
+        if task.cancelled():
+            raise OrchestratorCancelledError("research was stopped")
+        return task.result()
 
 
 @asynccontextmanager
@@ -153,7 +175,8 @@ async def job_liveness(query_id: int) -> AsyncIterator[Liveness]:
             try:
                 async with db_session.SessionLocal() as db:
                     status = await repository.touch_heartbeat(db, query_id)
-                live.stopped = live.stopped or status == QueryStatus.failed
+                if status == QueryStatus.failed:
+                    live.stop.set()
             except Exception:
                 logger.exception("heartbeat write failed for query %s", query_id)
             with contextlib.suppress(TimeoutError):
@@ -223,7 +246,7 @@ async def run_graph(
                     durability="exit",
                 )
                 paused = await asyncio.wait_for(
-                    _mirror(db, query_id, updates, on_route),
+                    live.unless_stopped(_mirror(db, query_id, updates, on_route)),
                     timeout=settings.global_timeout,
                 )
         except TimeoutError:

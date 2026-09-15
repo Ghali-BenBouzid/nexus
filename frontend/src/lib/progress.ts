@@ -102,3 +102,40 @@ export function summarize(events: TimelineEvent[]): Progress {
   const active = researchers.filter((r) => r.outcome === "running").length;
   return { stage, planSize, researchers, total, active, thinking, latest, lastAt };
 }
+
+// How a run that is no longer live ended; null while it runs.
+export type Ended = "stopped" | "failed" | null;
+
+export type Mark = "run" | "ok" | "warn" | "stop";
+
+// One row of the expanded list. ``cut``: the step was still going when the run
+// ended, so it never finished.
+export type Step =
+  | { kind: "understanding"; mark: Mark; cut: boolean }
+  | { kind: "plan"; mark: Mark; cut: boolean; size: number | null }
+  | { kind: "researcher"; mark: Mark; cut: boolean; row: ResearcherRow }
+  | { kind: "write"; mark: Mark; cut: boolean };
+
+// The main steps of a run, for the expanded bar. Only a live run has a running
+// step: once it ends, whatever was still going shows how it ended instead of a
+// spinner and a timer that would keep counting.
+export function steps(p: Progress, ended: Ended): Step[] {
+  const settle = (mark: Mark) => {
+    const cut = mark === "run" && ended !== null;
+    return { mark: cut ? (ended === "stopped" ? "stop" : "warn") : mark, cut } as const;
+  };
+  const list: Step[] = [];
+  if (p.stage === "starting" && ended === null) list.push({ kind: "understanding", ...settle("run") });
+  if (p.stage !== "starting" || p.planSize != null) {
+    const planned = p.planSize != null || p.stage !== "planning";
+    list.push({ kind: "plan", size: p.planSize, ...settle(planned ? "ok" : "run") });
+  }
+  for (const row of p.researchers) {
+    const mark = row.outcome === "running" ? "run" : row.outcome === "found" ? "ok" : "warn";
+    list.push({ kind: "researcher", row, ...settle(mark) });
+  }
+  if (p.stage === "writing" || p.stage === "done") {
+    list.push({ kind: "write", ...settle(p.stage === "done" ? "ok" : "run") });
+  }
+  return list;
+}

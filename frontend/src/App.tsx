@@ -110,6 +110,7 @@ export default function App() {
       result: lt.reply ? null : lt.result, // an answer turn carries no report
       outcome: outcomeFor(lt.status, lt.result.report, lt.result.sources.length),
       error: lt.error,
+      stopped: lt.stopped,
       startedAt: performance.now(),
       endedAt: inFlight ? null : performance.now(),
     };

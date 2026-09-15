@@ -119,7 +119,7 @@ async def cancel_query(
     # The stop is the status itself: a job, in this process or on a worker, sees
     # it on its next heartbeat and stops spending. An awaiting_plan query has no
     # job and just resolves. One that already ended keeps its outcome.
-    await repository.fail_query(db, query_id, "Research was stopped.")
+    await repository.fail_query(db, query_id, repository.STOPPED)
 
 
 @router.get("/query/{query_id}", response_model=QueryDetail)
@@ -155,6 +155,7 @@ async def get_query(
         report=query.report,
         reply=query.reply,
         error=query.error,
+        stopped=repository.stopped_by_user(query),
         plan=query.plan,
         sources=result.sources if result else [],
         consulted_sources=consulted,
