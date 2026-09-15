@@ -866,6 +866,8 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   color: var(--fg); cursor: pointer; border-radius: 6px; }
 .ch-mark { display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: 4px;
   background: none; border: none; color: var(--fg); cursor: pointer; border-radius: 8px; }
+.ap-title { font-family: var(--font-display); font-weight: 600; font-size: 14px;
+  white-space: nowrap; padding-left: 6px; }
 .ch-label { flex: none; padding: 12px 18px 4px; font-family: var(--font-mono); font-size: 11px;
   letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
 .ch-space { flex: 1; }

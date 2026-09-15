@@ -50,7 +50,7 @@ export function ArtifactPanel({ turns, width, selectedId, onSelect, onClose, onR
   return (
     <aside className="artifact-panel artifact-panel--list" style={style}>
       <div className="ch-head">
-        <span className="ch-title">{I.doc}{t.artifact.title}</span>
+        <span className="ap-title">{t.artifact.title}</span>
         {/* Mobile has no close button here: the top-right corner button toggles
             the list (and highlights while open). Desktop keeps the chevron. */}
         {!isMobile && (
