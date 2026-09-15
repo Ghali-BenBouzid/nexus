@@ -7,9 +7,10 @@ import { pickRun, toTimeline } from "./simulatedEngine";
 
 export const LIVE_MODE = import.meta.env.VITE_LIVE_MODE === "true";
 
-// Live research needs a live build AND an invite: a visitor without one gets the
-// simulated demo instead of an error. Re-read on use, since an expired invite is
-// dropped mid-session.
+// Live research needs a live build AND an invite. In a live build the app asks a
+// visitor without one for a demo account before any run starts, so the simulated
+// engine only serves builds without VITE_LIVE_MODE. Re-read on use, since an
+// expired invite is dropped mid-session.
 export const isLive = (): boolean => LIVE_MODE && hasInvite();
 
 export type ResearchCallbacks = {

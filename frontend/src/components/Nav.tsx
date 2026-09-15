@@ -12,12 +12,12 @@ type NavProps = {
   scrolled: boolean;
   onStart: () => void;
   onHistory?: () => void;
-  showLinks?: boolean;
 };
 
-export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory, showLinks = true }: NavProps) {
+// The landing page's nav. The chat has none: its left column carries the brand.
+export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory }: NavProps) {
   return (
-    <nav className={"nav" + (scrolled ? " scrolled" : "") + (showLinks ? "" : " nav-chat")}>
+    <nav className={"nav" + (scrolled ? " scrolled" : "")}>
       <div className="wrap">
         <div className="nav-left">
           {onHistory && (
@@ -28,22 +28,16 @@ export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory, 
           <div className="brand" onClick={onLogo}>
             <NexusLockup size={20} />
           </div>
-          {/* The GitHub link belongs to the marketing page; the chat keeps the nav
-              minimal, just the full logo on the left. */}
-          {showLinks && (
-            <a className="nav-link nav-gh" href={REPO_URL} target="_blank" rel="noreferrer" aria-label={t.nav.source} title={t.nav.source}>
-              {I.github}
-              <span className="nav-gh-text">{t.nav.source}</span>
-            </a>
-          )}
+          <a className="nav-link nav-gh" href={REPO_URL} target="_blank" rel="noreferrer" aria-label={t.nav.source} title={t.nav.source}>
+            {I.github}
+            <span className="nav-gh-text">{t.nav.source}</span>
+          </a>
         </div>
-        {showLinks && (
-          <div className="nav-links">
-            <a className="nav-link" href="#about">{t.nav.about}</a>
-            <a className="nav-link" href="#how">{t.nav.how}</a>
-            <a className="nav-link" href="#engineering">{t.nav.engineering}</a>
-          </div>
-        )}
+        <div className="nav-links">
+          <a className="nav-link" href="#about">{t.nav.about}</a>
+          <a className="nav-link" href="#how">{t.nav.how}</a>
+          <a className="nav-link" href="#engineering">{t.nav.engineering}</a>
+        </div>
         <div className="nav-right">
           <button
             className="nav-link nav-lang"
@@ -56,12 +50,10 @@ export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory, 
           <button className="theme-toggle" onClick={toggleTheme} aria-label={t.nav.theme} title={t.nav.theme}>
             {theme === "dark" ? I.sun : I.moon}
           </button>
-          {showLinks && (
-            <button className="btn btn-primary nav-start" onClick={onStart} aria-label={t.nav.start} title={t.nav.start}>
-              <span className="nav-start-label">{t.nav.start}</span>
-              <span className="nav-start-icon" aria-hidden="true">{I.search}</span>
-            </button>
-          )}
+          <button className="btn btn-primary nav-start" onClick={onStart} aria-label={t.nav.start} title={t.nav.start}>
+            <span className="nav-start-label">{t.nav.start}</span>
+            <span className="nav-start-icon" aria-hidden="true">{I.search}</span>
+          </button>
         </div>
       </div>
     </nav>

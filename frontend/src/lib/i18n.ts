@@ -31,13 +31,6 @@ function detect(): Lang {
 
 export const lang: Lang = detect();
 
-// Dollar amounts for the demo budget, in the reader's number format.
-export const usd = (amount: number): string =>
-  new Intl.NumberFormat(lang === "fr" ? "fr-FR" : "en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amount);
-
 if (typeof document !== "undefined") document.documentElement.lang = lang;
 
 // Persist the choice and reload so the resolved-once dictionary is rebuilt.
@@ -60,6 +53,7 @@ const en = {
     start: "Start researching",
     recent: "Recent chats",
     theme: "Toggle theme",
+    home: "Nexus home page",
   },
   hero: {
     headline: "Ask anything. Every claim, sourced.",
@@ -187,10 +181,15 @@ const en = {
     historyHint: "↑↓ history",
   },
   access: {
-    simulated: "Simulated demo run. Live research is invite-only.",
-    budget: (left: string, total: string) => `${left} of ${total} demo budget left`,
+    credits: (percent: number) => `${percent}% of your demo credits left`,
     invalid: "This invite link is not valid.",
     none: "Live research needs an invite link.",
+  },
+  demo: {
+    title: "Live research is invite-only",
+    body: "Each run uses real models and live web searches, so access comes with a demo account. Message me on LinkedIn and I'll set one up for you.",
+    cta: "Get a demo account",
+    later: "Not now",
   },
   turn: {
     brand: "Nexus",
@@ -285,6 +284,7 @@ const fr: Dict = {
     start: "Lancer une recherche",
     recent: "Conversations récentes",
     theme: "Changer de thème",
+    home: "Accueil de Nexus",
   },
   hero: {
     headline: "Posez une question. Chaque affirmation est sourcée.",
@@ -412,10 +412,15 @@ const fr: Dict = {
     historyHint: "↑↓ historique",
   },
   access: {
-    simulated: "Recherche de démonstration simulée. La recherche en direct est sur invitation.",
-    budget: (left: string, total: string) => `${left} restants sur ${total} de budget de démo`,
+    credits: (percent: number) => `Il vous reste ${percent} % de vos crédits de démo`,
     invalid: "Ce lien d'invitation n'est pas valide.",
     none: "La recherche en direct nécessite un lien d'invitation.",
+  },
+  demo: {
+    title: "La recherche en direct est sur invitation",
+    body: "Chaque recherche utilise de vrais modèles et des recherches web en direct, l'accès passe donc par un compte de démo. Écrivez-moi sur LinkedIn et je vous en crée un.",
+    cta: "Obtenir un compte de démo",
+    later: "Plus tard",
   },
   turn: {
     brand: "Nexus",

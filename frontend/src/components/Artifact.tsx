@@ -150,7 +150,6 @@ export function Artifact({ turn, onRefresh, onBack, onClose, isMobile }: Artifac
         </div>
       </div>
       <div className="art-body">
-        <div className="art-q">{turn.query}</div>
         <article className="report">
           <Markdown text={result.report} onCite={onCite} activeCite={activeCite} />
         </article>

@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 import { Conversation } from "./components/Conversation";
+import { DemoDialog } from "./components/DemoDialog";
 import { Hero } from "./components/Hero";
 import { History } from "./components/History";
 import { Nav } from "./components/Nav";
@@ -18,7 +19,8 @@ import {
   type Account,
   type LoadedTurn,
 } from "./lib/api";
-import { t, usd } from "./lib/i18n";
+import { creditsLeft } from "./lib/credits";
+import { t } from "./lib/i18n";
 import { outcomeFor } from "./lib/outcome";
 import { getRoute, inviteFromUrl, navigate, onPopState, type Route } from "./lib/router";
 import {
@@ -83,11 +85,12 @@ export default function App() {
   const setActiveConversation = (id: number | null) => setActiveConversationId(id);
 
   // Live research needs an invite (see lib/api). Without one, or once it has been
-  // revoked or has expired, the app runs the simulated demo instead.
+  // revoked or has expired, a live build asks for a demo account instead.
   const [live, setLive] = useState(isLive);
   const [account, setAccount] = useState<Account | null>(null);
   // Why an invite link did not work, shown under the composer for this session.
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [demoOpen, setDemoOpen] = useState(false);
 
   const turnSeq = useRef(0);
   const cancelled = useRef<Set<number>>(new Set());
@@ -362,7 +365,16 @@ export default function App() {
 
   // The hero always opens a brand-new conversation: launching from the landing
   // page starts a fresh chat rather than appending to whatever was open last.
+  // Live research spends real credits, so a live build without an invite asks for
+  // a demo account instead of running anything. True when it asked.
+  const askForDemoAccount = () => {
+    if (!LIVE_MODE || isLive()) return false;
+    setDemoOpen(true);
+    return true;
+  };
+
   function heroSubmit(prompt: string) {
+    if (askForDemoAccount()) return;
     turns.forEach((t) => cancelled.current.add(t.id));
     setActiveConversation(null);
     navigate("/chat"); // a fresh chat; becomes /chat/:id once the backend assigns one
@@ -370,6 +382,7 @@ export default function App() {
   }
 
   async function startResearch(prompt: string, opts?: { fresh?: boolean }) {
+    if (askForDemoAccount()) return;
     const fresh = opts?.fresh ?? false;
     // One run at a time: ignore a follow-up while another is in flight. A fresh
     // hero submission replaces the workspace, so it is never blocked this way.
@@ -561,33 +574,28 @@ export default function App() {
     }
   };
 
-  // One line under the composer, keeping the demo's terms visible: the budget left
-  // for an invited visitor, otherwise that this run is simulated (or why the
-  // invite did not work). Local simulated-only builds show nothing.
+  // One line under the composer, keeping the demo's terms visible: the share of
+  // credits left for an invited visitor, or why their invite did not work.
+  // Local simulated-only builds show nothing.
   const accessNote = !LIVE_MODE
     ? null
     : live
-      ? account && t.access.budget(usd(account.remaining_usd), usd(account.budget_usd))
-      : (inviteError ?? t.access.simulated);
+      ? account && t.access.credits(creditsLeft(account.remaining_usd, account.budget_usd))
+      : inviteError;
 
   return (
     <Fragment>
-      <Nav
-        theme={theme}
-        toggleTheme={toggleTheme}
-        onLogo={goHome}
-        scrolled={scrolled || view === "chat"}
-        showLinks={view === "home"}
-        onHistory={
-          // Home: the nav rail opens the history drawer. In chat the Recent column
-          // owns its own slim-rail toggle, so the nav control drops away there.
-          live && view !== "chat" ? () => setHistoryOpen(true) : undefined
-        }
-        onStart={() => {
-          if (view === "chat") document.querySelector<HTMLTextAreaElement>(".composer textarea")?.focus();
-          else document.querySelector<HTMLTextAreaElement>(".prompt textarea")?.focus();
-        }}
-      />
+      {/* Only the landing page has a nav; the chat's left column carries the brand. */}
+      {view === "home" && (
+        <Nav
+          theme={theme}
+          toggleTheme={toggleTheme}
+          onLogo={goHome}
+          scrolled={scrolled}
+          onHistory={live ? () => setHistoryOpen(true) : undefined}
+          onStart={() => document.querySelector<HTMLTextAreaElement>(".prompt textarea")?.focus()}
+        />
+      )}
 
       {live && (
         <History open={historyOpen} onClose={() => setHistoryOpen(false)} onOpen={openHistory} />
@@ -619,12 +627,17 @@ export default function App() {
           onRevisePlan={revisePlan}
           onDiscardPlan={discardPlan}
           running={anyRunning}
-          onNewChat={newChat}          accessNote={accessNote}
+          onNewChat={newChat}
+          accessNote={accessNote}
           historyOpen={chatHistoryOpen}
           onToggleHistory={toggleChatHistory}
           onOpenHistory={live ? openHistory : undefined}
+          theme={theme}
+          toggleTheme={toggleTheme}
         />
       )}
+
+      <DemoDialog open={demoOpen} onClose={() => setDemoOpen(false)} />
     </Fragment>
   );
 }
