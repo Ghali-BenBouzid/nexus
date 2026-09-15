@@ -71,9 +71,9 @@ const en = {
     proof: ["Open source", "Invite-only live demo", "A real run takes ~1min"],
     builtWithLabel: "Built with",
     builtWith: [
-      { label: "Backend", items: ["FastAPI", "Python", "LangGraph", "Postgres"] },
+      { label: "Backend", items: ["FastAPI", "Python", "LangGraph", "Postgres", "Redis"] },
       { label: "Frontend", items: ["React", "TypeScript", "three.js"] },
-      { label: "Deployment", items: ["Railway", "Redis", "Neon", "Cloudflare"] },
+      { label: "Deployment", items: ["Railway", "Neon", "Cloudflare"] },
     ],
     sourceLink: "Source on GitHub",
   },
@@ -305,9 +305,9 @@ const fr: Dict = {
     proof: ["Open source", "Démo en direct sur invitation", "Une vraie recherche prend ~1min"],
     builtWithLabel: "Construit avec",
     builtWith: [
-      { label: "Partie serveur", items: ["FastAPI", "Python", "LangGraph", "Postgres"] },
+      { label: "Partie serveur", items: ["FastAPI", "Python", "LangGraph", "Postgres", "Redis"] },
       { label: "Interface", items: ["React", "TypeScript", "three.js"] },
-      { label: "Déploiement", items: ["Railway", "Redis", "Neon", "Cloudflare"] },
+      { label: "Déploiement", items: ["Railway", "Neon", "Cloudflare"] },
     ],
     sourceLink: "Code sur GitHub",
   },
