@@ -97,7 +97,6 @@ export function ChatHistory({
                   {sorted?.length === 0 && <div className="drawer-empty">{t.history.empty}</div>}
                   {sorted?.map((c) => (
                     <button key={c.id} className="hist-item" onClick={() => onOpen(c.id)}>
-                      <span className="hist-dot complete" />
                       <div className="hist-main">
                         <div className="hist-q">{c.title ?? t.history.untitled}</div>
                         <div className="hist-meta">{when(c.updated_at)}</div>

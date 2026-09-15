@@ -62,7 +62,7 @@ export function ArtifactPanel({ turns, width, selectedId, onSelect, onClose, onR
       <div className="ch-body">
         {ordered.length === 0 && <div className="drawer-empty">{t.artifact.noReports}</div>}
         {ordered.map((t) => (
-          <button key={t.id} className="hist-item" onClick={() => onSelect(t.id)}>
+          <button key={t.id} className="hist-item with-dot" onClick={() => onSelect(t.id)}>
             <span className={"hist-dot " + t.status} />
             <div className="hist-main">
               <div className="hist-q">{t.title ?? t.query}</div>

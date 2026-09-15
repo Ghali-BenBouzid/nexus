@@ -49,7 +49,6 @@ export function History({ open, onClose, onOpen }: HistoryProps) {
           {items?.length === 0 && <div className="drawer-empty">{t.history.empty}</div>}
           {items?.map((c) => (
             <button key={c.id} className="hist-item" onClick={() => onOpen(c.id)}>
-              <span className="hist-dot complete" />
               <div className="hist-main">
                 <div className="hist-q">{c.title ?? t.history.untitled}</div>
                 <div className="hist-meta">{when(c.updated_at)}</div>
