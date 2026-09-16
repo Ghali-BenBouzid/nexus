@@ -6,7 +6,7 @@ import { DemoDialog } from "./components/DemoDialog";
 import { Hero } from "./components/Hero";
 import { History } from "./components/History";
 import { Nav } from "./components/Nav";
-import { About, Engineering, Footer, HowItWorks } from "./components/Sections";
+import { About, Footer, HowItWorks } from "./components/Sections";
 import {
   cancelQuery,
   confirmPlan as confirmPlanApi,
@@ -606,7 +606,6 @@ export default function App() {
           <Hero onSubmit={heroSubmit} />
           <HowItWorks />
           <About />
-          <Engineering />
           <Footer />
         </Fragment>
       )}

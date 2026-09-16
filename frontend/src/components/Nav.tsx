@@ -35,9 +35,7 @@ export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory }
         </div>
         <div className="nav-links">
           <a className="nav-link" href="#about">{t.nav.about}</a>
-          <a className="nav-link" href="#how">{t.nav.how}</a>
-          <a className="nav-link" href="#engineering">{t.nav.engineering}</a>
-        </div>
+          <a className="nav-link" href="#how">{t.nav.how}</a>        </div>
         <div className="nav-right">
           <button
             className="nav-link nav-lang"

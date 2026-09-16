@@ -48,7 +48,6 @@ const en = {
   nav: {
     about: "About",
     how: "How it works",
-    engineering: "Engineering challenges",
     source: "Source",
     start: "Start researching",
     recent: "Recent chats",
@@ -125,48 +124,6 @@ const en = {
       { lead: "Write", rest: " a grounded report; every claim points to a numbered source." },
     ],
     aria: "A supervisor agent reads each message and either answers directly, composes the existing reports into one new report, or starts a research run: the research subgraph plans the question, you confirm the plan, a fan-out of researcher agents gathers sources, then a consolidation step and a writer turn it into a cited report.",
-  },
-  eng: {
-    title: "Engineering challenges",
-    why: "Impact",
-    challenges: [
-      {
-        problem: "Keeping the model from inventing citations.",
-        how: "Hand citations to the model and it eventually cites a source it never read. So a deterministic step dedupes and numbers the sources, and the writer only keeps the markers it's given.",
-        why: "The room for a hallucinated citation shrinks to almost nothing, so every claim links to a source that was actually read.",
-      },
-      {
-        problem: "Knowing whether a change actually helps.",
-        how: "Prompt and pipeline tweaks feel better without being better. An eval harness runs 150 graded questions through the real pipeline, scores each stage, and adds an LLM-as-a-judge pass, before a change ships.",
-        why: "Measure before you tune: 'seems nicer' becomes a number I can compare across runs.",
-      },
-      {
-        problem: "One core, four different providers.",
-        how: "LLM backends each speak a slightly different dialect, and Groq's Llama models kept breaking the tool-call parser. One OpenAI-compatible adapter fronts them all, OpenRouter by default, the rest swappable.",
-        why: "The agents never know which backend they run on, so switching provider is a config change, not a rewrite.",
-      },
-      {
-        problem: "Letting strangers spend real model credits.",
-        how: "The live demo runs paid models, so access is invite-only and every account carries its own dollar budget. Each model call is priced and written to a ledger as it happens, and the provider key has a hard ceiling of its own.",
-        why: "Anyone can be handed a working demo without leaving my wallet open behind it.",
-      },
-      {
-        problem: "A research run outlives the request that asked for it.",
-        how: "A run takes minutes, so nothing waits on the HTTP request: the API records the turn and queues a job on Redis, and a worker runs it, beating a heartbeat as it goes. Inside a run, the researchers fan out as concurrent tasks under one cap.",
-        why: "Redeploying the API never kills a run in flight, and more load means more workers rather than a bigger box.",
-      },
-      {
-        problem: "Pausing a run to wait for a human.",
-        how: "The pipeline is a LangGraph graph, so the plan step interrupts and the paused run is checkpointed in Postgres. Confirming or revising the plan resumes that same run, minutes later and on whichever worker picks it up.",
-        why: "The approval step is one edge in the graph instead of a second pipeline stitched together out of database columns.",
-      },
-    ],
-    nextTitle: "What's next",
-    nextIntro: "A few of these are already in progress.",
-    next: [
-      "Researching your own documents alongside the web.",
-      "An opt-in deep-research mode that trades speed for coverage: it plans the question from as many angles as it can, then works through them with a stronger model.",
-    ],
   },
   footer: {
     builtBy: "Built by Ghali Ben Bouzid.",
@@ -282,7 +239,6 @@ const fr: Dict = {
   nav: {
     about: "À propos",
     how: "Fonctionnement",
-    engineering: "Défis techniques",
     source: "Source",
     start: "Lancer une recherche",
     recent: "Conversations récentes",
@@ -359,48 +315,6 @@ const fr: Dict = {
       { lead: "Rédiger", rest: " un rapport fondé ; chaque affirmation pointe vers une source numérotée." },
     ],
     aria: "Un superviseur lit chaque message, puis répond directement, fusionne les rapports déjà produits en un nouveau rapport, ou lance une recherche : le sous-graphe de recherche planifie la question, vous confirmez le plan, plusieurs agents chercheurs rassemblent les sources en parallèle, puis une étape de consolidation et un rédacteur en font un rapport sourcé.",
-  },
-  eng: {
-    title: "Défis techniques",
-    why: "Impact",
-    challenges: [
-      {
-        problem: "Empêcher le modèle d'inventer des citations.",
-        how: "Si on laisse les citations au modèle, il finit par en citer une qu'il n'a jamais lue. Une étape déterministe dédoublonne et numérote les sources, et le rédacteur ne conserve que les marqueurs qu'on lui transmet.",
-        why: "Le risque d'une citation inventée devient quasi nul, donc chaque affirmation renvoie à une source réellement lue.",
-      },
-      {
-        problem: "Savoir si un changement aide vraiment.",
-        how: "Les retouches de prompt semblent meilleures sans forcément l'être. Un protocole d'évaluation passe 150 questions notées dans le vrai pipeline, note chaque étape et ajoute une passe de LLM-as-a-judge, avant toute mise en ligne.",
-        why: "Mesurer avant d'ajuster : « ça a l'air mieux » devient un chiffre comparable d'une recherche à l'autre.",
-      },
-      {
-        problem: "Un seul noyau, quatre fournisseurs différents.",
-        how: "Chaque fournisseur LLM parle un dialecte un peu différent, et les modèles Llama de Groq renvoyaient leurs appels d'outils dans un format qui cassait l'analyse. Un seul adaptateur compatible OpenAI les couvre tous, avec OpenRouter par défaut et le reste interchangeable.",
-        why: "Les agents ne savent pas quel fournisseur ils utilisent : en changer relève de la configuration, pas d'une réécriture.",
-      },
-      {
-        problem: "Laisser des inconnus dépenser de vrais crédits de modèles.",
-        how: "La démo en direct utilise des modèles payants : l'accès se fait sur invitation et chaque compte dispose de son propre budget en dollars. Chaque appel de modèle est valorisé et inscrit dans un registre au fil de l'eau, et la clé du fournisseur a elle-même un plafond strict.",
-        why: "N'importe qui peut recevoir une démo qui fonctionne sans que mon portefeuille reste ouvert derrière.",
-      },
-      {
-        problem: "Une recherche survit à la requête qui l'a lancée.",
-        how: "Une recherche dure plusieurs minutes : rien n'attend la requête HTTP. L'API enregistre le tour et met un job en file sur Redis, puis un worker l'exécute en émettant un battement de cœur. Pendant la recherche, les chercheurs s'exécutent en parallèle sous un seul plafond.",
-        why: "Redéployer l'API ne tue jamais une recherche en cours, et absorber la charge revient à ajouter des workers plutôt qu'une plus grosse machine.",
-      },
-      {
-        problem: "Mettre une recherche en pause en attendant un humain.",
-        how: "Le pipeline est un graphe LangGraph : l'étape de planification s'interrompt et la recherche en pause est enregistrée dans Postgres. Confirmer ou réviser le plan reprend cette même recherche, plusieurs minutes plus tard et sur n'importe quel worker.",
-        why: "La validation est une simple transition du graphe, et non un second pipeline recousu à partir de colonnes en base.",
-      },
-    ],
-    nextTitle: "La suite",
-    nextIntro: "Certaines de ces fonctionnalités sont déjà en cours de développement.",
-    next: [
-      "Chercher dans vos propres documents en parallèle du web.",
-      "Un mode recherche approfondie optionnel, qui troque la vitesse contre la couverture : il aborde la question sous le plus d'angles possible, puis les traite avec un modèle plus puissant.",
-    ],
   },
   footer: {
     builtBy: "Construit par Ghali Ben Bouzid.",
