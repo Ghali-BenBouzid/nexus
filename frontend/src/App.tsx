@@ -604,8 +604,8 @@ export default function App() {
       {view === "home" && (
         <Fragment>
           <Hero onSubmit={heroSubmit} />
-          <HowItWorks />
           <About />
+          <HowItWorks />
           <Footer />
         </Fragment>
       )}
