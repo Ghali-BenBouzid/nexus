@@ -67,7 +67,7 @@ const en = {
   about: {
     title: "About",
     body: "Nexus is an agentic research platform. You ask a question, a team of agents plans it, researches the live web, and writes back a single report where every claim links to its source. I designed and built all of it: the backend, the agent orchestration, and the frontend.",
-    proof: ["Open source", "Invite-only live demo", "A real run takes ~1min"],
+    proof: ["Open source", "Invite-only live demo"],
     builtWithLabel: "Built with",
     builtWith: [
       { label: "Backend", items: ["FastAPI", "Python", "LangGraph", "Postgres", "Redis"] },
@@ -258,7 +258,7 @@ const fr: Dict = {
   about: {
     title: "À propos",
     body: "Nexus est une plateforme de recherche agentique. Vous posez une question, une équipe d'agents la décompose, cherche sur le web en direct, et vous remet un seul rapport dont chaque affirmation renvoie à sa source. J'ai tout conçu et construit : la partie serveur, l'orchestration des agents et l'interface.",
-    proof: ["Open source", "Démo en direct sur invitation", "Une vraie recherche prend ~1min"],
+    proof: ["Open source", "Démo en direct sur invitation"],
     builtWithLabel: "Construit avec",
     builtWith: [
       { label: "Partie serveur", items: ["FastAPI", "Python", "LangGraph", "Postgres", "Redis"] },
