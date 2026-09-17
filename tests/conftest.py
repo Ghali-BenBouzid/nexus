@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool
 
 from app.core.config import settings
 from app.db import session as db_session
@@ -19,13 +19,15 @@ from tests.accounts import login_as
 
 
 @pytest_asyncio.fixture
-async def client() -> AsyncGenerator[AsyncClient]:
-    # In-memory async SQLite. StaticPool keeps a single shared connection so the
-    # schema created below is visible to every request in the test.
+async def client(tmp_path) -> AsyncGenerator[AsyncClient]:
+    # A throwaway SQLite file, and a connection per session: a job's heartbeat,
+    # its event writes and the test's own writes run as separate transactions,
+    # as they do on Postgres. One shared in-memory connection let a session
+    # closing roll back another's uncommitted write, which made tests flaky.
     engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
+        connect_args={"timeout": 30},  # concurrent writers wait instead of failing
+        poolclass=NullPool,
     )
 
     session_local = async_sessionmaker(
