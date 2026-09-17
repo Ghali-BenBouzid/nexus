@@ -45,8 +45,18 @@ class Settings(BaseSettings):
     # parallel researchers split a small tokens-per-minute budget and time out.
     max_concurrency: int = 3  # simultaneous researchers
     planner_retry_cap: int = 2
+    # Soft deadline for the research fan-out: once it passes, each researcher stops
+    # searching and submits what it has, so a slow (reasoning) model still yields a
+    # report instead of a timeout. per_researcher_timeout stays the hard stop for a
+    # researcher stuck inside a single call.
+    research_budget: float = 120.0  # seconds
     per_researcher_timeout: float = 150.0  # seconds
-    global_timeout: float = 300.0  # seconds, whole-job backstop
+    # The writer's own limit: past it, the report is assembled straight from the
+    # findings (claims and citations intact) instead of losing them to a timeout.
+    writer_timeout: float = 150.0  # seconds
+    # Whole-job backstop for bugs, above the budgets that normally bound a run
+    # (research ~150 s + writer 150 s, plus planning on the one-shot path).
+    global_timeout: float = 420.0  # seconds
     # Supervisor tool-loop budget: how many gather-then-decide rounds it may take
     # before it must commit. Kept low: it runs synchronously in the request, so a
     # follow-up stays responsive; it usually decides in one round.

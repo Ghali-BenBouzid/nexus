@@ -51,3 +51,6 @@ class QueryDetail(BaseSchema):
     gaps: list[str]
     created_at: datetime
     completed_at: datetime | None
+    # How long ago the job last showed signs of life (None before it starts). A
+    # long step keeps it low; a job that died lets it grow.
+    seconds_since_heartbeat: float | None = None

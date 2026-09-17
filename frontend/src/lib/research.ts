@@ -25,6 +25,9 @@ export type ResearchCallbacks = {
   // Live mode only: the supervisor-given report title, known as soon as the run is
   // submitted, so the turn and its artifact can show a real name.
   onTitle?: (title: string) => void;
+  // Live mode only: on every poll, seconds since the backend job last showed signs
+  // of life, so the progress bar can warn when a run looks stuck.
+  onHeartbeat?: (secondsSince: number | null) => void;
 };
 
 export type ResearchOutcome = {

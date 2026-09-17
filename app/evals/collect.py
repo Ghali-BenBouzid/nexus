@@ -98,8 +98,9 @@ async def _run(
 
     provider.stage = "research"
     semaphore = asyncio.Semaphore(settings.max_concurrency)
+    deadline = time.monotonic() + settings.research_budget
     results = await asyncio.gather(
-        *(_research_one(q, provider, backend, semaphore) for q in trace.plan)
+        *(_research_one(q, provider, backend, semaphore, deadline) for q in trace.plan)
     )
     trace.researchers = [researcher for researcher, _ in results]
     findings = [finding for _, finding in results if finding is not None]
@@ -117,7 +118,7 @@ async def _run(
         for claim in point.claims
     ]
     provider.stage = "write"
-    report = await write(result, provider=provider)
+    report = await write(result, provider=provider, timeout=settings.writer_timeout)
     trace.report = report.content
     trace.sources = [SourceRecord(title=s.title, url=s.url) for s in report.sources]
 
@@ -127,6 +128,7 @@ async def _research_one(
     provider: LLMProvider,
     backend: SearchBackend,
     semaphore: asyncio.Semaphore,
+    deadline: float,
 ) -> tuple[ResearcherTrace, Finding | None]:
     recorder = RecordingSearchBackend(backend)
     tools = [WebSearch(backend=recorder), FetchPage(backend=recorder)]
@@ -147,6 +149,7 @@ async def _research_one(
                     tools=tools,
                     emit=emit,
                     max_iters=settings.max_iters,
+                    deadline=deadline,
                 ),
                 timeout=settings.per_researcher_timeout,
             )

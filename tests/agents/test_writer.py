@@ -1,3 +1,5 @@
+import asyncio
+
 import pytest
 
 from app.agents import writer as writer_module
@@ -161,6 +163,48 @@ async def test_write_raises_after_exhausting_writer_retries(monkeypatch) -> None
     with pytest.raises(ProviderError):
         await write(result, provider=provider)
     assert provider.calls == writer_module._WRITER_RETRY.max_attempts
+
+
+class _SlowProvider:
+    """A reasoning model that thinks longer than the writer is allowed to."""
+
+    async def __aenter__(self) -> "_SlowProvider":
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+        return None
+
+    async def generate(self, messages: list[Message], tools=None, tool_choice="auto"):
+        await asyncio.sleep(1)
+        return LLMResponse(text="too late")
+
+
+async def test_write_out_of_time_reports_the_findings_as_they_are() -> None:
+    # glm-5.3-flash thought for 3 minutes before writing: past the timeout the
+    # report is assembled from the findings, citations intact, instead of lost.
+    result = ResearchResult(
+        points=[
+            ResearchPoint(
+                sub_question="What is it?",
+                claims=[
+                    Claim(text="It is a thing.", source_ids=[2]),
+                    Claim(text="It works well.", source_ids=[1]),
+                ],
+            )
+        ],
+        sources=[Source(title="A", url="http://a"), Source(title="B", url="http://b")],
+        gaps=["an open question"],
+    )
+
+    report = await write(result, provider=_SlowProvider(), timeout=0.01)
+
+    assert "ran out of time" in report.content
+    assert "## What is it?" in report.content
+    # renumbered in order of first use, like any report
+    assert "- It is a thing.[1]" in report.content
+    assert "- It works well.[2]" in report.content
+    assert [s.url for s in report.sources] == ["http://b", "http://a"]
+    assert report.failed_subquestions == ["an open question"]
 
 
 async def test_write_keeps_sources_when_report_cites_nothing() -> None:

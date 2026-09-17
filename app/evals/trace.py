@@ -19,12 +19,14 @@ class SearchCall(BaseModel):
     query: str
     hits: list[SearchHitRecord] = Field(default_factory=list)
     error: str | None = None
+    seconds: float = 0.0
 
 
 class FetchCall(BaseModel):
     url: str
     text: str = ""
     error: str | None = None
+    seconds: float = 0.0
 
 
 class ClaimRecord(BaseModel):
@@ -74,6 +76,10 @@ class StageUsage(BaseModel):
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
+    # Time spent waiting on the model, summed over calls (concurrent researchers
+    # overlap, so the research stage can exceed its wall-clock time).
+    seconds: float = 0.0
+    slowest_call_seconds: float = 0.0
 
 
 class RunTrace(BaseModel):

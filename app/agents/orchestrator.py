@@ -1,8 +1,11 @@
 import asyncio
 import logging
+import time
 from collections.abc import Awaitable, Callable
+from typing import Any
 
 from app.agents.consolidator import consolidate
+from app.agents.narration import ThinkingProvider
 from app.agents.planner import plan
 from app.agents.provider import LLMProvider, ProviderCreditsError
 from app.agents.researcher import research
@@ -30,6 +33,17 @@ async def _noop(event: AgentEvent) -> None:
     return None
 
 
+def _tagged(emit: Emit, **data: Any) -> Emit:
+    """An emit that stamps ``data`` on every event, so what happens inside one
+    researcher (its model calls, its searches) says which researcher it was. With
+    researchers running at once, the live UI could not tell otherwise."""
+
+    async def tagged(event: AgentEvent) -> None:
+        await emit(event.model_copy(update={"data": {**(event.data or {}), **data}}))
+
+    return tagged
+
+
 def _never_cancel() -> bool:
     return False
 
@@ -47,6 +61,8 @@ async def run(
     max_concurrency: int,
     per_researcher_timeout: float,
     retry_cap: int,
+    research_budget: float | None = None,
+    writer_timeout: float | None = None,
 ) -> tuple[Report, ResearchResult]:
     """Pure orchestrator (no DB): plan -> fan out researchers -> consolidate ->
     write. Resilient: a researcher that fails or times out becomes a reported
@@ -58,7 +74,11 @@ async def run(
     be re-rendered later without re-running the research.
     """
     sub_questions = await plan(
-        prompt, provider=provider, emit=emit, cap=cap, retry_cap=retry_cap
+        prompt,
+        provider=ThinkingProvider(provider, emit, agent="planner"),
+        emit=emit,
+        cap=cap,
+        retry_cap=retry_cap,
     )
 
     if should_cancel():
@@ -73,6 +93,8 @@ async def run(
         max_iters=max_iters,
         max_concurrency=max_concurrency,
         per_researcher_timeout=per_researcher_timeout,
+        research_budget=research_budget,
+        writer_timeout=writer_timeout,
     )
 
 
@@ -87,17 +109,27 @@ async def research_from_plan(
     max_iters: int,
     max_concurrency: int,
     per_researcher_timeout: float,
+    research_budget: float | None = None,
+    writer_timeout: float | None = None,
 ) -> tuple[Report, ResearchResult]:
     """The post-plan half of the pipeline: fan out researchers over a given plan,
     consolidate, write. Split out from ``run`` so a confirmed (human-in-the-loop)
-    plan can be executed without re-planning."""
+    plan can be executed without re-planning.
+
+    ``research_budget`` (seconds) is a soft deadline shared by the fan-out: past
+    it, researchers submit what they have, so a slow model still gets a report
+    written. ``per_researcher_timeout`` is the hard stop for a stuck researcher."""
     total = len(sub_questions)
     semaphore = asyncio.Semaphore(max_concurrency)
+    deadline = (
+        time.monotonic() + research_budget if research_budget is not None else None
+    )
 
     async def run_one(index: int, sub_question: str) -> Finding:
         # Emit the lifecycle here (not in the researcher leaf): this is the only
         # place that knows the researcher's index and the total, which is what the
         # live feed needs to render "researcher k/N" honestly.
+        own_emit = _tagged(emit, index=index, total=total)
         async with semaphore:
             await emit(
                 AgentEvent(
@@ -113,11 +145,12 @@ async def research_from_plan(
             finding = await asyncio.wait_for(
                 research(
                     sub_question,
-                    provider=provider,
+                    provider=ThinkingProvider(provider, own_emit, agent="researcher"),
                     tools=tools,
-                    emit=emit,
+                    emit=own_emit,
                     should_cancel=should_cancel,
                     max_iters=max_iters,
+                    deadline=deadline,
                 ),
                 timeout=per_researcher_timeout,
             )
@@ -188,5 +221,10 @@ async def research_from_plan(
         raise OrchestratorError("all researchers failed")
 
     research_result = consolidate(findings, failed)
-    report = await write(research_result, provider=provider, emit=emit)
+    report = await write(
+        research_result,
+        provider=ThinkingProvider(provider, emit, agent="writer"),
+        emit=emit,
+        timeout=writer_timeout,
+    )
     return report, research_result

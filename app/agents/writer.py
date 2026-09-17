@@ -1,9 +1,10 @@
+import asyncio
 import logging
 import re
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
-from app.agents.language import language_directive
+from app.agents.language import detect_language, language_directive
 from app.agents.provider import (
     LLMProvider,
     Message,
@@ -153,10 +154,14 @@ async def write(
     provider: LLMProvider,
     emit: Emit = _noop,
     guidance: str = "",
+    timeout: float | None = None,
 ) -> Report:
     """Render a ResearchResult into a cited prose Report via one LLM call. The
     code owns the sources and their numbers; the writer only weaves prose and
     preserves the supplied [n] markers.
+
+    Past ``timeout`` seconds (a reasoning model can think for minutes), the report
+    is assembled from the findings as they are, so the research is never lost.
 
     ``guidance`` carries an extra instruction from the user (used when the
     supervisor composes a longer report by merging existing ones): how to shape or
@@ -186,18 +191,24 @@ async def write(
         Message(role="system", content=_system_prompt() + directive),
         Message(role="user", content=user_content),
     ]
-    response = await retry_async(
-        lambda: provider.generate(messages),
-        policy=_WRITER_RETRY,
-        transient=_is_provider_error,
-    )
-    await emit(AgentEvent(type="writer_done", message="Report written"))
+    try:
+        response = await asyncio.wait_for(
+            retry_async(
+                lambda: provider.generate(messages),
+                policy=_WRITER_RETRY,
+                transient=_is_provider_error,
+            ),
+            timeout=timeout,
+        )
+        text, done = response.text or "", "Report written"
+    except TimeoutError:
+        logger.warning("writer ran past %ss; assembling the findings", timeout)
+        text, done = _findings_report(result), "Out of time: report assembled"
+    await emit(AgentEvent(type="writer_done", message=done))
 
     # Code owns the citations, so the report's prose and its source list are
     # reconciled here rather than trusted from the model.
-    content, sources, stripped = _finalize_citations(
-        response.text or "", result.sources
-    )
+    content, sources, stripped = _finalize_citations(text, result.sources)
     if stripped:
         logger.warning("stripped unbacked citation markers %s", stripped)
         await emit(
@@ -299,6 +310,29 @@ def _content_text(result: ResearchResult) -> str:
         parts.append(point.sub_question)
         parts.extend(claim.text for claim in point.claims)
     return " ".join(parts)
+
+
+_OUT_OF_TIME_NOTE = {
+    "English": "The writer ran out of time, so these are the findings as the "
+    "researchers reported them.",
+    "French": "Le rédacteur a manqué de temps : voici les résultats tels que "
+    "les chercheurs les ont rapportés.",
+}
+
+
+def _findings_report(result: ResearchResult) -> str:
+    """A plain report straight from the findings, for when the writer model runs
+    out of time: every claim keeps its citations, so nothing is lost."""
+    language = detect_language(_content_text(result)) or "English"
+    note = _OUT_OF_TIME_NOTE.get(language, _OUT_OF_TIME_NOTE["English"])
+    lines = [f"*{note}*", ""]
+    for point in result.points:
+        lines += [f"## {point.sub_question}", ""]
+        for claim in point.claims:
+            citations = "".join(f"[{number}]" for number in claim.source_ids)
+            lines.append(f"- {claim.text}{citations}")
+        lines.append("")
+    return "\n".join(lines).strip()
 
 
 def _render(result: ResearchResult) -> str:

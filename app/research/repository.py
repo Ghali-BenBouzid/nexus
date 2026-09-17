@@ -58,6 +58,14 @@ async def set_status(db: AsyncSession, query_id: int, status: QueryStatus) -> No
     await db.commit()
 
 
+async def touch_heartbeat(db: AsyncSession, query_id: int) -> None:
+    """Mark the query's job as alive now."""
+    await db.execute(
+        update(Query).where(Query.id == query_id).values(heartbeat_at=datetime.now(UTC))
+    )
+    await db.commit()
+
+
 async def set_plan(db: AsyncSession, query_id: int, plan: list[str]) -> None:
     """Store a proposed plan and pause for confirmation (human-in-the-loop)."""
     query = await db.get(Query, query_id)

@@ -293,7 +293,13 @@ export default function App() {
   // The live callbacks for a turn, shared by a fresh run and a resumed poll.
   const callbacksFor = (id: number): ResearchCallbacks => ({
     onEvent: (e) => {
-      if (!cancelled.current.has(id)) patchTurn(id, (t) => ({ ...t, events: [...t.events, e] }));
+      // Stamp the arrival time: the progress bar times each step from it.
+      if (!cancelled.current.has(id))
+        patchTurn(id, (t) => ({ ...t, events: [...t.events, { ...e, at: performance.now() }] }));
+    },
+    onHeartbeat: (secondsSince) => {
+      if (!cancelled.current.has(id))
+        patchTurn(id, (t) => ({ ...t, heartbeatAge: secondsSince, heartbeatSeenAt: performance.now() }));
     },
     onStatus: (s) => {
       if (!cancelled.current.has(id)) patchTurn(id, (t) => ({ ...t, status: s }));
@@ -612,9 +618,7 @@ export default function App() {
           onRevisePlan={revisePlan}
           onDiscardPlan={discardPlan}
           running={anyRunning}
-          onNewChat={newChat}
-          feedTag={live ? t.feed.liveTag : t.feed.simTag}
-          accessNote={accessNote}
+          onNewChat={newChat}          accessNote={accessNote}
           historyOpen={chatHistoryOpen}
           onToggleHistory={toggleChatHistory}
           onOpenHistory={live ? openHistory : undefined}

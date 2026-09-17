@@ -4,6 +4,8 @@ Same decorator shape as CachingSearchBackend and MeteredProvider: the agents see
 an ordinary provider and backend, and the trace gets everything they did.
 """
 
+import time
+
 from app.agents.provider import LLMProvider, LLMResponse, Message
 from app.agents.tools import MAX_PAGE_CHARS, SearchBackend, SearchHit, ToolSpec
 from app.evals.trace import FetchCall, SearchCall, SearchHitRecord, StageUsage
@@ -35,11 +37,14 @@ class RecordingSearchBackend:
     async def search(self, query: str, max_results: int) -> list[SearchHit]:
         call = SearchCall(query=query)
         self.searches.append(call)
+        started = time.monotonic()
         try:
             hits = await self.inner.search(query, max_results)
         except Exception as exc:
             call.error = _describe(exc)
             raise
+        finally:
+            call.seconds = round(time.monotonic() - started, 1)
         call.hits = [
             SearchHitRecord(title=hit.title, url=hit.url, snippet=hit.content)
             for hit in hits
@@ -49,11 +54,14 @@ class RecordingSearchBackend:
     async def extract(self, url: str) -> str:
         call = FetchCall(url=url)
         self.fetches.append(call)
+        started = time.monotonic()
         try:
             text = await self.inner.extract(url)
         except Exception as exc:
             call.error = _describe(exc)
             raise
+        finally:
+            call.seconds = round(time.monotonic() - started, 1)
         call.text = text[:MAX_PAGE_CHARS]  # what the researcher was actually shown
         return text
 
@@ -85,9 +93,13 @@ class RecordingProvider:
         tool_choice: str = "auto",
     ) -> LLMResponse:
         stage = self.stage
+        started = time.monotonic()
         response = await self.inner.generate(messages, tools, tool_choice)
+        took = time.monotonic() - started
         tally = self.usage.setdefault(stage, StageUsage())
         tally.calls += 1
+        tally.seconds = round(tally.seconds + took, 1)
+        tally.slowest_call_seconds = round(max(tally.slowest_call_seconds, took), 1)
         if response.usage is not None:
             tally.input_tokens += response.usage.input_tokens or 0
             tally.output_tokens += response.usage.output_tokens or 0

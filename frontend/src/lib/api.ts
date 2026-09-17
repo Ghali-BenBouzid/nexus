@@ -27,9 +27,14 @@ type QueryDetail = {
   sources: Source[];
   consulted_sources: Source[];
   gaps: string[];
+  // How long ago the job last showed signs of life (null before it starts).
+  seconds_since_heartbeat?: number | null;
 };
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+// The backend bounds a run (research budget, timeouts); this only stops a poll
+// that would otherwise never end, such as a run whose job died unnoticed.
+const MAX_POLL_MS = 20 * 60_000;
 
 export function hasInvite(): boolean {
   try {
@@ -195,57 +200,64 @@ function hostname(url: unknown): string {
   }
 }
 
-// Map a persisted backend event to the feed's AgentEvent shape. Returns null for
-// internal events the feed doesn't surface (planner_clamped, researcher_forced…).
+const AGENTS = ["supervisor", "planner", "researcher", "writer"] as const;
+type Agent = (typeof AGENTS)[number];
+const isAgent = (value: unknown): value is Agent => AGENTS.includes(value as Agent);
+
+// Map a persisted backend event to the AgentEvent the progress bar reads. Returns
+// null for internal events it doesn't surface (planner_clamped, researcher_forced…).
 function toAgentEvent(e: BackendEvent): AgentEvent | null {
   const d = e.data ?? {};
+  // Events from inside a researcher carry its number (the orchestrator tags them).
+  const index = typeof d.index === "number" ? d.index : undefined;
   switch (e.type) {
     case "planner_start":
-      return { kind: "planner", state: "start", title: t.feed.planning, sub: t.feed.planningSub };
+      return { kind: "planner", state: "start" };
     case "planner_done":
       return { kind: "plan", items: (d.sub_questions as string[]) ?? [] };
+    case "thinking":
+      return isAgent(d.agent) ? { kind: "thinking", agent: d.agent, index } : null;
     case "researcher_start":
       return {
         kind: "researcher",
         state: "start",
-        index: (d.index as number) ?? 1,
+        index: index ?? 1,
         total: (d.total as number) ?? 1,
         question: (d.sub_question as string) ?? e.message,
       };
     case "tool_call":
       if (d.tool === "fetch_page") {
         const url = (d.args as Record<string, unknown> | undefined)?.url;
-        return { kind: "tool", action: "read", domain: hostname(url), title: hostname(url) };
+        return { kind: "tool", action: "read", domain: hostname(url), index };
       }
       return {
         kind: "tool",
         action: "search",
         text: String((d.args as Record<string, unknown> | undefined)?.query ?? e.message),
+        index,
       };
     case "tool_error":
-      return { kind: "tool", action: "error", text: e.message };
+      return { kind: "tool", action: "error", text: e.message, index };
     case "researcher_done":
       return {
         kind: "researcher",
         state: "done",
-        index: (d.index as number) ?? 1,
+        index: index ?? 1,
         question: (d.sub_question as string) ?? "",
-        sub: d.found_info === false ? t.feed.noInfo : t.feed.findings,
-        hasGap: d.found_info === false,
+        outcome: d.found_info === false ? "empty" : "found",
       };
     case "researcher_failed":
       return {
         kind: "researcher",
         state: "done",
-        index: (d.index as number) ?? 1,
+        index: index ?? 1,
         question: (d.sub_question as string) ?? "",
-        sub: t.feed.couldNotResearch,
-        hasGap: true,
+        outcome: "failed",
       };
     case "writer_start":
-      return { kind: "writer", state: "start", title: t.feed.writing, sub: t.feed.writingSub };
+      return { kind: "writer", state: "start" };
     case "writer_done":
-      return { kind: "writer", state: "done", title: t.feed.reportReady, sub: t.feed.citationsLinked };
+      return { kind: "writer", state: "done" };
     default:
       return null;
   }
@@ -365,10 +377,12 @@ async function pollQuery(
     }
   };
 
-  // Poll until terminal. The 5-min backstop on the backend bounds this.
-  for (let i = 0; i < 240; i++) {
+  // Poll until terminal.
+  const giveUpAt = Date.now() + MAX_POLL_MS;
+  while (Date.now() < giveUpAt) {
     if (cb.isCancelled()) return null;
     const detail = await getQuery(id, token);
+    cb.onHeartbeat?.(detail.seconds_since_heartbeat ?? null);
     await drainEvents();
 
     // Human-in-the-loop: the run paused for the user to confirm the plan. End the

@@ -25,7 +25,6 @@ type ConversationProps = {
   onDiscardPlan: (turn: Turn) => void;
   running: boolean;
   onNewChat: () => void;
-  feedTag: string;
   // One line under the composer: the demo budget left, or that runs are simulated.
   accessNote?: string | null;
   // Left "Recent" column (live mode only): open state + toggle + load handler.
@@ -50,7 +49,6 @@ export function Conversation({
   onDiscardPlan,
   running,
   onNewChat,
-  feedTag,
   accessNote,
   historyOpen,
   onToggleHistory,
@@ -194,7 +192,6 @@ export function Conversation({
             key={t.id}
             turn={t}
             now={now}
-            feedTag={feedTag}
             inSplit={layout === "split"}
             focused={t.id === focusedId}
             onSelect={() => onFocus(t.id)}

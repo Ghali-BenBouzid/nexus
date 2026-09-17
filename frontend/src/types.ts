@@ -20,27 +20,30 @@ export type Result = {
   gaps: string[]; // unanswered questions / failed leads
 };
 
-// One event appended to the feed as it arrives.
+// One agent event, as the progress bar reads it. `index` is the researcher an
+// event came from, when it came from one.
 export type AgentEvent =
-  | { kind: "planner"; state: "start"; title: string; sub: string }
+  | { kind: "planner"; state: "start" }
   | { kind: "plan"; items: string[] }
+  // An agent is waiting on the model (a reasoning model may think for a minute).
+  | { kind: "thinking"; agent: "supervisor" | "planner" | "researcher" | "writer"; index?: number }
   | { kind: "researcher"; state: "start"; index: number; total: number; question: string }
-  | { kind: "tool"; action: "search"; text: string }
-  | { kind: "tool"; action: "read"; domain: string; title: string }
-  | { kind: "tool"; action: "error"; text: string }
   | {
       kind: "researcher";
       state: "done";
       index: number;
       question: string;
-      sub: string;
-      hasGap: boolean;
+      outcome: "found" | "empty" | "failed";
     }
-  | { kind: "writer"; state: "start" | "done"; title: string; sub: string };
+  | { kind: "tool"; action: "search"; text: string; index?: number }
+  | { kind: "tool"; action: "read"; domain: string; index?: number }
+  | { kind: "tool"; action: "error"; text: string; index?: number }
+  | { kind: "writer"; state: "start" | "done" };
 
-// An event placed on the simulated timeline: the event plus an id and the delay
-// (ms) the UI waits before revealing it.
-export type TimelineEvent = AgentEvent & { id: number; delay: number };
+// An event on a turn's timeline: the event plus an id, the delay (ms) the
+// simulated engine waits before revealing it, and `at`, the performance.now()
+// instant it reached the UI (what the step timers count from).
+export type TimelineEvent = AgentEvent & { id: number; delay: number; at?: number };
 
 // One turn in the conversation: a submitted query and everything that run
 // produced. The thread is an ordered list of these; each runs independently.
@@ -62,4 +65,8 @@ export type Turn = {
   startedAt: number; // performance.now() when the run began
   endedAt: number | null; // performance.now() when it resolved; null while running
   stopped?: boolean; // the user halted this run before it finished
+  // Live mode: seconds since the backend job last showed signs of life, as of the
+  // last poll (heartbeatSeenAt, performance.now()), so the bar can flag a stuck run.
+  heartbeatAge?: number | null;
+  heartbeatSeenAt?: number;
 };

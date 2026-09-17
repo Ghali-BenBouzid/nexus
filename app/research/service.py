@@ -1,12 +1,15 @@
 import asyncio
+import contextlib
 import logging
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents import orchestrator, writer
 from app.agents.consolidator import merge_results
+from app.agents.narration import ThinkingProvider
 from app.agents.orchestrator import OrchestratorCancelledError, OrchestratorError
 from app.agents.planner import PlannerError, plan
 from app.agents.provider import LLMProvider, ProviderCreditsError
@@ -44,6 +47,33 @@ class _EventSink:
             )
 
 
+HEARTBEAT_SECONDS = 10.0
+
+
+@asynccontextmanager
+async def _heartbeat(query_id: int) -> AsyncIterator[None]:
+    """Refresh the query's heartbeat while a job works on it, so the UI can tell a
+    long step from a dead job. Best-effort like the event feed: a failed write is
+    logged, never fatal."""
+
+    async def beat() -> None:
+        while True:
+            try:
+                async with db_session.SessionLocal() as db:
+                    await repository.touch_heartbeat(db, query_id)
+            except Exception:
+                logger.exception("heartbeat write failed for query %s", query_id)
+            await asyncio.sleep(HEARTBEAT_SECONDS)
+
+    task = asyncio.create_task(beat())
+    try:
+        yield
+    finally:
+        task.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await task
+
+
 # Query ids the user has asked to stop. The job polls this (cooperatively) and
 # aborts; in-process is enough because the job runs in this same process (a real
 # task queue would move this to Redis/DB). Membership is cleared when the job ends.
@@ -67,7 +97,7 @@ async def _run_research_pipeline(
     or failed. ``make_coro`` receives the live provider/tools/emit/should_cancel
     and returns the orchestrator coroutine to run (full ``run`` or the
     plan-confirmed ``research_from_plan``)."""
-    async with db_session.SessionLocal() as db:
+    async with db_session.SessionLocal() as db, _heartbeat(query_id):
         await repository.set_status(db, query_id, QueryStatus.running)
         try:
             backend = CachingSearchBackend(backend)
@@ -133,6 +163,8 @@ async def run_research_job(
             max_iters=settings.max_iters,
             max_concurrency=settings.max_concurrency,
             per_researcher_timeout=settings.per_researcher_timeout,
+            research_budget=settings.research_budget,
+            writer_timeout=settings.writer_timeout,
             retry_cap=settings.planner_retry_cap,
             **kw,
         ),
@@ -149,14 +181,15 @@ async def run_plan_job(
     """Phase 1 of a human-in-the-loop run: plan only, then pause for the user to
     confirm or revise (``status=awaiting_plan``). ``feedback`` re-plans after a
     rejection. A planner failure resolves the status to failed."""
-    async with db_session.SessionLocal() as db:
+    async with db_session.SessionLocal() as db, _heartbeat(query_id):
         await repository.set_status(db, query_id, QueryStatus.running)
         try:
+            emit = _EventSink(query_id)
             async with provider:
                 sub_questions = await plan(
                     prompt,
-                    provider=provider,
-                    emit=_EventSink(query_id),
+                    provider=ThinkingProvider(provider, emit, agent="planner"),
+                    emit=emit,
                     cap=settings.cap,
                     retry_cap=settings.planner_retry_cap,
                     feedback=feedback,
@@ -192,7 +225,7 @@ async def run_compose_job(
     existing reports and re-rendering them (guided by ``instructions``) into one
     longer report. No web search: it reuses the sources already gathered, so
     citations stay code-owned. Resolves the status to complete or failed."""
-    async with db_session.SessionLocal() as db:
+    async with db_session.SessionLocal() as db, _heartbeat(query_id):
         await repository.set_status(db, query_id, QueryStatus.running)
         try:
             results = await _load_results(db, source_query_ids)
@@ -206,7 +239,11 @@ async def run_compose_job(
             async with provider:
                 report = await asyncio.wait_for(
                     writer.write(
-                        merged, provider=provider, emit=emit, guidance=instructions
+                        merged,
+                        provider=ThinkingProvider(provider, emit, agent="writer"),
+                        emit=emit,
+                        guidance=instructions,
+                        timeout=settings.writer_timeout,
                     ),
                     timeout=settings.global_timeout,
                 )
@@ -263,6 +300,8 @@ async def run_research_from_plan_job(
             max_iters=settings.max_iters,
             max_concurrency=settings.max_concurrency,
             per_researcher_timeout=settings.per_researcher_timeout,
+            research_budget=settings.research_budget,
+            writer_timeout=settings.writer_timeout,
             **kw,
         ),
     )
