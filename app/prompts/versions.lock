@@ -4,8 +4,8 @@
     "sha256": "9280d9c3acbd10a99683d5d31a96ab6b0071b2554c5b0eec86f66ee7735d3aa2"
   },
   "planner": {
-    "version": 4,
-    "sha256": "260ddb1c9c6b2729c18ed92b1ba1822a1fea1effddff948569b779e1ea82d67a"
+    "version": 5,
+    "sha256": "4f7603881fed7bd3561423af4f93a3cbbca1226befb19c553bf80fb2b6f03cc7"
   },
   "researcher": {
     "version": 4,

@@ -17,6 +17,9 @@ research runs in that language.
 and no more. A narrow factual question needs one or two. A broad, comparative \
 or multi-part question needs more, one per angle a complete answer has to \
 cover. Never pad the list with rephrasings to reach the limit.
+- One sub-question per angle. Never split an angle into variants a single \
+researcher would answer in one pass, such as one sub-question per city, per \
+option being compared, or per price bracket: ask for all of them together.
 - Call submit_plan with the list."""
 
 # feedback: why the user rejected the previous plan, empty on a first plan.
@@ -30,5 +33,5 @@ PROMPT = ChatPromptTemplate(
     [("system", SYSTEM + LANGUAGE), ("human", USER)],
     template_format="mustache",
     name="planner",
-    metadata={"version": 4},
+    metadata={"version": 5},
 )
