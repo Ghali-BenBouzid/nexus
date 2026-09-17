@@ -116,7 +116,9 @@ async def _collect(
         done += 1
         ok = sum(r.succeeded for r in trace.researchers)
         research = (
-            f", {ok}/{len(trace.researchers)} researchers ok" if trace.plan else ""
+            f", {ok}/{len(trace.researchers)} researchers ok"
+            if trace.researchers
+            else ""
         )
         status = f"FAILED ({trace.error})" if trace.error else trace.route
         print(
