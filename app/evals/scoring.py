@@ -187,11 +187,11 @@ class JudgedCase:
     test_case: LLMTestCase
 
 
-def _dated(trace: RunTrace, question: str) -> str:
+def dated_input(trace: RunTrace, question: str) -> str:
     return f"Today's date: {trace.run_date}\nUser's message: {question}"
 
 
-def _expected(golden: Golden) -> str:
+def expected_output(golden: Golden) -> str:
     text = golden.expected_behavior
     if golden.expected_facts:
         text += "\nFacts a correct response contains:\n" + "\n".join(
@@ -216,9 +216,9 @@ def judged_cases(
                 "response",
                 EXPECTED_BEHAVIOR,
                 LLMTestCase(
-                    input=_dated(trace, golden.input),
+                    input=dated_input(trace, golden.input),
                     actual_output=response,
-                    expected_output=_expected(golden),
+                    expected_output=expected_output(golden),
                 ),
             )
         )
@@ -237,14 +237,14 @@ def judged_cases(
                     "response",
                     TEMPORAL_AWARENESS,
                     LLMTestCase(
-                        input=_dated(trace, golden.input), actual_output=response
+                        input=dated_input(trace, golden.input), actual_output=response
                     ),
                 )
             )
 
     if trace.plan:
         plan_case = LLMTestCase(
-            input=_dated(trace, trace.research_query or golden.input),
+            input=dated_input(trace, trace.research_query or golden.input),
             actual_output="\n".join(
                 f"{n}. {q}" for n, q in enumerate(trace.plan, start=1)
             ),
