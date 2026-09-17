@@ -27,6 +27,7 @@ import logging
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
 from app import prompts
 from app.agents.search import TavilyBackend
@@ -69,7 +70,12 @@ def _select(goldens: list[Golden], args: argparse.Namespace) -> list[Golden]:
     return goldens[: args.limit] if args.limit else goldens
 
 
-async def _collect(goldens: list[Golden], run_dir: Path, concurrency: int) -> None:
+async def _collect(
+    goldens: list[Golden],
+    run_dir: Path,
+    concurrency: int,
+    until: Literal["plan"] | None = None,
+) -> None:
     provider = get_provider()
     backend: TavilyBackend = get_search_backend()
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -79,6 +85,7 @@ async def _collect(goldens: list[Golden], run_dir: Path, concurrency: int) -> No
         "git": _git_commit(),
         "provider": settings.llm_provider,
         "model": getattr(provider, "model", "unknown"),
+        "until": until,
         "prompts": prompts.versions(),  # what a score change between runs came from
         "settings": {
             "cap": settings.cap,
@@ -100,7 +107,9 @@ async def _collect(goldens: list[Golden], run_dir: Path, concurrency: int) -> No
     async def one(golden: Golden) -> None:
         nonlocal done
         async with limit:
-            trace = await collect_one(golden, provider=provider, backend=backend)
+            trace = await collect_one(
+                golden, provider=provider, backend=backend, until=until
+            )
         # Appended as each finishes, so an interrupted run keeps what it collected.
         with traces_path.open("a", encoding="utf-8") as out:
             out.write(trace.model_dump_json() + "\n")
@@ -208,7 +217,13 @@ def main() -> None:
             "--concurrency", type=int, default=3, help="goldens run at once"
         )
 
-    selection(commands.add_parser("collect", help="run the pipeline, save traces"))
+    collect = commands.add_parser("collect", help="run the pipeline, save traces")
+    selection(collect)
+    collect.add_argument(
+        "--until",
+        choices=["plan"],
+        help="stop after planning: routing and plans only, no searches or report",
+    )
     run = commands.add_parser("run", help="collect, then score")
     selection(run)
     run.add_argument("--no-judge", action="store_true")
@@ -271,7 +286,11 @@ def main() -> None:
             goldens = [g for g in load_goldens() if g.id in wanted]
             candidate = RUNS_ROOT / datetime.now().strftime("%Y%m%d-%H%M%S")
             print(f"Collecting {len(goldens)} golden(s) into {candidate}/")
-            asyncio.run(_collect(goldens, candidate, args.collect_concurrency))
+            # Collected the same way as the baseline, plan-only included.
+            until = _meta(args.baseline).get("until")
+            asyncio.run(
+                _collect(goldens, candidate, args.collect_concurrency, until=until)
+            )
         print(
             asyncio.run(
                 _compare(
@@ -290,7 +309,9 @@ def main() -> None:
         raise SystemExit("no goldens match that selection")
     run_dir = RUNS_ROOT / datetime.now().strftime("%Y%m%d-%H%M%S")
     print(f"Collecting {len(goldens)} golden(s) into {run_dir}/")
-    asyncio.run(_collect(goldens, run_dir, args.concurrency))
+    asyncio.run(
+        _collect(goldens, run_dir, args.concurrency, until=getattr(args, "until", None))
+    )
     if args.command == "run":
         print(asyncio.run(_score(run_dir, judge=judge, concurrency=8)))
 

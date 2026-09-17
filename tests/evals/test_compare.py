@@ -124,3 +124,35 @@ def test_the_report_leads_with_the_score_and_explains_the_losses() -> None:
     assert "**B wins 1, A wins 1, ties 0** out of 2 judged." in report
     assert "planner v2" in report
     assert report.index("## Where A was better") < report.index("## Where B was better")
+
+
+def test_a_plan_only_run_is_not_a_missing_response() -> None:
+    judge = FakeJudge(prefers="GOOD")
+    answered = _trace("GOOD answer")
+    planned = _trace(None).model_copy(
+        update={"until": "plan", "route": "research", "plan": ["q"]}
+    )
+
+    result = _compare(answered, planned, judge)
+
+    assert result.outcome == "skipped"
+    assert judge.calls == 0
+
+
+def test_the_report_lists_goldens_whose_route_changed() -> None:
+    researched = _trace(None).model_copy(
+        update={"until": "plan", "route": "research", "plan": ["q"]}
+    )
+    result = _compare(_trace("from memory"), researched, FakeJudge(prefers="GOOD"))
+
+    report = render_comparison(
+        [result],
+        meta_a={},
+        meta_b={},
+        stage="response",
+        judge="fake",
+        judge_cost_usd=0.0,
+    )
+
+    assert "## Routing changed" in report
+    assert "- **g**: A answer, B research" in report

@@ -62,6 +62,7 @@ class PairResult(BaseModel):
     # Whether the judgments picked the same run. Often false means the pairs are
     # close, or the judge is swayed by the order it saw them in.
     agreed: bool | None = None
+    routes: tuple[str | None, str | None] | None = None  # A's, then B's
 
 
 def _output(trace: RunTrace, stage: Stage) -> str:
@@ -88,8 +89,17 @@ async def compare_pair(
     judge: DeepEvalBaseLLM,
     limit: asyncio.Semaphore,
 ) -> PairResult:
-    result = PairResult(golden_id=golden.id, category=golden.category, outcome="tie")
+    result = PairResult(
+        golden_id=golden.id,
+        category=golden.category,
+        outcome="tie",
+        routes=(a.route, b.route),
+    )
     out_a, out_b = _output(a, stage), _output(b, stage)
+    stopped_early = any(t.until == "plan" and t.plan for t in (a, b))
+    if (not out_a or not out_b) and stage == "response" and stopped_early:
+        # A plan-only run that planned has no response by design, not by failure.
+        return result.model_copy(update={"outcome": "skipped"})
     if not out_a or not out_b:
         if stage == "plan" or (not out_a and not out_b):
             # A plan only exists on the research route: nothing to compare.
@@ -193,6 +203,13 @@ def render_comparison(
         f"| {category} | {c['b']} | {c['a']} | {c['tie']} |"
         for category, c in sorted(by_category.items())
     ]
+
+    routes = [r for r in results if r.routes and r.routes[0] != r.routes[1]]
+    if routes:
+        lines += ["", "## Routing changed", ""]
+        lines += [
+            f"- **{r.golden_id}**: A {r.routes[0]}, B {r.routes[1]}" for r in routes
+        ]
 
     # A's wins first: they are what a candidate B has to explain.
     for outcome, title in (

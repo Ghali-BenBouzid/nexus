@@ -29,9 +29,9 @@ class ScriptedProvider:
     async def generate(
         self, messages: list[Message], tools: object = None, tool_choice: str = "auto"
     ) -> LLMResponse:
-        system = messages[0].content or ""
+        names = {tool.name for tool in tools or []}  # type: ignore[attr-defined]
         usage = Usage(input_tokens=10, output_tokens=5, cost_usd=0.001)
-        if "controller of a research assistant" in system:
+        if "answer" in names:
             args = (
                 {"reply": "Hi there."}
                 if self.route == "answer"
@@ -40,7 +40,7 @@ class ScriptedProvider:
             return LLMResponse(
                 tool_calls=[ToolCall(id="s", name=self.route, args=args)], usage=usage
             )
-        if "research planner" in system:
+        if "submit_plan" in names:
             return LLMResponse(
                 tool_calls=[
                     ToolCall(
@@ -51,7 +51,7 @@ class ScriptedProvider:
                 ],
                 usage=usage,
             )
-        if "research agent" in system:
+        if "submit_finding" in names:
             question = messages[1].content or ""
             searched = any(m.role == "tool" for m in messages)
             if not searched:
@@ -162,3 +162,16 @@ async def test_search_failures_are_recorded_not_raised() -> None:
     errors = [s.error for r in trace.researchers for s in r.searches]
     assert errors and all("search is down" in e for e in errors)
     assert all(r.events for r in trace.researchers)  # the tool_error event is kept
+
+
+async def test_a_plan_only_run_stops_before_any_search() -> None:
+    trace = await collect_one(
+        GOLDEN, provider=ScriptedProvider(), backend=Backend(), until="plan"
+    )
+
+    assert trace.error is None
+    assert trace.until == "plan"
+    assert trace.plan == ["what is X", "obscure q2"]
+    assert trace.researchers == []
+    assert trace.report is None
+    assert set(trace.usage) == {"supervisor", "plan"}
