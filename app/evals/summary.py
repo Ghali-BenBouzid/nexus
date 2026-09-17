@@ -48,6 +48,8 @@ def summarize(scores: list[RunScore], traces: list[RunTrace], *, meta: dict) -> 
         "",
         f"- Runs: {len(scores)}  |  model: {meta.get('model', '?')}"
         f"  |  judge: {meta.get('judge', 'none')}  |  commit: {meta.get('git', '?')}",
+        "- Prompts: "
+        + ", ".join(f"{k} v{v}" for k, v in meta.get("prompts", {}).items()),
         f"- Pipeline cost: ${sum(t.cost_usd for t in traces):.4f}"
         f"  |  judge cost: ${meta.get('judge_cost_usd', 0.0):.4f}",
         f"- Judged scores pass at {THRESHOLD:.0%}.",

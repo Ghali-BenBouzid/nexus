@@ -20,6 +20,7 @@ import subprocess
 from datetime import datetime
 from pathlib import Path
 
+from app import prompts
 from app.agents.search import TavilyBackend
 from app.core.config import settings
 from app.evals.collect import collect_one
@@ -69,6 +70,7 @@ async def _collect(goldens: list[Golden], run_dir: Path, concurrency: int) -> No
         "git": _git_commit(),
         "provider": settings.llm_provider,
         "model": getattr(provider, "model", "unknown"),
+        "prompts": prompts.versions(),  # what a score change between runs came from
         "settings": {
             "cap": settings.cap,
             "max_iters": settings.max_iters,

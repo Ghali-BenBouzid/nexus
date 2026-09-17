@@ -225,6 +225,7 @@ Nexus is set up to run on Railway (API, worker and Redis), Neon (Postgres) and C
 
 - [`app/agents/orchestrator.py`](app/agents/orchestrator.py): the LangGraph graph
 - [`app/agents/`](app/agents/): the supervisor, planner, researcher, consolidator and writer
+- [`app/prompts/`](app/prompts/): the agents' prompts, as versioned LangChain prompt templates
 - [`app/research/service.py`](app/research/service.py): the jobs that run the graph and save its progress
 - [`app/jobs.py`](app/jobs.py) and [`app/worker.py`](app/worker.py): the queue and the worker
 - [`app/billing/`](app/billing/): budgets and the usage ledger
