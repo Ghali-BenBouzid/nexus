@@ -5,11 +5,11 @@ from app.agents.openai_provider import OUT_OF_CREDITS
 from app.agents.provider import LLMResponse, ProviderError, ToolCall
 from app.billing.service import BUDGET_EXHAUSTED
 from app.conversations.service import PROVIDER_DOWN
-from app.research.dependencies import get_provider
+from app.research.dependencies import get_provider, get_search_backend
 from main import app
 from tests.accounts import login_as
 from tests.agents.test_openai_provider import NO_BACKOFF, _provider
-from tests.research.test_research import _use_fake_pipeline
+from tests.research.test_research import FakeBackend, _use_fake_pipeline
 
 
 class _AnswerProvider:
@@ -312,6 +312,7 @@ async def test_a_key_over_its_credit_limit_tells_the_user_credits_ran_out(
     app.dependency_overrides[get_provider] = lambda: _provider(
         key_limit, retry=NO_BACKOFF
     )
+    app.dependency_overrides[get_search_backend] = FakeBackend
     created = await client.post(
         "/conversations", headers=auth_headers, json={"prompt": "first"}
     )
