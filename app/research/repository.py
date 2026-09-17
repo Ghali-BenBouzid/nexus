@@ -11,6 +11,13 @@ from app.models.query import Query, QueryEvent, QueryStatus
 # it) can never overwrite each other's outcome.
 _IN_FLIGHT = (QueryStatus.pending, QueryStatus.running, QueryStatus.awaiting_plan)
 STOPPED_RESPONDING = "The research stopped responding. Try again."
+STOPPED = "Research was stopped."
+
+
+def stopped_by_user(query: Query) -> bool:
+    """A failed query the user stopped, as opposed to one that broke.
+    ponytail: read from the stop's message; a "stopped" status if it needs more."""
+    return query.status == QueryStatus.failed and query.error == STOPPED
 
 
 def _now() -> datetime:

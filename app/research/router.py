@@ -119,7 +119,7 @@ async def cancel_query(
     # The stop is the status itself: a job, in this process or on a worker, sees
     # it on its next heartbeat and stops spending. An awaiting_plan query has no
     # job and just resolves. One that already ended keeps its outcome.
-    await repository.fail_query(db, query_id, "Research was stopped.")
+    await repository.fail_query(db, query_id, repository.STOPPED)
 
 
 @router.get("/query/{query_id}", response_model=QueryDetail)
@@ -155,6 +155,7 @@ async def get_query(
         report=query.report,
         reply=query.reply,
         error=query.error,
+        stopped=repository.stopped_by_user(query),
         plan=query.plan,
         sources=result.sources if result else [],
         consulted_sources=consulted,
@@ -190,12 +191,12 @@ async def confirm_plan(
     await repository.set_status(db, query_id, QueryStatus.pending)
     await jobs.submit(
         background_tasks,
-        service.run_research_from_plan_job,
+        service.review_plan_job,
         provider=provider,
         backend=backend,
         query_id=query_id,
-        sub_questions=query.plan,
         user_id=current_user.id,
+        approved=True,
     )
 
 
@@ -207,6 +208,7 @@ async def revise_plan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
     provider: LLMProvider = Depends(get_provider),
+    backend: SearchBackend = Depends(get_search_backend),
 ):
     """Reject the plan (optionally with feedback) and re-plan. Loops back to
     awaiting_plan. Only valid while the query is awaiting_plan."""
@@ -221,10 +223,11 @@ async def revise_plan(
     await repository.set_status(db, query_id, QueryStatus.pending)
     await jobs.submit(
         background_tasks,
-        service.run_plan_job,
+        service.review_plan_job,
         provider=provider,
+        backend=backend,
         query_id=query_id,
-        prompt=query.prompt,
         user_id=current_user.id,
+        approved=False,
         feedback=payload.feedback,
     )

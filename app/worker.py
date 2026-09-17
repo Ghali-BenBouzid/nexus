@@ -22,21 +22,15 @@ from app.jobs import Job
 from app.observability import configure_tracing
 from app.research import repository
 from app.research.service import (
-    run_compose_job,
-    run_plan_job,
-    run_research_from_plan_job,
+    close_graph,
+    open_graph,
+    review_plan_job,
     run_research_job,
 )
 
 logger = logging.getLogger(__name__)
 
-JOBS: tuple[Job, ...] = (
-    route_message,
-    run_plan_job,
-    run_research_job,
-    run_research_from_plan_job,
-    run_compose_job,
-)
+JOBS: tuple[Job, ...] = (route_message, run_research_job, review_plan_job)
 
 # A job beats every 5 s, so this long without one means its worker died.
 STALE_AFTER_SECONDS = 90
@@ -66,12 +60,18 @@ async def startup(ctx: dict[str, Any]) -> None:
     # twice.
     logging.getLogger("arq").propagate = False
     configure_tracing()
+    await open_graph()
+
+
+async def shutdown(ctx: dict[str, Any]) -> None:
+    await close_graph()
 
 
 class WorkerSettings:
     functions = [_task(job) for job in JOBS]
     cron_jobs = [cron(reap_stalled, second=0, run_at_startup=True)]  # every minute
     on_startup = startup
+    on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
     max_jobs = settings.worker_max_jobs
     # Above the jobs' own backstop, so arq never cuts a run the budgets bound.

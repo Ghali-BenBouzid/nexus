@@ -21,9 +21,7 @@ from langsmith import get_current_run_tree, traceable
 from app.core.config import settings
 
 # Plumbing args that carry no data worth recording on a step's trace inputs.
-_INFRA_KEYS = frozenset(
-    {"provider", "emit", "tools", "should_cancel", "backend", "make_coro"}
-)
+_INFRA_KEYS = frozenset({"provider", "emit", "tools", "should_cancel", "backend"})
 
 
 def _step_inputs(inputs: dict[str, Any]) -> dict[str, Any]:

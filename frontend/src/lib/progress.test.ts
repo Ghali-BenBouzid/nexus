@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentEvent, TimelineEvent } from "../types";
-import { summarize } from "./progress";
+import { steps, summarize } from "./progress";
 
 let seq = 0;
 const at = (event: AgentEvent, when: number): TimelineEvent => ({ ...event, id: seq++, delay: 0, at: when });
@@ -42,5 +42,42 @@ describe("summarize", () => {
 
   it("has nothing to time before the first event", () => {
     expect(summarize([])).toMatchObject({ stage: "starting", active: 0, lastAt: null, latest: null });
+  });
+});
+
+describe("steps", () => {
+  const writing = [
+    at({ kind: "plan", items: ["a", "b"] }, 1),
+    at({ kind: "researcher", state: "start", index: 1, total: 2, question: "a" }, 2),
+    at({ kind: "researcher", state: "done", index: 1, question: "a", outcome: "found" }, 3),
+    at({ kind: "writer", state: "start" }, 4),
+    at({ kind: "thinking", agent: "writer" }, 5),
+  ];
+
+  it("keeps a live run's current step running", () => {
+    expect(steps(summarize(writing), null).at(-1)).toEqual({ kind: "write", mark: "run", cut: false });
+  });
+
+  it("shows a step the user stopped as stopped, not as still running", () => {
+    const list = steps(summarize(writing), "stopped");
+
+    expect(list.at(-1)).toEqual({ kind: "write", mark: "stop", cut: true });
+    expect(list.filter((s) => s.mark === "run")).toEqual([]);
+    expect(list[1]).toMatchObject({ kind: "researcher", mark: "ok", cut: false });
+  });
+
+  it("marks researchers a failure cut short, and keeps the ones that finished", () => {
+    const researching = [
+      at({ kind: "plan", items: ["a", "b"] }, 1),
+      at({ kind: "researcher", state: "start", index: 1, total: 2, question: "a" }, 2),
+      at({ kind: "researcher", state: "start", index: 2, total: 2, question: "b" }, 2),
+      at({ kind: "researcher", state: "done", index: 2, question: "b", outcome: "empty" }, 3),
+    ];
+
+    expect(steps(summarize(researching), "failed").map((s) => [s.kind, s.mark, s.cut])).toEqual([
+      ["plan", "ok", false],
+      ["researcher", "warn", true],
+      ["researcher", "warn", false],
+    ]);
   });
 });

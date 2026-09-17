@@ -35,6 +35,7 @@ class MessageQuery(BaseModel):
     report: str | None
     reply: str | None = None  # the supervisor's direct answer, on an answer turn
     error: str | None
+    stopped: bool = False  # failed because the user stopped it, not broken
     plan: list[str] | None = None  # proposed sub-questions while awaiting_plan
     sources: list[Source]
     gaps: list[str]

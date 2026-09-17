@@ -484,3 +484,4 @@ async def test_out_of_credits_fails_the_run_with_a_clear_message(
 
     assert detail.json()["status"] == "failed"
     assert detail.json()["error"] == OUT_OF_CREDITS
+    assert detail.json()["stopped"] is False

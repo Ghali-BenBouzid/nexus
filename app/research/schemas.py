@@ -46,6 +46,7 @@ class QueryDetail(BaseSchema):
     report: str | None
     reply: str | None = None  # the supervisor's direct answer, on an answer turn
     error: str | None
+    stopped: bool = False  # failed because the user stopped it, not broken
     plan: list[str] | None = None  # proposed sub-questions while awaiting_plan
     sources: list[Source]  # cited sources backing the report
     consulted_sources: list[Source] = []  # full provenance/audit trail

@@ -2,10 +2,10 @@
 
 It drives the same stage functions and settings the production jobs use
 (supervisor.decide, plan, research, consolidate, write), with the provider and
-search backend wrapped in recorders. It calls the stages itself rather than
-orchestrator.run so every search is tied to the researcher that made it. The glue
-it mirrors (fan-out under a semaphore, a per-researcher timeout, failed researchers
-becoming gaps) is small and covered by the orchestrator's own tests.
+search backend wrapped in recorders. It calls the stages itself rather than the
+research graph so every search is tied to the researcher that made it. The glue
+it mirrors (fan-out with a concurrency limit, a per-researcher timeout, failed
+researchers becoming gaps) is small and covered by the graph's own tests.
 """
 
 import asyncio
