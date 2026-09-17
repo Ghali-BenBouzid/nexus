@@ -1,16 +1,24 @@
-from fastapi import BackgroundTasks, HTTPException
+import logging
+
+from fastapi import BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import jobs
 from app.agents import supervisor
+from app.agents.narration import ThinkingProvider
 from app.agents.provider import LLMProvider, ProviderCreditsError, ProviderError
 from app.agents.tools import SearchBackend
 from app.billing.metering import MeteredProvider
 from app.conversations import repository
 from app.core.config import settings
+from app.db import session as db_session
 from app.models.conversation import Conversation, Message, MessageRole
 from app.models.query import Query, QueryStatus
 from app.research import repository as research_repository
 from app.research import service as research_service
+from app.research.dependencies import get_provider, get_search_backend
+
+logger = logging.getLogger(__name__)
 
 # Keep the context the supervisor sees bounded: only the tail of the thread, and
 # each report trimmed, so routing stays a cheap call. The supervisor can pull the
@@ -51,101 +59,129 @@ async def submit_message(
     backend: SearchBackend,
     background_tasks: BackgroundTasks,
 ) -> Message:
-    """Let the supervisor decide what to do with the user's message: answer from
-    the conversation's reports, compose a new report by merging the existing ones,
-    or start a fresh research run. Records the user message and the assistant's,
-    and returns the latter (its ``query_id`` is non-null when it carries a research
-    or compose run). The caller checks the account's budget first.
-
-    Every model call is billed to the conversation's owner through
-    ``MeteredProvider``: the supervisor's own calls, and each job it launches."""
-    user_id = conversation.user_id
-    messages = await repository.list_messages(db, conversation.id)
-    query_ids = [m.query_id for m in messages if m.query_id is not None]
-    queries = await repository.queries_by_id(db, query_ids)
-    context = _render_context(messages, queries)
-    completed = [
-        queries[m.query_id]
-        for m in messages
-        if m.query_id is not None
-        and m.query_id in queries
-        and queries[m.query_id].status == QueryStatus.complete
-        and queries[m.query_id].report
-    ]
-    reports = [(query.prompt, query.report or "") for query in completed]
-
-    # The supervisor runs a tool loop, so it needs both the provider (its own model
-    # calls) and the search backend (its web_search / fetch_page tools) open.
-    metered = MeteredProvider(provider, user_id=user_id)
-    try:
-        async with metered, backend:
-            decision = await supervisor.decide(
-                content,
-                context,
-                provider=metered,
-                backend=backend,
-                reports=reports,
-                max_iters=settings.supervisor_max_iters,
-            )
-    except ProviderCreditsError as exc:
-        raise HTTPException(status_code=503, detail=str(exc)) from exc
-    except ProviderError as exc:
-        raise HTTPException(status_code=503, detail=PROVIDER_DOWN) from exc
-
-    # Stored only once the supervisor has decided, so a provider failure above does
-    # not leave an unanswered message in the thread.
+    """Record the user's message and the assistant turn that will answer it, and
+    queue the routing job; no model is called in the request. The turn's query
+    tracks it from here: its events feed the live progress bar, and it ends
+    complete (a reply or a report), awaiting_plan or failed. Returns the
+    assistant message. The caller checks the account's budget first."""
     await repository.add_message(db, conversation.id, MessageRole.user, content)
-
-    if decision.action == "answer":
-        return await repository.add_message(
-            db, conversation.id, MessageRole.assistant, content=decision.reply
-        )
-
-    if decision.action == "compose" and completed:
-        # Merge the existing reports into one new, longer report (no new search).
-        query = await research_repository.create_pending_query(
-            db=db,
-            user_id=user_id,
-            prompt=decision.instructions or content,
-            title=decision.title or None,
-        )
-        await _title_conversation(db, conversation, decision.title)
-        assistant = await repository.add_message(
-            db, conversation.id, MessageRole.assistant, content="", query_id=query.id
-        )
-        background_tasks.add_task(
-            research_service.run_compose_job,
-            query.id,
-            decision.instructions or content,
-            source_query_ids=[q.id for q in completed],
-            provider=MeteredProvider(provider, user_id=user_id, query_id=query.id),
-        )
-        return assistant
-
-    # research (the default, and the fallback when compose has nothing to merge):
-    # plan first, then pause for the user to confirm the plan before research runs.
-    research_query = decision.query or content
     query = await research_repository.create_pending_query(
-        db=db,
-        user_id=user_id,
-        prompt=research_query,
-        title=decision.title or None,
+        db=db, user_id=conversation.user_id, prompt=content
     )
-    await _title_conversation(db, conversation, decision.title)
     assistant = await repository.add_message(
-        db,
-        conversation.id,
-        MessageRole.assistant,
-        content="",
-        query_id=query.id,
+        db, conversation.id, MessageRole.assistant, content="", query_id=query.id
     )
-    background_tasks.add_task(
-        research_service.run_plan_job,
-        query.id,
-        research_query,
-        provider=MeteredProvider(provider, user_id=user_id, query_id=query.id),
+    await jobs.submit(
+        background_tasks,
+        route_message,
+        provider=provider,
+        backend=backend,
+        query_id=query.id,
+        conversation_id=conversation.id,
+        message_id=assistant.id,
     )
     return assistant
+
+
+async def route_message(
+    query_id: int,
+    conversation_id: int,
+    message_id: int,
+    *,
+    provider: LLMProvider | None = None,
+    backend: SearchBackend | None = None,
+) -> None:
+    """The routing job. The supervisor decides what the message needs (answer
+    from the conversation, compose the existing reports, or research), then the
+    turn carries on in this same job. Every model call is billed to the
+    conversation's owner, and each one shows as "thinking" on the turn."""
+    provider = provider or get_provider()
+    backend = backend or get_search_backend()
+    async with db_session.SessionLocal() as db:
+        conversation = await db.get(Conversation, conversation_id)
+        query = await db.get(Query, query_id)
+        if conversation is None or query is None:
+            return
+        user_id = conversation.user_id
+        content = query.prompt
+
+        # The thread before this turn; the user's message is the question itself.
+        messages = await repository.list_messages(db, conversation_id)
+        before = [m for m in messages if m.id < message_id]
+        if before and before[-1].role == MessageRole.user:
+            before = before[:-1]
+        query_ids = [m.query_id for m in before if m.query_id is not None]
+        queries = await repository.queries_by_id(db, query_ids)
+        completed = [
+            queries[m.query_id]
+            for m in before
+            if m.query_id in queries
+            and queries[m.query_id].status == QueryStatus.complete
+            and queries[m.query_id].report
+        ]
+
+        emit = research_service.EventSink(query_id)
+        metered = MeteredProvider(provider, user_id=user_id, query_id=query_id)
+        async with research_service.job_liveness(query_id) as live:
+            if not await research_repository.mark_running(db, query_id):
+                return  # stopped while it waited in the queue
+            try:
+                async with metered, backend:
+                    decision = await supervisor.decide(
+                        content,
+                        _render_context(before, queries),
+                        provider=ThinkingProvider(metered, emit, agent="supervisor"),
+                        backend=backend,
+                        reports=[(q.prompt, q.report or "") for q in completed],
+                        emit=emit,
+                        max_iters=settings.supervisor_max_iters,
+                    )
+            except ProviderCreditsError as exc:
+                await research_repository.fail_query(db, query_id, str(exc))
+                return
+            except ProviderError:
+                await research_repository.fail_query(db, query_id, PROVIDER_DOWN)
+                return
+            except Exception:
+                logger.exception("routing crashed for query %s", query_id)
+                await research_repository.fail_query(
+                    db, query_id, "Routing failed due to an internal error."
+                )
+                return
+            if live.stopped:
+                return
+
+        if decision.action == "answer":
+            await repository.set_content(db, message_id, decision.reply)
+            await research_repository.complete_answer(db, query_id, decision.reply)
+            return
+
+        if decision.action == "compose" and completed:
+            # Merge the existing reports into one new, longer report (no search).
+            instructions = decision.instructions or content
+            await research_repository.update_turn(
+                db, query_id, prompt=instructions, title=decision.title or None
+            )
+            await _title_conversation(db, conversation, decision.title)
+            await research_service.run_compose_job(
+                query_id,
+                instructions,
+                source_query_ids=[q.id for q in completed],
+                user_id=user_id,
+                provider=provider,
+            )
+            return
+
+        # research (the default, and the fallback when compose has nothing to
+        # merge): plan now, then pause for the user to confirm the plan.
+        research_query = decision.query or content
+        await research_repository.update_turn(
+            db, query_id, prompt=research_query, title=decision.title or None
+        )
+        await _title_conversation(db, conversation, decision.title)
+        await research_service.run_plan_job(
+            query_id, research_query, user_id=user_id, provider=provider
+        )
 
 
 async def _title_conversation(

@@ -5,11 +5,11 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import jobs
 from app.agents.provider import LLMProvider
 from app.agents.schemas import ResearchResult
 from app.agents.tools import SearchBackend
 from app.auth.dependencies import get_current_user
-from app.billing.metering import MeteredProvider
 from app.billing.service import ensure_budget
 from app.db.session import get_db
 from app.models.query import QueryStatus
@@ -62,14 +62,16 @@ async def create_query(
     query = await repository.create_pending_query(
         db=db, user_id=current_user.id, prompt=query_create.prompt
     )
-    # provider/backend have no request-scoped teardown, so the task can hold them
-    # past the response
-    background_tasks.add_task(
+    # provider/backend have no request-scoped teardown, so an inline job can hold
+    # them past the response; a worker builds its own.
+    await jobs.submit(
+        background_tasks,
         service.run_research_job,
-        query.id,
-        query.prompt,
-        provider=MeteredProvider(provider, user_id=current_user.id, query_id=query.id),
+        provider=provider,
         backend=backend,
+        query_id=query.id,
+        prompt=query.prompt,
+        user_id=current_user.id,
     )
     return query
 
@@ -114,14 +116,10 @@ async def cancel_query(
     )
     if query is None:
         raise HTTPException(status_code=404, detail="Query not found")
-    if query.status in (QueryStatus.pending, QueryStatus.running):
-        service.request_cancel(query_id)
-        await repository.fail_query(db, query_id, "Research was stopped.")
-    elif query.status == QueryStatus.awaiting_plan:
-        # Paused for plan confirmation: the plan job has already finished, so there
-        # is no running job to signal. Just resolve the status, otherwise a reload
-        # would rehydrate the query as still awaiting confirmation.
-        await repository.fail_query(db, query_id, "Research was stopped.")
+    # The stop is the status itself: a job, in this process or on a worker, sees
+    # it on its next heartbeat and stops spending. An awaiting_plan query has no
+    # job and just resolves. One that already ended keeps its outcome.
+    await repository.fail_query(db, query_id, "Research was stopped.")
 
 
 @router.get("/query/{query_id}", response_model=QueryDetail)
@@ -155,6 +153,7 @@ async def get_query(
         title=query.title,
         status=query.status,
         report=query.report,
+        reply=query.reply,
         error=query.error,
         plan=query.plan,
         sources=result.sources if result else [],
@@ -186,13 +185,17 @@ async def confirm_plan(
     if query.status != QueryStatus.awaiting_plan or not query.plan:
         raise HTTPException(status_code=409, detail="No plan is awaiting confirmation.")
     await ensure_budget(db, current_user)
-    await repository.set_status(db, query_id, QueryStatus.running)
-    background_tasks.add_task(
+    # Pending until a job takes it (then running, with a heartbeat). Anything but
+    # awaiting_plan also turns a second confirm into a 409.
+    await repository.set_status(db, query_id, QueryStatus.pending)
+    await jobs.submit(
+        background_tasks,
         service.run_research_from_plan_job,
-        query_id,
-        query.plan,
-        provider=MeteredProvider(provider, user_id=current_user.id, query_id=query_id),
+        provider=provider,
         backend=backend,
+        query_id=query_id,
+        sub_questions=query.plan,
+        user_id=current_user.id,
     )
 
 
@@ -215,11 +218,13 @@ async def revise_plan(
     if query.status != QueryStatus.awaiting_plan:
         raise HTTPException(status_code=409, detail="No plan is awaiting revision.")
     await ensure_budget(db, current_user)
-    await repository.set_status(db, query_id, QueryStatus.running)
-    background_tasks.add_task(
+    await repository.set_status(db, query_id, QueryStatus.pending)
+    await jobs.submit(
+        background_tasks,
         service.run_plan_job,
-        query_id,
-        query.prompt,
-        provider=MeteredProvider(provider, user_id=current_user.id, query_id=query_id),
+        provider=provider,
+        query_id=query_id,
+        prompt=query.prompt,
+        user_id=current_user.id,
         feedback=payload.feedback,
     )

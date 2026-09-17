@@ -52,14 +52,19 @@ Agent progress is emitted as events and persisted, so the frontend tails a live
 
 ### Backend
 
-Requires [uv](https://docs.astral.sh/uv/) and a Postgres database.
+Requires [uv](https://docs.astral.sh/uv/), a Postgres database and Redis.
 
 ```bash
-uv sync                      # install dependencies
-cp .env.example .env         # then fill in the values (see below)
-uv run alembic upgrade head  # create the schema
-uv run uvicorn main:app --reload
+uv sync                           # install dependencies
+cp .env.example .env              # then fill in the values (see below)
+uv run alembic upgrade head       # create the schema
+uv run uvicorn main:app --reload  # the API
+uv run arq app.worker.WorkerSettings  # the worker, in a second terminal
 ```
+
+The API records each turn and queues its jobs on Redis; the worker runs them
+(routing, planning, research, writing). Without Redis, set `JOB_QUEUE=inline`
+to run the jobs inside the API process instead.
 
 The API serves at `http://localhost:8000` (`/docs` for Swagger). Set at least
 `DATABASE_URL`, `SECRET_KEY`, `TAVILY_API_KEY`, and the key for your chosen
@@ -113,10 +118,10 @@ uv run python -m app.evals run --category owner,current # a slice
 uv run python -m app.evals score evals_runs/<run id>    # re-score saved traces
 ```
 
-`app/evals/goldens.toml` holds about 60 realistic first messages (questions
-about the app and its author, time-sensitive questions, facts, comparisons,
-false premises, unanswerable and multilingual queries), each with the behavior a
-good response shows. `collect` runs them through the real pipeline and records
+`app/evals/goldens.toml` holds 150 realistic first messages (questions about
+the app and its author, time-sensitive questions, facts, comparisons, false
+premises, unanswerable and multilingual queries, plus a stress set of typos,
+injections and malformed input), each with the behavior a good response shows. `collect` runs them through the real pipeline and records
 every stage: the routing decision, the plan, each researcher's searches, pages
 and claims, the report and its cost. `score` then measures each stage with
 deterministic checks and DeepEval metrics judged by `EVAL_JUDGE_MODEL`: plan
@@ -129,19 +134,27 @@ Collecting spends provider and Tavily credits; scoring spends judge credits.
 
 ## Deployment
 
-The live stack is Railway (backend) + Neon (Postgres) + Cloudflare Pages
-(frontend).
+The live stack is Railway (API, worker and Redis) + Neon (Postgres) +
+Cloudflare Pages (frontend). The API never calls a model inside a request: it
+records the turn and queues a job on Redis, and the worker runs it.
 
 1. **Database (Neon):** create a Postgres database and copy its connection
    string. Use the `postgresql+asyncpg://...` form and set `DATABASE_SSL=true`.
-2. **Backend (Railway):** deploy from the repo root `Dockerfile`. The image runs
+2. **Redis (Railway):** add a Redis service to the project. Its private URL is
+   the `REDIS_URL` both services below use.
+3. **API (Railway):** deploy from the repo root `Dockerfile`. The image runs
    `alembic upgrade head` then serves on `$PORT`. Set the environment variables
    from `.env.example` (`DATABASE_URL`, `DATABASE_SSL=true`, `SECRET_KEY`,
    `CORS_ORIGINS` and `FRONTEND_URL` = your frontend URL, `TAVILY_API_KEY`,
-   `OPENROUTER_API_KEY`). Give the OpenRouter key a hard credit limit: it caps
-   the total bill. `GET /health` is the health check. Create accounts with
-   `railway run uv run python -m app.admin create ...`.
-3. **Frontend (Cloudflare Pages):** the frontend lives in a subdirectory, so set
+   `OPENROUTER_API_KEY`, `REDIS_URL`). Give the OpenRouter key a hard credit
+   limit: it caps the total bill. `GET /health` is the health check. Create
+   accounts with `railway run uv run python -m app.admin create ...`.
+4. **Worker (Railway):** a second service from the same repo and `Dockerfile`,
+   with the same variables, the start command
+   `arq app.worker.WorkerSettings` and no public domain. Scale it by adding
+   replicas; each runs `WORKER_MAX_JOBS` jobs at once. A run whose worker dies
+   is failed after 90 s without a heartbeat instead of hanging.
+5. **Frontend (Cloudflare Pages):** the frontend lives in a subdirectory, so set
    the project's **root directory** to `frontend`. Build command `npm run build`,
    build output directory `dist` (Vite compiles the static site to
    `frontend/dist`). Set `VITE_API_BASE_URL` = the Railway URL and

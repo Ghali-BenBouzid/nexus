@@ -34,10 +34,10 @@ class Conversation(Base):
 
 
 class Message(Base):
-    """One turn in a conversation. An assistant message that carries a research run
-    links to its ``Query`` via ``query_id``; a plain chat reply (step 3) leaves it
-    null and puts the reply in ``content``. The research is always reached through
-    the message (no conversation_id on the query)."""
+    """One turn in a conversation. Each assistant message links to the ``Query``
+    that tracks its turn via ``query_id``: a research report, or a direct reply
+    (also copied into ``content``). Older replies have no query. The research is
+    always reached through the message (no conversation_id on the query)."""
 
     __tablename__ = "messages"
 

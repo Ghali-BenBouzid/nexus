@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app import jobs
 from app.auth.router import router as auth_router
 from app.conversations.router import router as conversations_router
 from app.core.config import settings
@@ -20,16 +21,21 @@ async def lifespan(app: FastAPI):
     # Turn on LangSmith tracing if it is configured (no-op otherwise). Done before
     # serving so every request's agent run is captured.
     configure_tracing()
-    # Clean up jobs orphaned by a previous restart (best-effort: a DB blip at boot
-    # must not stop the app from starting).
-    try:
-        async with db_session.SessionLocal() as db:
-            reaped = await repository.reap_interrupted_queries(db)
-        if reaped:
-            logger.warning("failed %d query(ies) interrupted by a restart", reaped)
-    except Exception:
-        logger.exception("startup reaping of interrupted queries failed")
+    if settings.job_queue == "inline":
+        # Inline jobs run in this process, so a query still running from before a
+        # restart is orphaned: fail it (best-effort: a DB blip at boot must not
+        # stop the app). With a worker, a restart here touches no job; the worker
+        # reaps its own dead runs by their heartbeat.
+        try:
+            async with db_session.SessionLocal() as db:
+                reaped = await repository.reap_interrupted_queries(db)
+            if reaped:
+                logger.warning("failed %d query(ies) interrupted by a restart", reaped)
+        except Exception:
+            logger.exception("startup reaping of interrupted queries failed")
+    await jobs.open_queue()
     yield
+    await jobs.close_queue()
 
 
 app = FastAPI(lifespan=lifespan)

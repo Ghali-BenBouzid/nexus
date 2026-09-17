@@ -32,6 +32,7 @@ def _message_query(query: Query | None) -> MessageQuery | None:
         status=query.status,
         title=query.title,
         report=query.report,
+        reply=query.reply,
         error=query.error,
         plan=query.plan,
         sources=result.sources if result else [],

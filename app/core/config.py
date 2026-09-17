@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -58,9 +60,18 @@ class Settings(BaseSettings):
     # (research ~150 s + writer 150 s, plus planning on the one-shot path).
     global_timeout: float = 420.0  # seconds
     # Supervisor tool-loop budget: how many gather-then-decide rounds it may take
-    # before it must commit. Kept low: it runs synchronously in the request, so a
+    # before it must commit. Kept low: nothing else happens until it decides, so a
     # follow-up stays responsive; it usually decides in one round.
     supervisor_max_iters: int = 4
+
+    # Where jobs run (routing a message, planning, research, composing). "redis":
+    # the API only enqueues them and the worker process runs them
+    # (`arq app.worker.WorkerSettings`), so no model call lives inside an HTTP
+    # request and redeploying the API never kills a run. "inline": they run in the
+    # API process after the response, for the tests or a one-process setup.
+    job_queue: Literal["redis", "inline"] = "redis"
+    redis_url: str = "redis://localhost:6379"
+    worker_max_jobs: int = 10  # jobs one worker runs at once
 
     # transient-error retry/backoff for provider & search calls. Also re-rolls a
     # stochastic 400 tool_use_failed (a malformed tool call usually parses on a
