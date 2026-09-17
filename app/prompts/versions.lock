@@ -1,0 +1,18 @@
+{
+  "supervisor": {
+    "version": 1,
+    "sha256": "59decca08089239ae28e6be5759760b0c582b4398a44bf45ea77217a1456659c"
+  },
+  "planner": {
+    "version": 1,
+    "sha256": "ddda9d41bd0d131f9c464d8971e9f86c758abf0b5f0bd708113e5dc21501d520"
+  },
+  "researcher": {
+    "version": 1,
+    "sha256": "d1b5b8f0aa0e7364ed87b0186fb5c4f1d0b7dae23b57231ca04cd43745e3bdd4"
+  },
+  "writer": {
+    "version": 1,
+    "sha256": "61dcc726af3c083133e789be74904f0e80b0aa21255ac9a78caf6ed7684cd8c3"
+  }
+}

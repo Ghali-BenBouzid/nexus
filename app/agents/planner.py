@@ -2,11 +2,13 @@ from collections.abc import Awaitable, Callable
 
 from pydantic import ValidationError
 
-from app.agents.language import language_directive
+from app.agents.language import detect_language
 from app.agents.provider import LLMProvider, LLMResponse, Message
 from app.agents.schemas import AgentEvent
 from app.agents.tools import SubmitPlan, SubmitPlanArgs
 from app.observability import traced_step
+from app.prompts import render
+from app.prompts.planner import PROMPT
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
 
@@ -17,22 +19,6 @@ class PlannerError(Exception):
 
 async def _noop(event: AgentEvent) -> None:
     return None
-
-
-def _system_prompt(cap: int) -> str:
-    return (
-        "You are a research planner. Break the user's question into a small set "
-        "of sub-questions that together cover it thoroughly without overlapping.\n"
-        "- Each sub-question must be self-contained: a researcher sees only that "
-        "one sentence, with no access to the original question, so carry the "
-        "needed context (subject, scope, timeframe) into each one.\n"
-        "- Target distinct facets of the question (for example definitions, "
-        "causes, effects, comparisons, current state), not rephrasings of the "
-        "same ask.\n"
-        "- Write the sub-questions in the same language as the user's question, "
-        "so the research runs in that language.\n"
-        f"- Use at most {cap} sub-questions. Call submit_plan with the list."
-    )
 
 
 @traced_step("plan")
@@ -55,19 +41,14 @@ async def plan(
     ``feedback`` carries the user's reason for rejecting a previous plan (the
     human-in-the-loop revise loop), so the planner produces a different plan.
     """
-    user = prompt
-    if feedback and feedback.strip():
-        user = (
-            f"{prompt}\n\nYour previous plan was rejected. Revise it based on this "
-            f"feedback from the user: {feedback.strip()}"
-        )
     submit = SubmitPlan()
-    messages = [
-        Message(
-            role="system", content=_system_prompt(cap) + language_directive(prompt)
-        ),
-        Message(role="user", content=user),
-    ]
+    messages = render(
+        PROMPT,
+        query=prompt,
+        cap=cap,
+        feedback=(feedback or "").strip(),
+        language=detect_language(prompt) or "",
+    )
     await emit(AgentEvent(type="planner_start", message=f"Planning: {prompt}"))
 
     sub_questions: list[str] = []

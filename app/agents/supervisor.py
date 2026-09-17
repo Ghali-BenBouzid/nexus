@@ -22,7 +22,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, ValidationError
 
-from app.agents.language import language_directive
+from app.agents.language import detect_language
 from app.agents.provider import LLMProvider, LLMResponse, Message
 from app.agents.schemas import AgentEvent
 from app.agents.tools import (
@@ -33,6 +33,8 @@ from app.agents.tools import (
     ToolResult,
     WebSearch,
 )
+from app.prompts import render
+from app.prompts.supervisor import PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -142,33 +144,6 @@ class Research(BaseToolSpec):
 
 _TERMINAL = {"answer", "compose_report", "research"}
 
-_SYSTEM_PROMPT = (
-    "You are the controller of a research assistant: the agent the user talks to. "
-    "You see the conversation so far and the reports already produced, and you "
-    "decide how to handle the user's latest message.\n"
-    "You have tools to gather what you need first:\n"
-    "- read_reports: read the full text of the reports already produced. Use it "
-    "before answering from or merging them, because the conversation only shows "
-    "excerpts.\n"
-    "- web_search / fetch_page: a quick web check when you need one small fact to "
-    "answer directly; for anything substantial, prefer research.\n"
-    "Then commit to exactly ONE terminal action:\n"
-    "- answer: reply directly from the conversation and its reports (a question "
-    "about a report, a summary, a clarification, a follow-up already covered).\n"
-    "- compose_report: merge and expand the existing reports into one new, longer, "
-    "more comprehensive report, with no new search. Choose this when the user asks "
-    "to combine, lengthen, or deepen reports already produced, rather than starting "
-    "a new search.\n"
-    "- research: start a fresh web research run, only when genuinely new "
-    "information is needed.\n"
-    "When you call research or compose_report, also give a short title (a few "
-    "words, in the user's language) naming the report it will produce.\n"
-    "Always respond in the same language as the user. Never invent facts. When in "
-    "doubt between answering and researching, prefer research; but if the user is "
-    "asking to expand or combine reports you already have, prefer compose_report "
-    "over launching another search."
-)
-
 
 async def _noop(event: AgentEvent) -> None:
     return None
@@ -203,13 +178,12 @@ async def decide(
         web_search.name: web_search,
         fetch_page.name: fetch_page,
     }
-    messages = [
-        Message(role="system", content=_SYSTEM_PROMPT + language_directive(message)),
-        Message(
-            role="user",
-            content=f"{context}\n\nLatest message from the user:\n{message}",
-        ),
-    ]
+    messages = render(
+        PROMPT,
+        conversation=context,
+        message=message,
+        language=detect_language(message) or "",
+    )
 
     for _ in range(max_iters):
         response = await provider.generate(

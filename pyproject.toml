@@ -10,6 +10,7 @@ dependencies = [
     "asyncpg>=0.31.0",
     "fastapi>=0.136.1",
     "google-genai>=2.8.0",
+    "langchain-core>=1.6.3",
     "langdetect>=1.0.9",
     "langgraph>=1",
     "langgraph-checkpoint-postgres>=3.1.2",
