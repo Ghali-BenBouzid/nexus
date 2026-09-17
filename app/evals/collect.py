@@ -12,6 +12,7 @@ import asyncio
 import logging
 import time
 from datetime import UTC, datetime
+from typing import Literal
 
 from app.agents import supervisor
 from app.agents.consolidator import consolidate
@@ -29,24 +30,28 @@ from app.evals.trace import ClaimRecord, ResearcherTrace, RunTrace, SourceRecord
 
 logger = logging.getLogger(__name__)
 
-# Every golden is a first message, so the supervisor sees an empty conversation.
-_EMPTY_CONVERSATION = "This is the start of the conversation."
 # Agent events worth keeping on a researcher's trace: they explain a failure.
 _NOTABLE_EVENTS = {"researcher_forced", "submit_invalid", "tool_error"}
 
 
 async def collect_one(
-    golden: Golden, *, provider: LLMProvider, backend: SearchBackend
+    golden: Golden,
+    *,
+    provider: LLMProvider,
+    backend: SearchBackend,
+    until: Literal["plan"] | None = None,
 ) -> RunTrace:
-    """Run one golden end to end. Never raises: a failure is recorded on the trace.
-    ``provider`` and ``backend`` must already be open; each golden gets its own
-    search cache, as each production job does."""
+    """Run one golden end to end, or only through planning with ``until="plan"``.
+    Never raises: a failure is recorded on the trace. ``provider`` and ``backend``
+    must already be open; each golden gets its own search cache, as each
+    production job does."""
     recorder = RecordingProvider(provider)
     trace = RunTrace(
         golden_id=golden.id,
         input=golden.input,
         run_date=datetime.now(UTC).date().isoformat(),
         model=recorder.model,
+        until=until,
     )
     started = time.monotonic()
     try:
@@ -74,7 +79,7 @@ async def _run(
     try:
         decision = await supervisor.decide(
             golden.input,
-            _EMPTY_CONVERSATION,
+            [],  # every golden is a first message: no conversation before it
             provider=provider,
             backend=routing_backend,
             reports=[],
@@ -95,6 +100,8 @@ async def _run(
     trace.plan = await plan(
         query, provider=provider, cap=settings.cap, retry_cap=settings.planner_retry_cap
     )
+    if trace.until == "plan":
+        return
 
     provider.stage = "research"
     semaphore = asyncio.Semaphore(settings.max_concurrency)

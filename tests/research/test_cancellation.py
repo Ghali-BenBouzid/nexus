@@ -70,7 +70,7 @@ async def test_a_stop_during_planning_wins_over_the_plan(
 
     await research_service.run_graph(
         qid,
-        {"message": "a question", "conversation": "", "prior": []},
+        {"message": "a question", "history": [], "prior": []},
         provider=_StopWhile(["q1"], qid, "research planner"),
         backend=FakeBackend(),
     )

@@ -4,8 +4,9 @@ Small models follow an explicit "write in X" instruction far more reliably than 
 soft "match the user's language", and naming the language that was actually
 detected avoids a subtle failure: a fixed example in a prompt ("if French, write
 in French") primes a small model toward that example language even for an English
-query. So the prompts stay language-neutral and the concrete language is injected
-here, per request, from the text the agent is actually working on.
+query. So the prompts stay language-neutral and the concrete language fills their
+``language`` variable, per request, from the text the agent is actually working on
+(the wording lives in app/prompts/common.py).
 """
 
 from langdetect import DetectorFactory, LangDetectException, detect_langs
@@ -62,16 +63,3 @@ def detect_language(text: str) -> str | None:
     if best.prob < _MIN_CONFIDENCE:
         return None
     return _LANGUAGE_NAMES.get(best.lang)
-
-
-def language_directive(text: str) -> str:
-    """A system-prompt suffix pinning the response to ``text``'s language, or an
-    empty string when detection is inconclusive (the agent's neutral instruction
-    then governs). Appended to an agent's system prompt."""
-    name = detect_language(text)
-    if not name:
-        return ""
-    return (
-        f"\n\nIMPORTANT: Write your entire response in {name}. Every part of your "
-        f"output must be in {name}, regardless of the language of these instructions."
-    )

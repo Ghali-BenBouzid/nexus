@@ -1,4 +1,5 @@
 from app.agents.provider import LLMResponse, ToolCall
+from app.agents.schemas import Turn
 from app.agents.supervisor import decide
 from app.agents.tools import SearchHit
 
@@ -19,6 +20,7 @@ class _ScriptedProvider:
 
     async def generate(self, messages, tools=None, tool_choice="auto") -> LLMResponse:
         self.tool_names.append([t.name for t in (tools or [])])
+        self.seen = [(m.role, m.content) for m in messages]
         return self.responses.pop(0)
 
 
@@ -40,10 +42,12 @@ def _call(name: str, args: dict) -> LLMResponse:
     return LLMResponse(tool_calls=[ToolCall(id=name, name=name, args=args)])
 
 
-async def _decide(provider, *, reports=None, message="a message", max_iters=4):
+async def _decide(
+    provider, *, reports=None, message="a message", max_iters=4, history=None
+):
     return await decide(
         message,
-        "context",
+        history or [],
         provider=provider,
         backend=_FakeBackend(),
         reports=reports or [],
@@ -126,3 +130,26 @@ async def test_decide_exhausts_to_research() -> None:
     decision = await _decide(provider, message="keep reading", max_iters=2)
     assert decision.action == "research"
     assert decision.query == "keep reading"
+
+
+async def test_the_thread_reaches_the_model_as_separate_messages() -> None:
+    # It used to arrive as one user message holding the rendered thread, where the
+    # user's words and a report excerpt were indistinguishable.
+    provider = _ScriptedProvider([_call("answer", {"reply": "Blue."})])
+
+    await _decide(
+        provider,
+        message="what colour?",
+        history=[
+            Turn(role="user", content="research the sky"),
+            Turn(
+                role="assistant", content='<report question="sky">it is blue</report>'
+            ),
+        ],
+    )
+
+    assert provider.seen[1:] == [
+        ("user", "research the sky"),
+        ("assistant", '<report question="sky">it is blue</report>'),
+        ("user", "what colour?"),
+    ]

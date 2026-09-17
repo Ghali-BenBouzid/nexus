@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from app.agents.language import language_directive
+from app.agents.language import detect_language
 from app.agents.provider import LLMProvider, LLMResponse, Message
 from app.agents.schemas import AgentEvent, Finding, FindingClaim, Source
 from app.agents.tools import (
@@ -15,25 +15,11 @@ from app.agents.tools import (
     ToolResult,
 )
 from app.observability import traced_step
+from app.prompts import render
+from app.prompts.common import today
+from app.prompts.researcher import PROMPT
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
-
-_SYSTEM_PROMPT = (
-    "You are a research agent answering a single sub-question.\n"
-    "- Use web_search to find sources, and fetch_page to read a promising page "
-    "in full when a snippet is not enough; prefer reading a source to guessing "
-    "from a snippet.\n"
-    "- If the first results are thin or off-target, search again with different "
-    "terms before settling.\n"
-    "- Each tool result lists its sources with an id like [0]. Track those ids "
-    "and cite the specific sources that support each part of your answer.\n"
-    "- When you have enough to answer well, call submit_finding. Break your "
-    "answer into individual claims, and give each claim the ids of the sources "
-    "that back it (use only the ids shown in the tool results).\n"
-    "- If you cannot find relevant information, call submit_finding with "
-    "found_info=false and say so plainly. Never invent facts or sources.\n"
-    "- Write your answer in the same language as the sub-question."
-)
 
 
 async def _noop(event: AgentEvent) -> None:
@@ -66,13 +52,12 @@ async def research(
     specs = [*tools, submit]
     executables = {tool.name: tool for tool in tools}
     consulted: list[Source] = []
-    messages = [
-        Message(
-            role="system",
-            content=_SYSTEM_PROMPT + language_directive(sub_question),
-        ),
-        Message(role="user", content=sub_question),
-    ]
+    messages = render(
+        PROMPT,
+        sub_question=sub_question,
+        today=today(),
+        language=detect_language(sub_question) or "",
+    )
 
     # The researcher_start/done lifecycle is emitted by the orchestrator, which
     # knows this researcher's index and the total. The leaf emits only its own

@@ -7,6 +7,24 @@ from app.agents.schemas import Source
 from app.observability import record_run_name, traced_tool
 
 
+def tagged(tag: str, body: str, **attributes: str) -> str:
+    """Retrieved text inside a named tag, so an agent can tell it from its own
+    instructions. A page that says "ignore your instructions" then reads as page
+    content; the prompts say everything inside such a tag is data. The body's own
+    closing tag is defanged so a page cannot end the block early and continue
+    outside it."""
+    # An attribute's value is itself untrusted (a search query, a URL, a user's
+    # earlier prompt), so it cannot be allowed to carry quotes or angle brackets.
+    head = tag + "".join(f' {k}="{_attribute(v)}"' for k, v in attributes.items() if v)
+    body = body.replace(f"</{tag}>", f"<\\/{tag}>")
+    return f"<{head}>\n{body}\n</{tag}>"
+
+
+def _attribute(value: str) -> str:
+    clean = "".join(c for c in value if c not in '"<>').strip()
+    return clean[:200]
+
+
 class ToolResult(BaseModel):
     content: str
 
@@ -153,11 +171,14 @@ class WebSearch(BaseTool):
     async def _run(self, args: WebSearchArgs) -> RetrievalResult:
         hits = await self.backend.search(args.query, args.max_results)
         sources = [Source(title=hit.title, url=hit.url) for hit in hits]
-        content = (
+        body = (
             "\n\n".join(f"{hit.title}\n{hit.url}\n{hit.content}" for hit in hits)
             or "No results found."
         )
-        return RetrievalResult(content=content, sources=sources)
+        return RetrievalResult(
+            content=tagged("search_results", body, query=args.query),
+            sources=sources,
+        )
 
 
 class FetchPageArgs(BaseModel):
@@ -183,6 +204,6 @@ class FetchPage(BaseTool):
         if len(text) > MAX_PAGE_CHARS:
             text = text[:MAX_PAGE_CHARS] + "\n\n[...truncated]"
         return RetrievalResult(
-            content=text,
+            content=tagged("page", text, url=args.url),
             sources=[Source(title=args.url, url=args.url)],
         )

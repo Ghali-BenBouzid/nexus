@@ -5,11 +5,19 @@
     uv run python -m app.evals collect --only owner-who-first-name,fact-ethanol
     uv run python -m app.evals score evals_runs/20260914-153000
     uv run python -m app.evals score evals_runs/20260914-153000 --no-judge
+    uv run python -m app.evals compare evals_runs/20260917-120000  # vs current code
+    uv run python -m app.evals compare evals_runs/<a> evals_runs/<b> --stage plan
 
 ``collect`` runs each golden through the real pipeline, so it spends provider and
 Tavily credits (one full research run per golden). ``score`` spends judge credits
 unless ``--no-judge`` is given. Everything lands in ``evals_runs/<run id>/``:
 meta.json, traces.jsonl, scores.jsonl and summary.md.
+
+``compare`` judges two runs against each other, golden by golden. Given only a
+baseline, it first collects the current code on the baseline's goldens (the same
+cost as ``collect``), so a baseline is collected once and reused for every
+candidate. The judging costs judge credits only; ``compare-<stage>.md`` lands in
+the candidate's run directory.
 """
 
 import argparse
@@ -19,10 +27,13 @@ import logging
 import subprocess
 from datetime import datetime
 from pathlib import Path
+from typing import Literal
 
+from app import prompts
 from app.agents.search import TavilyBackend
 from app.core.config import settings
 from app.evals.collect import collect_one
+from app.evals.compare import compare_pair, render_comparison
 from app.evals.goldens import Golden, load_goldens
 from app.evals.judge_model import JudgeModel
 from app.evals.scoring import score_run
@@ -59,7 +70,12 @@ def _select(goldens: list[Golden], args: argparse.Namespace) -> list[Golden]:
     return goldens[: args.limit] if args.limit else goldens
 
 
-async def _collect(goldens: list[Golden], run_dir: Path, concurrency: int) -> None:
+async def _collect(
+    goldens: list[Golden],
+    run_dir: Path,
+    concurrency: int,
+    until: Literal["plan"] | None = None,
+) -> None:
     provider = get_provider()
     backend: TavilyBackend = get_search_backend()
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -69,6 +85,8 @@ async def _collect(goldens: list[Golden], run_dir: Path, concurrency: int) -> No
         "git": _git_commit(),
         "provider": settings.llm_provider,
         "model": getattr(provider, "model", "unknown"),
+        "until": until,
+        "prompts": prompts.versions(),  # what a score change between runs came from
         "settings": {
             "cap": settings.cap,
             "max_iters": settings.max_iters,
@@ -89,14 +107,18 @@ async def _collect(goldens: list[Golden], run_dir: Path, concurrency: int) -> No
     async def one(golden: Golden) -> None:
         nonlocal done
         async with limit:
-            trace = await collect_one(golden, provider=provider, backend=backend)
+            trace = await collect_one(
+                golden, provider=provider, backend=backend, until=until
+            )
         # Appended as each finishes, so an interrupted run keeps what it collected.
         with traces_path.open("a", encoding="utf-8") as out:
             out.write(trace.model_dump_json() + "\n")
         done += 1
         ok = sum(r.succeeded for r in trace.researchers)
         research = (
-            f", {ok}/{len(trace.researchers)} researchers ok" if trace.plan else ""
+            f", {ok}/{len(trace.researchers)} researchers ok"
+            if trace.researchers
+            else ""
         )
         status = f"FAILED ({trace.error})" if trace.error else trace.route
         print(
@@ -117,7 +139,7 @@ def _load_traces(run_dir: Path) -> list[RunTrace]:
     return [RunTrace.model_validate_json(line) for line in lines if line.strip()]
 
 
-async def _score(run_dir: Path, *, use_judge: bool, concurrency: int) -> str:
+async def _score(run_dir: Path, *, judge: JudgeModel | None, concurrency: int) -> str:
     traces = _load_traces(run_dir)
     goldens = {g.id: g for g in load_goldens()}
     missing = [t.golden_id for t in traces if t.golden_id not in goldens]
@@ -125,7 +147,6 @@ async def _score(run_dir: Path, *, use_judge: bool, concurrency: int) -> str:
         logger.warning("skipping traces whose golden no longer exists: %s", missing)
     traces = [t for t in traces if t.golden_id in goldens]
 
-    judge = JudgeModel() if use_judge else None
     limit = asyncio.Semaphore(concurrency)
     scores = await asyncio.gather(
         *(score_run(goldens[t.golden_id], t, judge=judge, limit=limit) for t in traces)
@@ -146,6 +167,46 @@ async def _score(run_dir: Path, *, use_judge: bool, concurrency: int) -> str:
     return summary
 
 
+def _meta(run_dir: Path) -> dict:
+    path = run_dir / "meta.json"
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+async def _compare(
+    baseline: Path,
+    candidate: Path,
+    *,
+    judge: JudgeModel,
+    stage: str,
+    concurrency: int,
+) -> str:
+    goldens = {g.id: g for g in load_goldens()}
+    a = {t.golden_id: t for t in _load_traces(baseline)}
+    b = {t.golden_id: t for t in _load_traces(candidate)}
+    shared = [gid for gid in a if gid in b and gid in goldens]
+    if not shared:
+        raise SystemExit("the two runs share no goldens")
+    limit = asyncio.Semaphore(concurrency)
+    results = await asyncio.gather(
+        *(
+            compare_pair(
+                goldens[gid], a[gid], b[gid], stage=stage, judge=judge, limit=limit
+            )
+            for gid in shared
+        )
+    )
+    report = render_comparison(
+        list(results),
+        meta_a=_meta(baseline),
+        meta_b=_meta(candidate),
+        stage=stage,
+        judge=judge.get_model_name(),
+        judge_cost_usd=judge.cost_usd,
+    )
+    (candidate / f"compare-{stage}.md").write_text(report, encoding="utf-8")
+    return report
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.evals")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -158,7 +219,13 @@ def main() -> None:
             "--concurrency", type=int, default=3, help="goldens run at once"
         )
 
-    selection(commands.add_parser("collect", help="run the pipeline, save traces"))
+    collect = commands.add_parser("collect", help="run the pipeline, save traces")
+    selection(collect)
+    collect.add_argument(
+        "--until",
+        choices=["plan"],
+        help="stop after planning: routing and plans only, no searches or report",
+    )
     run = commands.add_parser("run", help="collect, then score")
     selection(run)
     run.add_argument("--no-judge", action="store_true")
@@ -166,18 +233,73 @@ def main() -> None:
     score.add_argument("run_dir", type=Path)
     score.add_argument("--no-judge", action="store_true")
     score.add_argument("--concurrency", type=int, default=8, help="judge calls at once")
+    compare = commands.add_parser(
+        "compare", help="judge two runs against each other, golden by golden"
+    )
+    compare.add_argument("baseline", type=Path, help="run A")
+    compare.add_argument(
+        "candidate",
+        type=Path,
+        nargs="?",
+        help="run B; left out, the current code is collected on A's goldens",
+    )
+    compare.add_argument("--stage", choices=["response", "plan"], default="response")
+    compare.add_argument(
+        "--concurrency", type=int, default=8, help="judge calls at once"
+    )
+    compare.add_argument(
+        "--collect-concurrency", type=int, default=3, help="goldens run at once"
+    )
     args = parser.parse_args()
 
     logging.basicConfig(
         level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s"
     )
 
+    # Built before anything runs, so a missing judge setting fails before a
+    # collection spends provider credits, not after.
+    wants_judge = args.command == "compare" or (
+        args.command in ("score", "run") and not args.no_judge
+    )
+    try:
+        judge = JudgeModel() if wants_judge else None
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from None
+
     if args.command == "score":
         print(
             asyncio.run(
                 _score(
                     args.run_dir,
-                    use_judge=not args.no_judge,
+                    judge=judge,
+                    concurrency=args.concurrency,
+                )
+            )
+        )
+        return
+
+    if args.command == "compare":
+        assert judge is not None
+        candidate = args.candidate
+        if candidate is None:
+            wanted = set(_meta(args.baseline).get("goldens") or [])
+            if not wanted:
+                wanted = {t.golden_id for t in _load_traces(args.baseline)}
+            goldens = [g for g in load_goldens() if g.id in wanted]
+            candidate = RUNS_ROOT / datetime.now().strftime("%Y%m%d-%H%M%S")
+            print(f"Collecting {len(goldens)} golden(s) into {candidate}/")
+            # Collected the same way as the baseline, plan-only included.
+            until = _meta(args.baseline).get("until")
+            asyncio.run(
+                _collect(goldens, candidate, args.collect_concurrency, until=until)
+            )
+        print(
+            asyncio.run(
+                _compare(
+                    args.baseline,
+                    candidate,
+                    judge=judge,
+                    stage=args.stage,
                     concurrency=args.concurrency,
                 )
             )
@@ -189,9 +311,11 @@ def main() -> None:
         raise SystemExit("no goldens match that selection")
     run_dir = RUNS_ROOT / datetime.now().strftime("%Y%m%d-%H%M%S")
     print(f"Collecting {len(goldens)} golden(s) into {run_dir}/")
-    asyncio.run(_collect(goldens, run_dir, args.concurrency))
+    asyncio.run(
+        _collect(goldens, run_dir, args.concurrency, until=getattr(args, "until", None))
+    )
     if args.command == "run":
-        print(asyncio.run(_score(run_dir, use_judge=not args.no_judge, concurrency=8)))
+        print(asyncio.run(_score(run_dir, judge=judge, concurrency=8)))
 
 
 if __name__ == "__main__":

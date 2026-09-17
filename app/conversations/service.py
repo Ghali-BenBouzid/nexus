@@ -7,7 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app import jobs
 from app.agents.orchestrator import PriorReport
 from app.agents.provider import LLMProvider
-from app.agents.tools import SearchBackend
+from app.agents.schemas import Turn
+from app.agents.tools import SearchBackend, tagged
 from app.billing.metering import MeteredProvider
 from app.conversations import repository
 from app.db import session as db_session
@@ -26,25 +27,31 @@ _MAX_CONTEXT_MESSAGES = 8
 _MAX_REPORT_CHARS = 1200
 
 
-def _render_context(messages: list[Message], queries: dict[int, Query]) -> str:
-    """Render the tail of the thread for the supervisor: prior messages and a
-    trimmed view of each report (the full text is available via read_reports)."""
-    if not messages:
-        return "This is the start of the conversation."
-    lines: list[str] = []
+def _history(messages: list[Message], queries: dict[int, Query]) -> list[Turn]:
+    """The tail of the thread as turns, one per message. A turn that produced a
+    report carries it shortened inside a <report> tag: retrieved material the
+    supervisor must not mistake for the user's instructions, and whose full text
+    it can pull with read_reports."""
+    turns: list[Turn] = []
     for message in messages[-_MAX_CONTEXT_MESSAGES:]:
         if message.role == MessageRole.user:
-            lines.append(f"User: {message.content}")
+            if message.content:
+                turns.append(Turn(role="user", content=message.content))
             continue
         query = queries.get(message.query_id) if message.query_id else None
         if query is not None and query.report:
-            lines.append(
-                f"Assistant (research report excerpt):\n"
-                f"{query.report[:_MAX_REPORT_CHARS]}"
+            excerpt = query.report[:_MAX_REPORT_CHARS]
+            if len(query.report) > _MAX_REPORT_CHARS:
+                excerpt += "\n[...excerpt; call read_reports for the full text]"
+            turns.append(
+                Turn(
+                    role="assistant",
+                    content=tagged("report", excerpt, question=query.prompt),
+                )
             )
         elif message.content:
-            lines.append(f"Assistant: {message.content}")
-    return "\n\n".join(lines)
+            turns.append(Turn(role="assistant", content=message.content))
+    return turns
 
 
 async def submit_message(
@@ -116,7 +123,7 @@ async def route_message(
         ]
         graph_input = {
             "message": query.prompt,
-            "conversation": _render_context(before, queries),
+            "history": _history(before, queries),
             "prior": [
                 PriorReport(prompt=q.prompt, report=q.report or "", result=q.result)
                 for q in completed

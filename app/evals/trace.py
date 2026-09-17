@@ -87,6 +87,9 @@ class RunTrace(BaseModel):
     input: str
     run_date: str  # ISO date of the run: what "current" meant for this run
     model: str
+    # "plan": the run stopped after planning (no research, no report), to test the
+    # routing and planning stages without paying for searches.
+    until: str | None = None
     route: str | None = None  # answer | research | compose
     reply: str | None = None  # the direct answer, on the answer route
     research_query: str | None = None  # the supervisor's self-contained rewrite
