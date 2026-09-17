@@ -13,5 +13,5 @@ def test_settings_has_llm_provider_defaults(monkeypatch):
     assert s.llm_provider == "openrouter"
     assert s.openrouter_api_key is None
     assert s.llm_model is None
-    assert s.max_concurrency == 3
+    assert s.max_concurrency == s.cap  # every researcher of a run starts at once
     assert s.default_budget_usd == 0.50

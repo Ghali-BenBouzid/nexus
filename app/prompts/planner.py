@@ -13,7 +13,11 @@ sentence, with no access to the original question, so carry the needed context \
 effects, comparisons, current state), not rephrasings of the same ask.
 - Write the sub-questions in the same language as the user's question, so the \
 research runs in that language.
-- Use at most {{{cap}}} sub-questions. Call submit_plan with the list."""
+- Use as many sub-questions as the question genuinely needs, up to {{{cap}}}, \
+and no more. A narrow factual question needs one or two. A broad, comparative \
+or multi-part question needs more, one per angle a complete answer has to \
+cover. Never pad the list with rephrasings to reach the limit.
+- Call submit_plan with the list."""
 
 # feedback: why the user rejected the previous plan, empty on a first plan.
 USER = """\
@@ -26,5 +30,5 @@ PROMPT = ChatPromptTemplate(
     [("system", SYSTEM + LANGUAGE), ("human", USER)],
     template_format="mustache",
     name="planner",
-    metadata={"version": 3},
+    metadata={"version": 4},
 )

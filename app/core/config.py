@@ -41,11 +41,18 @@ class Settings(BaseSettings):
 
     # orchestration knobs (12-factor: env-overridable defaults). Kept small so a
     # run stays quick and cheap; a future "deep research" mode raises these.
-    cap: int = 3  # max sub-questions
+    # Sub-questions, so researchers, per run. The planner picks how many the
+    # question needs and stops there, so this is a ceiling for broad questions,
+    # not a target: a narrow one still gets one or two. Raising it widens a
+    # report's breadth and costs about that much more per run.
+    cap: int = 6  # max sub-questions
     max_iters: int = 3  # max tool rounds per researcher
     # Researchers run in parallel on a paid key. On a free tier, drop this to 1:
     # parallel researchers split a small tokens-per-minute budget and time out.
-    max_concurrency: int = 3  # simultaneous researchers
+    # Matches cap, so every researcher of a run starts at once and they share the
+    # same research_budget window. OpenRouter's limits (1000 rpm, 10M tpm) are far
+    # above this; on a free tier, drop it to 1.
+    max_concurrency: int = 6  # simultaneous researchers
     planner_retry_cap: int = 2
     # Soft deadline for the research fan-out: once it passes, each researcher stops
     # searching and submits what it has, so a slow (reasoning) model still yields a
