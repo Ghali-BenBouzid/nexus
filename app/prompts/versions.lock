@@ -1,15 +1,15 @@
 {
   "supervisor": {
-    "version": 2,
-    "sha256": "cd6b43de9d8521ed876bb73d3430bd5e1b5914d487b4feec2628765be688c4a1"
+    "version": 3,
+    "sha256": "42d2047efa214d64235537a48cc906e7574cc02896a99e486fd1b1acf65a507d"
   },
   "planner": {
-    "version": 2,
-    "sha256": "0c7fd288a7fab336661fdaf60090c9535bae0252bd726a4a064f4a80bc263113"
+    "version": 3,
+    "sha256": "b6b4b2efc451f2ca6ebf571d1563998f39e4c7a9d5f73558541c873928835cbe"
   },
   "researcher": {
-    "version": 2,
-    "sha256": "40d8a1ca472ff0f54b4232949a9e1e58d7516aececcd207fd9c303b43deeedb4"
+    "version": 3,
+    "sha256": "98a3db76027c4b05a2a06ebb76950cb0380579cacfdb33f51831dd0439bf2bdf"
   },
   "writer": {
     "version": 1,
