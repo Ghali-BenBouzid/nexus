@@ -40,4 +40,3 @@ def test_names_and_casing_do_not_fool_detection() -> None:
 
 def test_gibberish_is_inconclusive() -> None:
     assert detect_language("asdkjh qwpoeiru zmxncb") is None
-

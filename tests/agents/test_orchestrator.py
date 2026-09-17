@@ -24,7 +24,8 @@ class FakeBackend:
 
 
 class RoleProvider:
-    """A fake provider that dispatches on the system prompt, so it works under the
+    """A fake provider that dispatches on the tools each agent is given (not on
+    prompt wording, which changes as prompts improve), so it works under the
     concurrent fan-out (unlike a single scripted queue). ``route`` is the
     supervisor's tool call, when a test starts from a conversation turn."""
 
@@ -46,10 +47,10 @@ class RoleProvider:
         tools: object = None,
         tool_choice: str = "auto",
     ) -> LLMResponse:
-        system = messages[0].content or ""
-        if "controller of a research assistant" in system:
+        names = {tool.name for tool in tools or []}  # type: ignore[attr-defined]
+        if "answer" in names:
             return LLMResponse(tool_calls=[self.route])
-        if "research planner" in system:
+        if "submit_plan" in names:
             self.planner_prompts.append(messages[1].content or "")
             return LLMResponse(
                 tool_calls=[
@@ -60,7 +61,7 @@ class RoleProvider:
                     )
                 ]
             )
-        if "research agent" in system:
+        if "submit_finding" in names:
             sub_question = messages[1].content or ""
             if sub_question in self.fail:
                 raise RuntimeError(f"researcher boom: {sub_question}")
