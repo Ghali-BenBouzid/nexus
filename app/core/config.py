@@ -90,8 +90,10 @@ class Settings(BaseSettings):
 
     # Evals (python -m app.evals): the judge that scores recorded runs, any
     # OpenRouter model id, billed to OPENROUTER_API_KEY. Deliberately a different
-    # model family from the one under test, to limit self-preference bias.
-    eval_judge_model: str = "openai/gpt-5-mini"
+    # model family from the one under test, to limit self-preference bias. No
+    # default: judging refuses to start without it, so the judge behind a score is
+    # always one someone chose. Optional here because only the evals need it.
+    eval_judge_model: str | None = None
 
     @property
     def cors_origin_list(self) -> list[str]:

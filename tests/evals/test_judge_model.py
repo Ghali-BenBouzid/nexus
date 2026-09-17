@@ -1,10 +1,12 @@
 import json
 
 import httpx
+import pytest
 from deepeval.test_case import LLMTestCase
 from pydantic import BaseModel
 
 from app.agents.retry import RetryPolicy
+from app.core.config import settings
 from app.evals.judge_model import JudgeModel
 from app.evals.scoring import REPORT_DEPTH
 
@@ -181,3 +183,10 @@ async def test_a_real_deepeval_metric_scores_through_the_judge() -> None:
 
     assert metric.score is not None and 0.0 <= metric.score <= 1.0
     assert metric.reason
+
+
+def test_judging_refuses_to_start_without_a_chosen_model(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "eval_judge_model", None)
+
+    with pytest.raises(RuntimeError, match="EVAL_JUDGE_MODEL"):
+        JudgeModel(api_key="k")

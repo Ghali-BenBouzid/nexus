@@ -91,9 +91,14 @@ class JudgeModel(DeepEvalBaseLLM):
             raise RuntimeError("The eval judge needs OPENROUTER_API_KEY.")
         self.retry = retry
         self.transport = transport
+        model = model or settings.eval_judge_model
+        if not model:
+            raise RuntimeError(
+                "The eval judge needs EVAL_JUDGE_MODEL (an OpenRouter model id)."
+            )
         self.cost_usd = 0.0
         self._reasoning: bool | None = None  # looked up on the first judgment
-        super().__init__(model or settings.eval_judge_model)
+        super().__init__(model)
 
     def load_model(self) -> "JudgeModel":
         return self

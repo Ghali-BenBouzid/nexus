@@ -128,7 +128,7 @@ def _load_traces(run_dir: Path) -> list[RunTrace]:
     return [RunTrace.model_validate_json(line) for line in lines if line.strip()]
 
 
-async def _score(run_dir: Path, *, use_judge: bool, concurrency: int) -> str:
+async def _score(run_dir: Path, *, judge: JudgeModel | None, concurrency: int) -> str:
     traces = _load_traces(run_dir)
     goldens = {g.id: g for g in load_goldens()}
     missing = [t.golden_id for t in traces if t.golden_id not in goldens]
@@ -136,7 +136,6 @@ async def _score(run_dir: Path, *, use_judge: bool, concurrency: int) -> str:
         logger.warning("skipping traces whose golden no longer exists: %s", missing)
     traces = [t for t in traces if t.golden_id in goldens]
 
-    judge = JudgeModel() if use_judge else None
     limit = asyncio.Semaphore(concurrency)
     scores = await asyncio.gather(
         *(score_run(goldens[t.golden_id], t, judge=judge, limit=limit) for t in traces)
@@ -163,7 +162,12 @@ def _meta(run_dir: Path) -> dict:
 
 
 async def _compare(
-    baseline: Path, candidate: Path, *, stage: str, concurrency: int
+    baseline: Path,
+    candidate: Path,
+    *,
+    judge: JudgeModel,
+    stage: str,
+    concurrency: int,
 ) -> str:
     goldens = {g.id: g for g in load_goldens()}
     a = {t.golden_id: t for t in _load_traces(baseline)}
@@ -171,7 +175,6 @@ async def _compare(
     shared = [gid for gid in a if gid in b and gid in goldens]
     if not shared:
         raise SystemExit("the two runs share no goldens")
-    judge = JudgeModel()
     limit = asyncio.Semaphore(concurrency)
     results = await asyncio.gather(
         *(
@@ -236,12 +239,22 @@ def main() -> None:
         level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s"
     )
 
+    # Built before anything runs, so a missing judge setting fails before a
+    # collection spends provider credits, not after.
+    wants_judge = args.command == "compare" or (
+        args.command in ("score", "run") and not args.no_judge
+    )
+    try:
+        judge = JudgeModel() if wants_judge else None
+    except RuntimeError as exc:
+        raise SystemExit(str(exc)) from None
+
     if args.command == "score":
         print(
             asyncio.run(
                 _score(
                     args.run_dir,
-                    use_judge=not args.no_judge,
+                    judge=judge,
                     concurrency=args.concurrency,
                 )
             )
@@ -249,6 +262,7 @@ def main() -> None:
         return
 
     if args.command == "compare":
+        assert judge is not None
         candidate = args.candidate
         if candidate is None:
             wanted = set(_meta(args.baseline).get("goldens") or [])
@@ -263,6 +277,7 @@ def main() -> None:
                 _compare(
                     args.baseline,
                     candidate,
+                    judge=judge,
                     stage=args.stage,
                     concurrency=args.concurrency,
                 )
@@ -277,7 +292,7 @@ def main() -> None:
     print(f"Collecting {len(goldens)} golden(s) into {run_dir}/")
     asyncio.run(_collect(goldens, run_dir, args.concurrency))
     if args.command == "run":
-        print(asyncio.run(_score(run_dir, use_judge=not args.no_judge, concurrency=8)))
+        print(asyncio.run(_score(run_dir, judge=judge, concurrency=8)))
 
 
 if __name__ == "__main__":
