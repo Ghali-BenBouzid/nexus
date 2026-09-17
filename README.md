@@ -3,7 +3,7 @@
 Nexus is a research assistant.
 You ask a question, a small team of AI agents researches it on the web, and you get back one report where every claim links to the source it came from.
 
-Live demo: [nexus.ghali-bnb02.workers.dev](https://nexus.ghali-bnb02.workers.dev) (invite-only, [ask me for an account](https://www.linkedin.com/in/ghali-ben-bouzid-6b6582268)).
+Live demo: [nexus.ghalibenbouzid.com](https://nexus.ghalibenbouzid.com) (invite-only, [ask me for an account](https://www.linkedin.com/in/ghali-ben-bouzid-6b6582268)).
 
 ![A finished report open next to the conversation](docs/images/report.png)
 
@@ -211,9 +211,10 @@ Scoring the full 150-question set is still the next step.
 
 ## Who built what
 
-I designed and built Nexus: the architecture, the agents, the evaluation and the interface.
-I wrote the first versions myself.
-For the later production work (the queue and worker split, the move to LangGraph, the evaluation harness and the invite accounts) I used Claude Code as a coding assistant: I made the design decisions, and I reviewed and tested the code it wrote.
+I designed Nexus and made every decision in it: the architecture, how the agents work, what the evaluation measures and how the interface looks and behaves.
+I wrote the first versions of the agents myself.
+From there I worked with Claude Code as a coding assistant, on the later production work (the queue and worker split, the move to LangGraph, the evaluation harness, the invite accounts, the prompt work) and on the interface I designed.
+I reviewed and tested what it wrote, and the calls about what to build, and what to keep, were mine.
 
 ## Run it locally
 
