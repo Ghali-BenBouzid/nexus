@@ -35,6 +35,18 @@ async def _read(query_id: int) -> Query:
         return query
 
 
+async def _eventually(check, timeout: float = 5.0) -> bool:
+    """Wait until ``check()`` holds. A heartbeat runs on the clock, and a busy
+    machine can take longer than any fixed sleep, so poll against a deadline."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not check():
+        if loop.time() > deadline:
+            return False
+        await asyncio.sleep(0.01)
+    return True
+
+
 class _StopWhile(RoleProvider):
     """Like RoleProvider, but the user stops the run while the agent whose system
     prompt mentions ``agent`` is calling the model."""
@@ -179,8 +191,7 @@ async def test_a_running_job_sees_a_stop_on_its_next_heartbeat(
         await asyncio.sleep(0.05)
         assert not live.stopped
         await _stop(qid)
-        await asyncio.sleep(0.05)
-        assert live.stopped
+        assert await _eventually(lambda: live.stopped)
 
 
 async def test_cancel_resolves_an_awaiting_plan_query(
