@@ -32,7 +32,7 @@ PROMPTS: dict[str, ChatPromptTemplate] = {
 }
 LOCK = Path(__file__).with_name("versions.lock")
 
-_ROLES = {"system": "system", "human": "user"}
+_ROLES = {"system": "system", "human": "user", "ai": "assistant"}
 
 
 def version(prompt: ChatPromptTemplate) -> int:
@@ -46,7 +46,12 @@ def versions() -> dict[str, int]:
 
 def fingerprint(prompt: ChatPromptTemplate) -> str:
     """A hash of the template text, what the lock pins a version to."""
-    parts = [[m.__class__.__name__, m.prompt.template] for m in prompt.messages]
+    parts = [
+        # A placeholder has no template of its own: the variable it fills is what
+        # identifies it.
+        [m.__class__.__name__, getattr(m, "variable_name", None) or m.prompt.template]
+        for m in prompt.messages
+    ]
     return hashlib.sha256(json.dumps(parts).encode()).hexdigest()
 
 

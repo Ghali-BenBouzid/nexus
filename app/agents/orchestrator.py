@@ -41,7 +41,7 @@ from app.agents.narration import ThinkingProvider
 from app.agents.planner import plan
 from app.agents.provider import LLMProvider, ProviderCreditsError
 from app.agents.researcher import research
-from app.agents.schemas import AgentEvent, Finding, Report, ResearchResult
+from app.agents.schemas import AgentEvent, Finding, Report, ResearchResult, Turn
 from app.agents.tools import FetchPage, SearchBackend, WebSearch
 from app.agents.writer import write
 from app.core.config import settings
@@ -83,7 +83,7 @@ class Outcome(TypedDict):
 class ResearchState(TypedDict, total=False):
     # A conversation turn starts with these three.
     message: str
-    conversation: str  # the thread before the message, rendered
+    history: list[Turn]  # the thread before the message, one entry per turn
     prior: list[PriorReport]
     # A one-shot run starts with prompt and auto_approve.
     prompt: str  # the research query, or the compose instructions
@@ -163,7 +163,7 @@ async def supervisor_node(state: ResearchState, runtime: Runtime[Deps]) -> dict:
     prior = state.get("prior", [])
     decision = await supervisor.decide(
         state["message"],
-        state["conversation"],
+        state.get("history", []),
         provider=ThinkingProvider(deps.provider, deps.emit, agent="supervisor"),
         backend=deps.backend,
         reports=[(r["prompt"], r["report"]) for r in prior],
@@ -361,7 +361,9 @@ def build_graph() -> StateGraph:
 
 # The state classes a checkpoint may hold. Only these are rebuilt when a paused
 # run is loaded; anything else in a checkpoint stays data.
-SERDE = JsonPlusSerializer(allowed_msgpack_modules=[Finding, ResearchResult, Report])
+SERDE = JsonPlusSerializer(
+    allowed_msgpack_modules=[Finding, ResearchResult, Report, Turn]
+)
 
 
 def compile_graph(checkpointer: BaseCheckpointSaver) -> CompiledStateGraph:

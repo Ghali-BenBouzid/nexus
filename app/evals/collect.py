@@ -30,8 +30,6 @@ from app.evals.trace import ClaimRecord, ResearcherTrace, RunTrace, SourceRecord
 
 logger = logging.getLogger(__name__)
 
-# Every golden is a first message, so the supervisor sees an empty conversation.
-_EMPTY_CONVERSATION = "This is the start of the conversation."
 # Agent events worth keeping on a researcher's trace: they explain a failure.
 _NOTABLE_EVENTS = {"researcher_forced", "submit_invalid", "tool_error"}
 
@@ -81,7 +79,7 @@ async def _run(
     try:
         decision = await supervisor.decide(
             golden.input,
-            _EMPTY_CONVERSATION,
+            [],  # every golden is a first message: no conversation before it
             provider=provider,
             backend=routing_backend,
             reports=[],

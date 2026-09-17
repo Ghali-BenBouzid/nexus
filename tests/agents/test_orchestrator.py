@@ -178,7 +178,7 @@ _RESEARCH = ToolCall(id="d", name="research", args={"query": "rq", "title": "T"}
 
 
 def _turn(prior: list | None = None) -> dict:
-    return {"message": "tell me", "conversation": "", "prior": prior or []}
+    return {"message": "tell me", "history": [], "prior": prior or []}
 
 
 async def test_a_turn_pauses_on_the_plan_until_the_user_confirms() -> None:

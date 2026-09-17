@@ -1,11 +1,23 @@
 import json
 
 import pytest
+from langchain_core.messages import AIMessage, HumanMessage
 
 from app.agents.provider import Message
 from app.prompts import LOCK, PROMPTS, fingerprint, render, version
 
 _SAMPLE = "a < b & 'c'"
+
+
+def _variables(prompt, value: str = _SAMPLE) -> dict:
+    """Every variable the prompt takes, filled with ``value``. A messages
+    placeholder takes a list of messages, not a string."""
+    placeholders = {
+        m.variable_name for m in prompt.messages if hasattr(m, "variable_name")
+    }
+    return {
+        name: [] if name in placeholders else value for name in prompt.input_variables
+    }
 
 
 @pytest.mark.parametrize("name", PROMPTS)
@@ -24,7 +36,7 @@ def test_a_prompt_text_change_comes_with_a_version_bump(name: str) -> None:
 def test_variables_are_inserted_as_is(name: str) -> None:
     # Mustache's double braces HTML-escape a value: user text must use triple ones.
     prompt = PROMPTS[name]
-    messages = render(prompt, **dict.fromkeys(prompt.input_variables, _SAMPLE))
+    messages = render(prompt, **_variables(prompt))
     assert [m.role for m in messages] == ["system", "user"]
     assert any(_SAMPLE in (m.content or "") for m in messages)
     assert not any("&lt;" in (m.content or "") for m in messages)
@@ -35,7 +47,7 @@ def test_every_system_prompt_states_today(name: str) -> None:
     # Without the date, models treat their training cutoff as the present: a
     # current-events report came back presenting 2024 as the latest year.
     prompt = PROMPTS[name]
-    variables = dict.fromkeys(prompt.input_variables, "x")
+    variables = _variables(prompt, "x")
     system = render(prompt, **{**variables, "today": "Thursday, September 17, 2026"})
     assert "Today's date is Thursday, September 17, 2026" in (system[0].content or "")
 
@@ -49,7 +61,7 @@ def test_a_missing_variable_fails_loudly(name: str) -> None:
 @pytest.mark.parametrize("name", PROMPTS)
 def test_the_language_directive_appears_only_when_detected(name: str) -> None:
     prompt = PROMPTS[name]
-    empty = dict.fromkeys(prompt.input_variables, "x")
+    empty = _variables(prompt, "x")
 
     def system(language: str) -> str:
         messages: list[Message] = render(prompt, **{**empty, "language": language})
@@ -75,3 +87,21 @@ def test_optional_sections_render_only_when_given() -> None:
         "Q\n\nYour previous plan was rejected. Revise it based on this feedback "
         "from the user: shorter"
     )
+
+
+def test_the_conversation_arrives_as_real_messages() -> None:
+    # It used to be one user message holding the whole thread, so the user's words
+    # and the app's labels looked alike to the model.
+    messages = render(
+        PROMPTS["supervisor"],
+        today="T",
+        language="",
+        message="and now?",
+        history=[HumanMessage("first question"), AIMessage("an answer")],
+    )
+
+    assert [(m.role, m.content) for m in messages[1:]] == [
+        ("user", "first question"),
+        ("assistant", "an answer"),
+        ("user", "and now?"),
+    ]

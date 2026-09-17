@@ -20,11 +20,12 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Literal
 
+from langchain_core.messages import AIMessage, HumanMessage
 from pydantic import BaseModel, Field, ValidationError
 
 from app.agents.language import detect_language
 from app.agents.provider import LLMProvider, LLMResponse, Message
-from app.agents.schemas import AgentEvent
+from app.agents.schemas import AgentEvent, Turn
 from app.agents.tools import (
     BaseTool,
     BaseToolSpec,
@@ -32,6 +33,7 @@ from app.agents.tools import (
     SearchBackend,
     ToolResult,
     WebSearch,
+    tagged,
 )
 from app.prompts import render
 from app.prompts.common import today
@@ -74,7 +76,7 @@ class ReadReports(BaseTool):
         if not self.reports:
             return ToolResult(content="No reports have been produced yet.")
         blocks = [
-            f"Report {index} (for: {prompt}):\n{content}"
+            tagged("report", content, index=str(index), question=prompt)
             for index, (prompt, content) in enumerate(self.reports, start=1)
         ]
         return ToolResult(content="\n\n---\n\n".join(blocks))
@@ -152,7 +154,7 @@ async def _noop(event: AgentEvent) -> None:
 
 async def decide(
     message: str,
-    context: str,
+    history: list[Turn],
     *,
     provider: LLMProvider,
     backend: SearchBackend,
@@ -160,9 +162,10 @@ async def decide(
     emit: Emit = _noop,
     max_iters: int = 4,
 ) -> SupervisorDecision:
-    """Route the latest message through a small tool loop. ``context`` is the
-    rendered conversation; ``reports`` is the full text of prior reports (exposed
-    via read_reports). The provider and backend must already be open."""
+    """Route the latest message through a small tool loop. ``history`` is the
+    conversation before this message, one entry per turn; ``reports`` is the full
+    text of prior reports (exposed via read_reports). The provider and backend
+    must already be open."""
     read_reports = ReadReports(reports)
     web_search = WebSearch(backend=backend)
     fetch_page = FetchPage(backend=backend)
@@ -181,7 +184,12 @@ async def decide(
     }
     messages = render(
         PROMPT,
-        conversation=context,
+        history=[
+            HumanMessage(turn.content)
+            if turn.role == "user"
+            else AIMessage(turn.content)
+            for turn in history
+        ],
         message=message,
         today=today(),
         language=detect_language(message) or "",

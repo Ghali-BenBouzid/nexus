@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel
 
@@ -39,6 +39,16 @@ class Finding(BaseModel):
                     seen.add(source.url)
                     out.append(source)
         return out
+
+
+class Turn(BaseModel):
+    """One earlier message of the conversation, as the agents see it: the user's
+    own words, or what the assistant replied. A turn that produced a report
+    carries it shortened inside a <report> tag, so an agent can tell retrieved
+    material from the user's instructions."""
+
+    role: Literal["user", "assistant"]
+    content: str
 
 
 class AgentEvent(BaseModel):
