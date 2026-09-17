@@ -1,5 +1,6 @@
 from collections.abc import AsyncGenerator
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import (
@@ -9,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import StaticPool
 
+from app.core.config import settings
 from app.db import session as db_session
 from app.db.base import Base
 from app.db.session import get_db
@@ -60,3 +62,23 @@ async def client() -> AsyncGenerator[AsyncClient]:
 @pytest_asyncio.fixture
 async def auth_headers(client: AsyncClient) -> dict[str, str]:
     return await login_as(client)
+
+
+# The external API keys a developer's .env may hold. CI has none of them.
+_API_KEYS = (
+    "openrouter_api_key",
+    "gemini_api_key",
+    "groq_api_key",
+    "cerebras_api_key",
+    "sambanova_api_key",
+    "tavily_api_key",
+    "langsmith_api_key",
+)
+
+
+@pytest.fixture(autouse=True)
+def no_real_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run every test as CI does, with no real provider or search keys, so a test
+    that forgets its fakes fails on a laptop too instead of only in CI."""
+    for name in _API_KEYS:
+        monkeypatch.setattr(settings, name, None)
