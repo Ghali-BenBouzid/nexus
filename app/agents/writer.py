@@ -2,7 +2,6 @@ import asyncio
 import logging
 import re
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime
 
 from app.agents.language import detect_language
 from app.agents.provider import (
@@ -14,6 +13,7 @@ from app.agents.retry import RetryPolicy, retry_async
 from app.agents.schemas import AgentEvent, Report, ResearchResult, Source
 from app.observability import traced_step
 from app.prompts import render
+from app.prompts.common import today
 from app.prompts.writer import PROMPT
 
 logger = logging.getLogger(__name__)
@@ -77,7 +77,7 @@ async def write(
         PROMPT,
         findings=_render(result),
         guidance=guidance.strip(),
-        today=datetime.now(UTC).strftime("%A, %B %d, %Y"),
+        today=today(),
         # Detected on the findings themselves (the sub-questions and claims), not
         # the rendered scaffolding, whose headers ("# Research points") are English.
         language=detect_language(_content_text(result)) or "",

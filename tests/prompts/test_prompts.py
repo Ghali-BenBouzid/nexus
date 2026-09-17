@@ -31,6 +31,16 @@ def test_variables_are_inserted_as_is(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", PROMPTS)
+def test_every_system_prompt_states_today(name: str) -> None:
+    # Without the date, models treat their training cutoff as the present: a
+    # current-events report came back presenting 2024 as the latest year.
+    prompt = PROMPTS[name]
+    variables = dict.fromkeys(prompt.input_variables, "x")
+    system = render(prompt, **{**variables, "today": "Thursday, September 17, 2026"})
+    assert "Today's date is Thursday, September 17, 2026" in (system[0].content or "")
+
+
+@pytest.mark.parametrize("name", PROMPTS)
 def test_a_missing_variable_fails_loudly(name: str) -> None:
     with pytest.raises(KeyError):
         render(PROMPTS[name])
@@ -54,8 +64,12 @@ def test_the_language_directive_appears_only_when_detected(name: str) -> None:
 
 def test_optional_sections_render_only_when_given() -> None:
     planner = PROMPTS["planner"]
-    first = render(planner, query="Q", cap=3, feedback="", language="")[1].content
-    revised = render(planner, query="Q", cap=3, feedback="shorter", language="")
+    first = render(planner, query="Q", cap=3, feedback="", language="", today="T")[
+        1
+    ].content
+    revised = render(
+        planner, query="Q", cap=3, feedback="shorter", language="", today="T"
+    )
     assert first == "Q"
     assert revised[1].content == (
         "Q\n\nYour previous plan was rejected. Revise it based on this feedback "

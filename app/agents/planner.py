@@ -8,6 +8,7 @@ from app.agents.schemas import AgentEvent
 from app.agents.tools import SubmitPlan, SubmitPlanArgs
 from app.observability import traced_step
 from app.prompts import render
+from app.prompts.common import today
 from app.prompts.planner import PROMPT
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
@@ -46,6 +47,7 @@ async def plan(
         PROMPT,
         query=prompt,
         cap=cap,
+        today=today(),
         feedback=(feedback or "").strip(),
         language=detect_language(prompt) or "",
     )

@@ -16,6 +16,7 @@ from app.agents.tools import (
 )
 from app.observability import traced_step
 from app.prompts import render
+from app.prompts.common import today
 from app.prompts.researcher import PROMPT
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
@@ -54,6 +55,7 @@ async def research(
     messages = render(
         PROMPT,
         sub_question=sub_question,
+        today=today(),
         language=detect_language(sub_question) or "",
     )
 

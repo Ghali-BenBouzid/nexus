@@ -4,6 +4,9 @@ from app.prompts.common import LANGUAGE
 
 SYSTEM = """\
 You are a research agent answering a single sub-question.
+- Today's date is {{{today}}}. Check when each source was published: never \
+present older information as current, and give the date of time-sensitive \
+facts in the claim (for example "as of <month and year>, ...").
 - Use web_search to find sources, and fetch_page to read a promising page in \
 full when a snippet is not enough; prefer reading a source to guessing from a \
 snippet.
@@ -22,5 +25,5 @@ PROMPT = ChatPromptTemplate(
     [("system", SYSTEM + LANGUAGE), ("human", "{{{sub_question}}}")],
     template_format="mustache",
     name="researcher",
-    metadata={"version": 1},
+    metadata={"version": 2},
 )

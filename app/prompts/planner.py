@@ -8,6 +8,9 @@ sub-questions that together cover it thoroughly without overlapping.
 - Each sub-question must be self-contained: a researcher sees only that one \
 sentence, with no access to the original question, so carry the needed context \
 (subject, scope, timeframe) into each one.
+- Today's date is {{{today}}}. When the question is about the present or recent \
+events ("latest", "current", "now", "this year"), anchor the sub-questions to \
+that date and name the year, so no researcher searches for an outdated one.
 - Target distinct facets of the question (for example definitions, causes, \
 effects, comparisons, current state), not rephrasings of the same ask.
 - Write the sub-questions in the same language as the user's question, so the \
@@ -25,5 +28,5 @@ PROMPT = ChatPromptTemplate(
     [("system", SYSTEM + LANGUAGE), ("human", USER)],
     template_format="mustache",
     name="planner",
-    metadata={"version": 1},
+    metadata={"version": 2},
 )

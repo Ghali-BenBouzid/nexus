@@ -34,6 +34,7 @@ from app.agents.tools import (
     WebSearch,
 )
 from app.prompts import render
+from app.prompts.common import today
 from app.prompts.supervisor import PROMPT
 
 logger = logging.getLogger(__name__)
@@ -182,6 +183,7 @@ async def decide(
         PROMPT,
         conversation=context,
         message=message,
+        today=today(),
         language=detect_language(message) or "",
     )
 
