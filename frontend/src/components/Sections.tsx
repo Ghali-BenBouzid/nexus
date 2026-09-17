@@ -411,40 +411,6 @@ export function HowItWorks() {
   );
 }
 
-// ---- Engineering challenges: Problem -> how I solved it -> why it matters ----
-export function Engineering() {
-  return (
-    <section className="section" id="engineering">
-      <div className="wrap">
-        <div className="section-head">
-          <h2>{t.eng.title}</h2>
-        </div>
-        <ul className="took-list">
-          {t.eng.challenges.map((c, i) => (
-            <li key={i} className="took-item">
-              <h3>{c.problem}</h3>
-              <p>{c.how}</p>
-              <p className="took-why">
-                <span>{t.eng.why}</span>
-                {c.why}
-              </p>
-            </li>
-          ))}
-        </ul>
-        <div className="whats-next">
-          <h3>{t.eng.nextTitle}</h3>
-          <p className="next-intro">{t.eng.nextIntro}</p>
-          <ul className="acad-list muted">
-            {t.eng.next.map((n, i) => (
-              <li key={i}>{n}</li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 export function Footer() {
   return (
     <footer className="footer">
@@ -468,7 +434,6 @@ export function Footer() {
             <h3>{t.footer.exploreTitle}</h3>
             <a href="#about">{t.nav.about}</a>
             <a href="#how">{t.nav.how}</a>
-            <a href="#engineering">{t.nav.engineering}</a>
           </div>
           <div className="footer-col">
             <h3>{t.footer.codeTitle}</h3>

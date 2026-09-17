@@ -3,9 +3,10 @@ import { useEffect, useRef, useState } from "react";
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import { useIsMobile } from "../lib/useIsMobile";
-import type { LayoutMode, Turn } from "../types";
+import type { LayoutMode, Theme, Turn } from "../types";
 import { ArtifactPanel, isArtifactTurn } from "./ArtifactPanel";
 import { ChatHistory } from "./ChatHistory";
+import { NexusLockup } from "./NexusLogo";
 import { PromptBar } from "./PromptBar";
 import { TurnCard } from "./TurnCard";
 
@@ -25,12 +26,15 @@ type ConversationProps = {
   onDiscardPlan: (turn: Turn) => void;
   running: boolean;
   onNewChat: () => void;
-  // One line under the composer: the demo budget left, or that runs are simulated.
+  // One line under the composer: the demo credits left, or why an invite failed.
   accessNote?: string | null;
-  // Left "Recent" column (live mode only): open state + toggle + load handler.
+  // The left column: open state + toggle, and the conversation loader (live only).
   historyOpen: boolean;
   onToggleHistory: () => void;
   onOpenHistory?: (id: number) => void;
+  // The chat has no nav bar, so the theme switch lives in the left column.
+  theme: Theme;
+  toggleTheme: () => void;
 };
 
 export function Conversation({
@@ -53,6 +57,8 @@ export function Conversation({
   historyOpen,
   onToggleHistory,
   onOpenHistory,
+  theme,
+  toggleTheme,
 }: ConversationProps) {
   const isMobile = useIsMobile();
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -114,6 +120,7 @@ export function Conversation({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
+      if (document.querySelector("dialog[open]")) return; // Esc closes the dialog
       if (running) onStop();
       else onExit();
     };
@@ -208,12 +215,12 @@ export function Conversation({
 
   return (
     <main className="chat" data-layout={layout}>
-      {/* Mobile chrome: a slim sub-bar under the nav holding the Recent (left) and
-          Artifacts (right) buttons. Artifacts hides while a report is up so only
-          Recent remains. Desktop keeps its rail + floating fab. */}
+      {/* Mobile chrome: the only header, a chat app's top bar with the menu and
+          the brand on the left and Artifacts on the right. Artifacts hides while a
+          report is up. Desktop keeps its left column + floating fab. */}
       {isMobile && (
         <div className="chat-topbar">
-          {onOpenHistory ? (
+          <div className="chat-topbar-left">
             <button
               className="chat-corner chat-corner-left"
               onClick={onToggleHistory}
@@ -222,9 +229,10 @@ export function Conversation({
             >
               {I.sidebar}
             </button>
-          ) : (
-            <span />
-          )}
+            <button className="ch-brand" onClick={onExit} aria-label={t.nav.home} title={t.nav.home}>
+              <NexusLockup size={19} />
+            </button>
+          </div>
           {!reportUp && (
             <button
               className={"chat-corner chat-corner-right" + (artifactsListOpen ? " active" : "")}
@@ -247,18 +255,19 @@ export function Conversation({
       )}
 
       <div className="chat-main" ref={mainRef}>
-        {onOpenHistory && (
-          <ChatHistory
-            open={historyOpen}
-            onToggle={onToggleHistory}
-            onOpen={onOpenHistory}
-            onNewChat={onNewChat}
-            // Reload the list when a turn is added and again once a title lands, so
-            // a freshly named conversation shows its title instead of "Untitled".
-            refreshKey={turns.length + turns.filter((t) => t.title).length}
-            isMobile={isMobile}
-          />
-        )}
+        <ChatHistory
+          open={historyOpen}
+          onToggle={onToggleHistory}
+          onOpen={onOpenHistory}
+          onNewChat={onNewChat}
+          onHome={onExit}
+          // Reload the list when a turn is added and again once a title lands, so
+          // a freshly named conversation shows its title instead of "Untitled".
+          refreshKey={turns.length + turns.filter((t) => t.title).length}
+          isMobile={isMobile}
+          theme={theme}
+          toggleTheme={toggleTheme}
+        />
 
         {/* The conversation column owns the composer, so the prompt bar stays
             aligned beneath the thread and shifts as the side panels open/close. */}
@@ -278,7 +287,6 @@ export function Conversation({
                 onSubmit={submit}
                 onStop={onStop}
                 running={running}
-                showHint={false}
                 autoFocus
                 placeholder={running ? t.chat.runningPlaceholder : t.chat.idlePlaceholder}
               />

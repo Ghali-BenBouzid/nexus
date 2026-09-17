@@ -9,7 +9,6 @@ type PromptBarProps = {
   placeholder?: string;
   autoFocus?: boolean;
   // The composer variant (pinned in the conversation) hides the verbose hint row.
-  showHint?: boolean;
   // "hero" = the big landing input; "composer" = the chat-style pinned bar.
   variant?: "hero" | "composer";
   // While a run is in flight the submit button becomes a stop button and new
@@ -26,7 +25,7 @@ export type PromptBarHandle = { inject: (text: string) => void };
 // forwardRef so a parent (the hero's example chips) can type text into the bar
 // instead of submitting straight past it.
 export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function PromptBar(
-  { onSubmit, placeholder, autoFocus, showHint = true, variant = "hero", running, onStop },
+  { onSubmit, placeholder, autoFocus, variant = "hero", running, onStop },
   ref,
 ) {
   const [val, setVal] = useState("");
@@ -145,7 +144,6 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
           className="cinput-ta"
         />
         <div className="cinput-actions">
-          {history.length > 0 && <span className="cinput-hint">{t.chat.historyHint}</span>}
           <button
             className={"cinput-send" + (active ? " active" : "") + (running ? " stop" : "")}
             onClick={() => (running ? onStop?.() : fire(val))}
@@ -182,19 +180,6 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
           </button>
         )}
       </div>
-      {showHint && (
-        <div className="prompt-meta">
-          <span>
-            Press <b style={{ color: "var(--muted)" }}>Enter</b> to research · Shift+Enter for a new line
-            {history.length > 0 && (
-              <>
-                {" · "}
-                <b style={{ color: "var(--muted)" }}>↑↓</b> for history
-              </>
-            )}
-          </span>
-        </div>
-      )}
     </div>
   );
 });

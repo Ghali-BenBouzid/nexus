@@ -37,6 +37,7 @@ html[data-theme="dark"] {
   --accent-2: #eab308;
   --accent-ink: #ffffff;
   --accent-soft: rgba(202, 138, 4, 0.15);
+  --accent-text: #eab308; /* accent-colored text: the bright gold reads on black */
   /* Status tones ride the palette: complete = deep accent, caution = bright accent,
      so dots/feeds/gaps stay on-brand. Error keeps a real red (stop button + failures). */
   --ok: var(--accent);
@@ -64,6 +65,9 @@ html[data-theme="light"] {
   --accent-2: #eab308;
   --accent-ink: #ffffff;
   --accent-soft: rgba(202, 138, 4, 0.15);
+  /* Accent-colored text: the fill golds are too light to read on cream, so text
+     takes the palette's deep step (about 4.8:1 on the page). */
+  --accent-text: #a16207;
   --ok: var(--accent);
   --warn: var(--accent-2);
   --bad: #dc2626;
@@ -131,9 +135,9 @@ body[data-stage="report"] #bg-scrim,
 body[data-stage="chat"] #bg-scrim {
   opacity: 1;
   background: linear-gradient(180deg,
-    color-mix(in srgb, var(--bg) 86%, transparent) 0%,
-    color-mix(in srgb, var(--bg) 58%, transparent) 38%,
-    color-mix(in srgb, var(--bg) 80%, transparent) 100%);
+    color-mix(in srgb, var(--bg) 96%, transparent) 0%,
+    color-mix(in srgb, var(--bg) 92%, transparent) 38%,
+    color-mix(in srgb, var(--bg) 96%, transparent) 100%);
 }
 
 #root { position: relative; z-index: 2; }
@@ -150,7 +154,7 @@ a { color: inherit; text-decoration: none; }
   font-size: 12px;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--accent-2);
+  color: var(--accent-text);
   font-weight: 600;
 }
 
@@ -333,12 +337,6 @@ html[data-theme="dark"] .prompt { background: rgba(255, 255, 255, 0.14); }
 .prompt-go:disabled { background: var(--surface-2); color: var(--faint); cursor: default; transform: none; box-shadow: none; }
 .prompt-go svg { width: 20px; height: 20px; }
 
-.prompt-meta {
-  display: flex; align-items: center; justify-content: center;
-  margin-top: 14px; padding-inline: 6px;
-  font-size: 13px; color: var(--faint);
-}
-
 /* Small nudge toward the examples, separating them from the input above. */
 .chips-label { text-align: center; color: var(--fg); font-size: 13.5px; font-weight: 500; margin: 30px 0 0; }
 .chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; margin-top: 13px; }
@@ -376,7 +374,7 @@ html[data-theme="dark"] .prompt { background: rgba(255, 255, 255, 0.14); }
 }
 .step-card:hover { border-color: var(--line-strong); transform: translateY(-3px); }
 .step-num {
-  font-family: var(--font-mono); font-size: 12px; color: var(--accent-2);
+  font-family: var(--font-mono); font-size: 12px; color: var(--accent-text);
   letter-spacing: 0.1em; margin-bottom: 18px;
 }
 .step-ic { width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); margin-bottom: 18px; }
@@ -418,7 +416,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   background: var(--surface); border: 1px solid var(--line); border-radius: 999px; padding: 7px 14px; }
 .built-with { margin: 24px 0 0; max-width: 720px; }
 .built-with-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.07em;
-  text-transform: uppercase; color: var(--accent-2); }
+  text-transform: uppercase; color: var(--accent-text); }
 /* Three layer columns (backend / frontend / deployment) kept on one row at every
    width; the gap tightens on mobile (see the 920px block) so all three fit. */
 .stack-grid { margin-top: 16px; display: grid; gap: 18px 28px;
@@ -432,7 +430,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .hiw { margin: 0; }
 .hiw-svg { display: block; width: 100%; height: auto; max-width: 1060px; margin: 0 auto; overflow: visible; }
 .hiw-orch { fill: none; stroke: var(--line-strong); stroke-dasharray: 5 6; }
-.hiw-orch-label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; fill: var(--accent-2); }
+.hiw-orch-label { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; fill: var(--accent-text); }
 .hiw-edge { fill: none; stroke: color-mix(in srgb, var(--fg) 42%, transparent); stroke-width: 1.8; }
 .hiw-arrowhead { fill: none; stroke: color-mix(in srgb, var(--fg) 68%, transparent); stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 /* Flow-light: one guided light traces the primary path start -> end. It's built from
@@ -448,7 +446,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .hiw-io { font-family: var(--font-mono); font-size: 12px; fill: var(--fg); }
 /* The exit label stays accent so start and end read as a pair; the entry label is plain
    bold ink (its ping ring + brighter first arrow carry the "start here" cue instead). */
-.hiw-io-key { fill: var(--accent-2); font-weight: 700; }
+.hiw-io-key { fill: var(--accent-text); font-weight: 700; }
 .hiw-io-start { fill: var(--fg); font-weight: 700; }
 .hiw-edge.start { stroke: color-mix(in srgb, var(--fg) 72%, transparent); stroke-width: 2.3; }
 .hiw-start-dot { fill: var(--accent-2); }
@@ -471,7 +469,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .hiw-human:hover rect, .hiw-human.active rect { fill: var(--accent-soft); stroke: var(--accent); }
 /* Small mono labels riding the confirm / revise edges. */
 .hiw-gate-label { font-family: var(--font-mono); font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
-  text-transform: uppercase; fill: var(--accent-2); }
+  text-transform: uppercase; fill: var(--accent-text); }
 /* Fixed-height slot: the caption text changes on hover but the box never does,
    so the centered graph and section title above it never reflow (otherwise a tall
    caption pushes the hovered node out from under the cursor and it stutters). */
@@ -544,29 +542,8 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 @keyframes hiwUp { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes hiwDraw { from { opacity: 0; stroke-dashoffset: 1; } to { opacity: 1; stroke-dashoffset: 0; } }
 
-/* What it took (acad-list) + what's next band */
-.whats-next { margin-top: 46px; padding-top: 30px; border-top: 1px solid var(--line); }
-.whats-next h3 { font-family: var(--font-display); font-size: 17px; font-weight: 600; margin: 0 0 6px; }
-.next-intro { margin: 0 0 16px; color: var(--muted); font-size: 14.5px; }
-.acad-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; max-width: 820px; }
-.acad-list li { position: relative; padding-left: 18px; font-size: 14.5px; line-height: 1.55; color: var(--muted); }
-.acad-list li::before { content: ""; position: absolute; left: 0; top: 0.6em;
-  width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
-.acad-list.muted li::before { background: transparent; border: 1px solid var(--line-strong); }
-.acad-list b { color: var(--fg); font-weight: 600; }
-/* Engineering challenges: problem -> how, then a framed impact line. Narrow column
-   and short copy so each one reads in a glance, not a wall of text. */
-.took-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 64px; max-width: 560px; }
-.took-item { position: relative; }
-.took-item h3 { font-family: var(--font-display); font-size: 17px; font-weight: 600; letter-spacing: -0.01em; margin: 0 0 16px; color: var(--fg); }
-.took-item p { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--fg); }
-/* Impact framed off on its own so it never clutters the description above it. */
-.took-item .took-why { margin-top: 18px; padding: 9px 13px 10px; border: 1px solid var(--line);
-  border-radius: 10px; background: var(--surface); }
-.took-why span { display: block; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.09em;
-  text-transform: uppercase; color: var(--accent-2); margin: 0 0 4px; }
-.footer-loop { color: var(--accent-2); border-bottom: 1px solid color-mix(in srgb, var(--accent-2) 40%, transparent); transition: color 0.2s; }
-.footer-loop:hover { color: var(--accent); }
+.footer-loop { color: var(--accent-text); border-bottom: 1px solid color-mix(in srgb, var(--accent-2) 40%, transparent); transition: color 0.2s; }
+.footer-loop:hover { color: var(--fg); }
 @media (max-width: 760px) {
   /* Swap the wide desktop graph for the vertical one. */
   .hiw-svg { display: none; }
@@ -592,10 +569,10 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 /* mini sources preview */
 .mini-src { display: grid; gap: 12px; }
 .mini-claim { font-size: 14.5px; line-height: 1.6; color: var(--fg); }
-.mini-claim sup { color: var(--accent); font-family: var(--font-mono); font-weight: 600; cursor: pointer; }
+.mini-claim sup { color: var(--accent-text); font-family: var(--font-mono); font-weight: 600; cursor: pointer; }
 .mini-src-list { display: grid; gap: 9px; margin-top: 6px; }
 .mini-src-item { display: flex; gap: 10px; align-items: center; font-size: 12.5px; color: var(--muted); padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); }
-.mini-src-item .n { font-family: var(--font-mono); color: var(--accent); font-weight: 600; }
+.mini-src-item .n { font-family: var(--font-mono); color: var(--accent-text); font-weight: 600; }
 .mini-src-item.hot { border-color: var(--accent); background: var(--accent-soft); }
 
 /* ============================================================
@@ -672,7 +649,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .pb-step-warn .pb-mark { color: var(--warn); }
 .pb-step-stop .pb-mark { color: var(--faint); }
 .pb-step-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pb-num { font-family: var(--font-mono); font-size: 11.5px; color: var(--accent); margin-right: 8px; }
+.pb-num { font-family: var(--font-mono); font-size: 11.5px; color: var(--accent-text); margin-right: 8px; }
 .pb-step-state {
   max-width: 26ch; font-family: var(--font-mono); font-size: 12px; color: var(--faint);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
@@ -710,7 +687,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .report .doc li::marker { color: var(--faint); }
 .report .doc strong { font-weight: 600; }
 .report .doc em { font-style: italic; }
-.report .doc a { color: var(--accent-2); text-decoration: underline; text-underline-offset: 2px; }
+.report .doc a { color: var(--accent-text); text-decoration: underline; text-underline-offset: 2px; }
 .report .doc blockquote { margin: 22px 0; padding: 16px 20px; border: 1px solid var(--line); background: var(--accent-soft); border-radius: 12px; font-size: 15px; color: var(--fg); line-height: 1.6; }
 .report .doc blockquote p:last-child { margin-bottom: 0; }
 .report .doc .lead { font-size: 18.5px; line-height: 1.6; color: var(--fg); }
@@ -726,7 +703,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .report .doc tr:last-child td { border-bottom: none; }
 .cite {
   font-family: var(--font-mono); font-size: 0.72em; font-weight: 600;
-  color: var(--accent); cursor: pointer; vertical-align: super;
+  color: var(--accent-text); cursor: pointer; vertical-align: super;
   padding: 0 1px; border-radius: 3px; transition: background 0.2s;
 }
 .cite:hover, .cite.active { background: var(--accent); color: var(--accent-ink); }
@@ -744,7 +721,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .src-item > div { min-width: 0; }
 .src-item:hover { background: var(--surface-2); }
 .src-item.active { background: var(--accent-soft); border-color: var(--accent); }
-.src-item .sn { font-family: var(--font-mono); font-size: 12.5px; color: var(--accent); font-weight: 600; }
+.src-item .sn { font-family: var(--font-mono); font-size: 12.5px; color: var(--accent-text); font-weight: 600; }
 .src-item .st { font-size: 13.5px; font-weight: 600; color: var(--fg); line-height: 1.35; margin-bottom: 3px; }
 .src-item .su { font-family: var(--font-mono); font-size: 11.5px; color: var(--faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .src-item.consulted .sn { color: var(--faint); }
@@ -825,8 +802,8 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
    ============================================================ */
 .chat {
   position: relative;
-  /* clear the fixed nav (~72px) so the side-panel headers don't tuck under it */
-  height: 100vh; padding-top: 78px; box-sizing: border-box;
+  /* No nav in the chat: the workspace owns the whole viewport, like a chat app. */
+  height: 100vh; box-sizing: border-box;
   display: flex; flex-direction: column;
   animation: chatIn 0.3s var(--ease);
 }
@@ -842,11 +819,6 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   transition: border-color 0.2s, color 0.2s, background 0.2s; }
 .artifact-fab:hover { color: var(--fg); border-color: var(--line-strong); background: var(--surface-2); }
 .artifact-fab svg { width: 20px; height: 20px; }
-
-/* assistant identity on each reply, so the activity reads as Nexus speaking */
-.reply-agent { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--muted); }
-.reply-mark { width: 20px; height: 20px; border-radius: 6px; flex: none; display: grid; place-items: center;
-  background: var(--accent-soft); color: var(--accent); font-size: 13px; line-height: 1; }
 
 /* shell: chat column (scrolls) + optional report panel (scrolls) */
 .chat-main { flex: 1; min-height: 0; display: flex; position: relative; }
@@ -867,10 +839,21 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .ch-rail { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center;
   gap: 6px; padding: 12px 0; }
 .ch-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  min-height: 56px; padding: 8px 10px 8px 16px; border-bottom: 1px solid var(--line); }
-.ch-title { display: inline-flex; align-items: center; gap: 8px; font-family: var(--font-display);
-  font-weight: 600; font-size: 14px; white-space: nowrap; }
-.ch-title svg { width: 16px; height: 16px; color: var(--accent-2); }
+  min-height: 56px; padding: 8px 10px 8px 16px; }
+/* The brand sits where a chat app puts it: the sidebar's top-left corner. */
+.ch-brand { display: inline-flex; align-items: center; padding: 4px 2px; background: none; border: none;
+  color: var(--fg); cursor: pointer; border-radius: 6px; }
+.ch-mark { display: grid; place-items: center; width: 36px; height: 36px; margin-bottom: 4px;
+  background: none; border: none; color: var(--fg); cursor: pointer; border-radius: 8px; }
+.ap-title { font-family: var(--font-display); font-weight: 600; font-size: 14px;
+  white-space: nowrap; padding-left: 6px; }
+.ch-label { flex: none; padding: 12px 18px 4px; font-family: var(--font-mono); font-size: 11px;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--faint); }
+.ch-space { flex: 1; }
+.ch-foot { flex: none; display: flex; align-items: center; gap: 4px; padding: 8px 10px;
+  border-top: 1px solid var(--line); }
+.ch-rail-foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.lang-btn { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; }
 .ch-newchat { flex: none; display: flex; align-items: center; gap: 9px; margin: 10px; padding: 10px 12px;
   font-family: var(--font-display); font-weight: 500; font-size: 13.5px; color: var(--fg); cursor: pointer;
   background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
@@ -910,7 +893,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .plan-confirm { border: 1px solid var(--line); border-radius: 14px; padding: 15px 17px; background: var(--surface); display: flex; flex-direction: column; gap: 12px; }
 .plan-head { font-size: 13.5px; font-weight: 500; color: var(--muted); }
 .plan-list { margin: 0; padding-left: 22px; display: grid; gap: 6px; font-size: 14.5px; line-height: 1.5; color: var(--fg); list-style: decimal; }
-.plan-list li::marker { color: var(--accent-2); font-family: var(--font-mono); font-size: 12px; }
+.plan-list li::marker { color: var(--accent-text); font-family: var(--font-mono); font-size: 12px; }
 .plan-actions { display: flex; gap: 9px; flex-wrap: wrap; align-items: center; }
 .plan-actions .btn { padding: 8px 16px; font-size: 13.5px; }
 /* Discard is the quiet, subordinate way out: pushed to the trailing edge. */
@@ -951,7 +934,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   box-shadow: var(--shadow); backdrop-filter: blur(18px) saturate(1.4);
   animation: jumpIn 0.25s var(--ease);
 }
-.jump-latest:hover { border-color: var(--accent); color: var(--accent); }
+.jump-latest:hover { border-color: var(--accent); color: var(--accent-text); }
 .jump-latest svg { width: 15px; height: 15px; }
 @keyframes jumpIn { from { opacity: 0; transform: translate(-50%, 8px); } }
 
@@ -969,7 +952,6 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   font-size: 14.5px; line-height: 1.6; color: var(--fg); padding: 7px 16px; max-height: 160px; text-align: left; }
 .cinput-ta::placeholder { color: var(--faint); text-align: center; }
 .cinput-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0; flex: none; }
-.cinput-hint { font-family: var(--font-mono); font-size: 11px; color: var(--faint); }
 .cinput-send { width: 34px; height: 34px; border-radius: 50%; border: none; flex: none; display: grid; place-items: center;
   cursor: pointer; background: var(--surface-2); color: var(--faint); transition: background 0.15s, color 0.15s, transform 0.15s; }
 .cinput-send svg { width: 16px; height: 16px; }
@@ -996,8 +978,6 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .art-body::-webkit-scrollbar { width: 9px; }
 .art-body::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px; }
 .art-body::-webkit-scrollbar-track { background: transparent; }
-.art-q { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.02em; color: var(--accent-2);
-  margin-bottom: 18px; line-height: 1.5; }
 .artifact .report { background: transparent; border: none; box-shadow: none; backdrop-filter: none; padding: 0; }
 
 .art-sources { margin-top: 30px; padding-top: 24px; border-top: 1px solid var(--line); }
@@ -1009,7 +989,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   border: 1px solid transparent; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
 .art-src:hover { background: var(--surface-2); }
 .art-src.active { background: var(--accent-soft); border-color: var(--accent); }
-.art-src-n { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--accent); }
+.art-src-n { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; color: var(--accent-text); }
 .art-src.consulted .art-src-n { color: var(--faint); }
 .art-src-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .art-src-title { font-size: 13.5px; font-weight: 600; color: var(--fg); line-height: 1.35;
@@ -1049,9 +1029,11 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .drawer-x:hover { background: var(--surface-2); color: var(--fg); }
 .drawer-body { flex: 1; overflow-y: auto; padding: 10px; display: flex; flex-direction: column; gap: 4px; }
 .drawer-empty { padding: 28px 16px; color: var(--muted); font-size: 14px; text-align: center; }
-.hist-item { display: grid; grid-template-columns: 14px 1fr; gap: 11px; align-items: start; text-align: left;
+.hist-item { display: grid; grid-template-columns: 1fr; gap: 11px; align-items: start; text-align: left;
   padding: 12px 13px; border: 1px solid transparent; border-radius: 12px; background: transparent; cursor: pointer; font-family: inherit; }
 .hist-item:hover { background: var(--surface-2); border-color: var(--line); }
+/* Only the artifacts list keeps a status dot; a chat row is just its name. */
+.hist-item.with-dot { grid-template-columns: 14px 1fr; }
 .hist-dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; background: var(--faint); }
 .hist-dot.complete { background: var(--ok); }
 .hist-dot.failed { background: var(--bad); }
@@ -1087,16 +1069,10 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
      Only the conversation thread scrolls; the prompt bar and the corner buttons
      stay fixed. The Recent column is a left drawer, the Artifacts list a top
      sheet, and a report a bottom sheet drawn up over everything. */
-  /* Nav clearance: tightened so the in-flow sub-bar (and its icons) sit ~10px
-     higher, closing the gap below the nav. */
-  /* Track the dynamic viewport so the shell always equals the visible area: with
-     a static 100vh the body keeps a sliver of scroll the height of the mobile URL
-     bar, and scrolling the thread collapses the bar and peels the in-flow sub-bar
-     away from the fixed nav. dvh removes that slack so only the thread scrolls. */
-  .chat { padding-top: 70px; height: 100dvh; }
-  /* The two parts of the header read as one unit: drop the nav's own divider so
-     only the sub-bar's bottom edge separates the header from the thread. */
-  .nav.nav-chat { border-bottom-color: transparent; }
+  /* Track the dynamic viewport so the shell always equals the visible area: a
+     static 100vh leaves a sliver of scroll the height of the mobile URL bar.
+     --chat-top is the header bar's height, which the sheets below clear. */
+  .chat { --chat-top: 52px; height: 100dvh; }
   .chat-main { flex-direction: column; position: relative; }
   .resizer, .artifact-fab { display: none; }
 
@@ -1112,19 +1088,19 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
     background: color-mix(in srgb, var(--bg) 86%, transparent); backdrop-filter: blur(14px) saturate(1.4); }
   .composer-inner { padding-inline: 16px; }
   .jump-latest { bottom: 132px; }
-  /* The composer history hint has no use without the arrow controls on mobile. */
-  .cinput-hint { display: none; }
 
-  /* A slim sub-bar sitting in flow right under the nav (so it can never overlap
-     it), holding the Recent (left) and Artifacts (right) buttons as bare icons. */
-  .chat-topbar { position: relative; z-index: 40;
-    display: flex; align-items: center; justify-content: space-between; padding: 2px 12px;
+  /* The only header on mobile, like a chat app's: the menu and the brand on the
+     left, the Artifacts button on the right. */
+  .chat-topbar { position: relative; z-index: 40; min-height: var(--chat-top);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: env(safe-area-inset-top, 0px) 12px 0;
     background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(14px) saturate(1.4);
     border-bottom: 1px solid var(--line); }
   .chat-corner { display: grid; place-items: center; cursor: pointer; padding: 2px;
     background: none; border: none; color: var(--muted); transition: color 0.2s; }
   .chat-corner:hover { color: var(--fg); }
   .chat-corner svg { width: 19px; height: 19px; }
+  .chat-topbar-left { display: flex; align-items: center; gap: 12px; }
   .chat-corner-right.active { color: var(--accent); }
 
   /* Recent: an opaque left drawer over the thread (so the list text never bleeds
@@ -1141,7 +1117,8 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 
   /* Artifacts list: a sheet dropping from the top, below the sub-bar. It shows
      about one and a half entries, then the body scrolls to the rest. */
-  .artifact-panel--list { position: fixed; left: 0; right: 0; top: 98px; width: auto;
+  .artifact-panel--list { position: fixed; left: 0; right: 0; width: auto;
+    top: calc(var(--chat-top) + env(safe-area-inset-top, 0px));
     z-index: 30; border: 1px solid var(--line);
     border-radius: 0 0 16px 16px; box-shadow: var(--shadow);
     background: color-mix(in srgb, var(--panel) 95%, transparent); backdrop-filter: blur(16px) saturate(1.4);
@@ -1156,7 +1133,8 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 
   /* Report: a sheet drawn up from the bottom, over the (still fixed) prompt bar,
      leaving a thin top strip for the Recent button. No resize, close with the X. */
-  .artifact-panel--reader { position: fixed; left: 0; right: 0; top: 108px; bottom: 0; width: auto;
+  .artifact-panel--reader { position: fixed; left: 0; right: 0; bottom: 0; width: auto;
+    top: calc(var(--chat-top) + env(safe-area-inset-top, 0px) + 8px);
     z-index: 30; border-top-left-radius: 18px; border-top-right-radius: 18px; box-shadow: var(--shadow);
     background: color-mix(in srgb, var(--panel) 97%, transparent); backdrop-filter: blur(18px) saturate(1.4);
     animation: sheetUp 0.26s var(--ease); }
@@ -1170,8 +1148,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 @keyframes sheetDown { from { transform: translateY(-100%); } }
 @keyframes scrimIn { from { opacity: 0; } }
 /* Minimum width: the section headers no longer fit, so drop them and reduce the
-   GitHub link to its icon. 760px is where the longest header ("Engineering
-   challenges") stops fitting alongside the full left side. */
+   GitHub link to its icon. */
 @media (max-width: 760px) {
   .nav-links { display: none; }
   .nav-gh-text { display: none; }
@@ -1234,3 +1211,17 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
   ::view-transition-old(root),
   ::view-transition-new(root) { animation: none; }
 }
+
+/* ============================================================
+   Demo-account prompt: a native <dialog>, so focus, Esc and the
+   backdrop come from the browser.
+   ============================================================ */
+.demo-dialog { width: min(92vw, 420px); padding: 0; border: 1px solid var(--line);
+  border-radius: var(--r-lg); background: var(--surface-solid); color: var(--fg); box-shadow: var(--shadow); }
+.demo-dialog::backdrop { background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(4px); }
+.demo-body { padding: 26px 26px 22px; }
+.demo-body h2 { margin: 0 0 8px; font-family: var(--font-display); font-size: 20px; font-weight: 600;
+  letter-spacing: -0.01em; text-wrap: balance; }
+.demo-body p { margin: 0 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.55; }
+.demo-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.demo-actions svg { width: 14px; height: 14px; }

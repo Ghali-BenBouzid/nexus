@@ -31,13 +31,6 @@ function detect(): Lang {
 
 export const lang: Lang = detect();
 
-// Dollar amounts for the demo budget, in the reader's number format.
-export const usd = (amount: number): string =>
-  new Intl.NumberFormat(lang === "fr" ? "fr-FR" : "en-US", {
-    style: "currency",
-    currency: "USD",
-  }).format(amount);
-
 if (typeof document !== "undefined") document.documentElement.lang = lang;
 
 // Persist the choice and reload so the resolved-once dictionary is rebuilt.
@@ -55,11 +48,11 @@ const en = {
   nav: {
     about: "About",
     how: "How it works",
-    engineering: "Engineering challenges",
     source: "Source",
     start: "Start researching",
     recent: "Recent chats",
     theme: "Toggle theme",
+    home: "Nexus home page",
   },
   hero: {
     headline: "Ask anything. Every claim, sourced.",
@@ -74,10 +67,10 @@ const en = {
   about: {
     title: "About",
     body: "Nexus is an agentic research platform. You ask a question, a team of agents plans it, researches the live web, and writes back a single report where every claim links to its source. I designed and built all of it: the backend, the agent orchestration, and the frontend.",
-    proof: ["Open source", "Invite-only live demo", "A real run takes ~1min"],
+    proof: ["Open source", "Invite-only live demo"],
     builtWithLabel: "Built with",
     builtWith: [
-      { label: "Backend", items: ["FastAPI", "Python", "Postgres"] },
+      { label: "Backend", items: ["FastAPI", "Python", "LangGraph", "Postgres", "Redis"] },
       { label: "Frontend", items: ["React", "TypeScript", "three.js"] },
       { label: "Deployment", items: ["Railway", "Neon", "Cloudflare"] },
     ],
@@ -132,43 +125,6 @@ const en = {
     ],
     aria: "A supervisor agent reads each message and either answers directly, composes the existing reports into one new report, or starts a research run: the research subgraph plans the question, you confirm the plan, a fan-out of researcher agents gathers sources, then a consolidation step and a writer turn it into a cited report.",
   },
-  eng: {
-    title: "Engineering challenges",
-    why: "Impact",
-    challenges: [
-      {
-        problem: "Keeping the model from inventing citations.",
-        how: "Hand citations to the model and it eventually cites a source it never read. So a deterministic step dedupes and numbers the sources, and the writer only keeps the markers it's given.",
-        why: "The room for a hallucinated citation shrinks to almost nothing, so every claim links to a source that was actually read.",
-      },
-      {
-        problem: "Knowing whether a change actually helps.",
-        how: "Prompt and pipeline tweaks feel better without being better. An eval harness with a fixed set of graded questions and an LLM-as-a-judge pass scores each change before it ships.",
-        why: "Measure before you tune: 'seems nicer' becomes a number I can compare across runs.",
-      },
-      {
-        problem: "One core, four different providers.",
-        how: "LLM backends each speak a slightly different dialect, and Groq's Llama models kept breaking the tool-call parser. One OpenAI-compatible adapter fronts them all, OpenRouter by default, the rest swappable.",
-        why: "The agents never know which backend they run on, so switching provider is a config change, not a rewrite.",
-      },
-      {
-        problem: "Free-tier LLM limits, on three axes at once.",
-        how: "Free tiers cap requests, tokens, and daily totals, and one run can trip any of them. A token-aware rate limiter with a per-model profile paces the orchestrator's own calls under every ceiling.",
-        why: "A real run never dies on a rate-limit error in front of someone.",
-      },
-      {
-        problem: "Built for concurrency.",
-        how: "The orchestrator dispatches researchers as concurrent, non-blocking tasks, down through the providers and the database, with one cap on how many run at once.",
-        why: "Researchers work side by side, and the cap is a single knob, so it scales with the budget instead of a rewrite.",
-      },
-    ],
-    nextTitle: "What's next",
-    nextIntro: "A few of these are already in progress.",
-    next: [
-      "Researching your own documents alongside the web.",
-      "An opt-in deep-research mode that trades speed for coverage: it plans the question from as many angles as it can, then works through them with a stronger model.",
-    ],
-  },
   footer: {
     builtBy: "Built by Ghali Ben Bouzid.",
     restPre: "The rest of my work is at ",
@@ -177,23 +133,26 @@ const en = {
     codeTitle: "Code",
     source: "Source on GitHub",
     agentOrch: "Agent orchestration",
-    note: "Nexus, deep research, cited. FastAPI and Python on the back, React on the front, agent orchestration on OpenRouter.",
+    note: "Nexus, deep research, cited. FastAPI and Python on the back, React on the front, agent orchestration on LangGraph and OpenRouter.",
   },
   chat: {
     runningPlaceholder: "Researching… stop to ask something new",
     idlePlaceholder: "Ask a follow-up, or start a new search…",
     jumpLatest: "Jump to latest",
     showArtifacts: "Show artifacts",
-    historyHint: "↑↓ history",
   },
   access: {
-    simulated: "Simulated demo run. Live research is invite-only.",
-    budget: (left: string, total: string) => `${left} of ${total} demo budget left`,
+    credits: (percent: number) => `${percent}% of your demo credits left`,
     invalid: "This invite link is not valid.",
     none: "Live research needs an invite link.",
   },
+  demo: {
+    title: "Live research is invite-only",
+    body: "Each run uses real models and live web searches, so access comes with a demo account. Message me on LinkedIn and I'll set one up for you.",
+    cta: "Get a demo account",
+    later: "Not now",
+  },
   turn: {
-    brand: "Nexus",
     planTitle: "Here's the plan. Confirm to research, or revise it.",
     confirmPlan: "Confirm & research",
     revisePlan: "Revise",
@@ -280,11 +239,11 @@ const fr: Dict = {
   nav: {
     about: "À propos",
     how: "Fonctionnement",
-    engineering: "Défis techniques",
     source: "Source",
     start: "Lancer une recherche",
     recent: "Conversations récentes",
     theme: "Changer de thème",
+    home: "Accueil de Nexus",
   },
   hero: {
     headline: "Posez une question. Chaque affirmation est sourcée.",
@@ -299,10 +258,10 @@ const fr: Dict = {
   about: {
     title: "À propos",
     body: "Nexus est une plateforme de recherche agentique. Vous posez une question, une équipe d'agents la décompose, cherche sur le web en direct, et vous remet un seul rapport dont chaque affirmation renvoie à sa source. J'ai tout conçu et construit : la partie serveur, l'orchestration des agents et l'interface.",
-    proof: ["Open source", "Démo en direct sur invitation", "Une vraie recherche prend ~1min"],
+    proof: ["Open source", "Démo en direct sur invitation"],
     builtWithLabel: "Construit avec",
     builtWith: [
-      { label: "Partie serveur", items: ["FastAPI", "Python", "Postgres"] },
+      { label: "Partie serveur", items: ["FastAPI", "Python", "LangGraph", "Postgres", "Redis"] },
       { label: "Interface", items: ["React", "TypeScript", "three.js"] },
       { label: "Déploiement", items: ["Railway", "Neon", "Cloudflare"] },
     ],
@@ -357,43 +316,6 @@ const fr: Dict = {
     ],
     aria: "Un superviseur lit chaque message, puis répond directement, fusionne les rapports déjà produits en un nouveau rapport, ou lance une recherche : le sous-graphe de recherche planifie la question, vous confirmez le plan, plusieurs agents chercheurs rassemblent les sources en parallèle, puis une étape de consolidation et un rédacteur en font un rapport sourcé.",
   },
-  eng: {
-    title: "Défis techniques",
-    why: "Impact",
-    challenges: [
-      {
-        problem: "Empêcher le modèle d'inventer des citations.",
-        how: "Si on laisse les citations au modèle, il finit par en citer une qu'il n'a jamais lue. Une étape déterministe dédoublonne et numérote les sources, et le rédacteur ne conserve que les marqueurs qu'on lui transmet.",
-        why: "Le risque d'une citation inventée devient quasi nul, donc chaque affirmation renvoie à une source réellement lue.",
-      },
-      {
-        problem: "Savoir si un changement aide vraiment.",
-        how: "Les retouches de prompt semblent meilleures sans forcément l'être. Un protocole d'évaluation, avec un jeu de questions notées et une passe de LLM-as-a-judge, mesure chaque changement avant sa mise en ligne.",
-        why: "Mesurer avant d'ajuster : « ça a l'air mieux » devient un chiffre comparable d'une recherche à l'autre.",
-      },
-      {
-        problem: "Un seul noyau, quatre fournisseurs différents.",
-        how: "Chaque fournisseur LLM parle un dialecte un peu différent, et les modèles Llama de Groq renvoyaient leurs appels d'outils dans un format qui cassait l'analyse. Un seul adaptateur compatible OpenAI les couvre tous, avec OpenRouter par défaut et le reste interchangeable.",
-        why: "Les agents ne savent pas quel fournisseur ils utilisent : en changer relève de la configuration, pas d'une réécriture.",
-      },
-      {
-        problem: "Les limites des offres LLM gratuites, sur trois axes à la fois.",
-        how: "Les offres gratuites plafonnent les requêtes, les tokens et un total quotidien, et une seule recherche peut faire sauter n'importe lequel des trois. Un limiteur de débit par modèle, qui tient compte des tokens, cadence les appels pour rester sous chaque plafond.",
-        why: "Une vraie recherche ne plante jamais sur une erreur de quota sous les yeux de quelqu'un.",
-      },
-      {
-        problem: "Conçu pour l'exécution concurrente.",
-        how: "L'orchestrateur lance les chercheurs comme des tâches concurrentes, et toute la chaîne reste non bloquante, jusqu'aux fournisseurs et à la base de données, avec un seul plafond sur le nombre exécuté en même temps.",
-        why: "Les chercheurs travaillent côte à côte, et le plafond tient à un seul réglage, donc le système monte en charge avec le budget au lieu d'exiger une réécriture.",
-      },
-    ],
-    nextTitle: "La suite",
-    nextIntro: "Certaines de ces fonctionnalités sont déjà en cours de développement.",
-    next: [
-      "Chercher dans vos propres documents en parallèle du web.",
-      "Un mode recherche approfondie optionnel, qui troque la vitesse contre la couverture : il aborde la question sous le plus d'angles possible, puis les traite avec un modèle plus puissant.",
-    ],
-  },
   footer: {
     builtBy: "Construit par Ghali Ben Bouzid.",
     restPre: "Le reste de mon travail est sur ",
@@ -402,23 +324,26 @@ const fr: Dict = {
     codeTitle: "Code",
     source: "Code sur GitHub",
     agentOrch: "Orchestration des agents",
-    note: "Nexus, recherche approfondie, sourcée. FastAPI et Python côté serveur, React côté interface, orchestration d'agents sur OpenRouter.",
+    note: "Nexus, recherche approfondie, sourcée. FastAPI et Python côté serveur, React côté interface, orchestration d'agents avec LangGraph sur OpenRouter.",
   },
   chat: {
     runningPlaceholder: "Recherche en cours… arrêtez pour poser autre chose",
     idlePlaceholder: "Posez une question de suivi, ou lancez une nouvelle recherche…",
     jumpLatest: "Aller au plus récent",
     showArtifacts: "Afficher les rapports",
-    historyHint: "↑↓ historique",
   },
   access: {
-    simulated: "Recherche de démonstration simulée. La recherche en direct est sur invitation.",
-    budget: (left: string, total: string) => `${left} restants sur ${total} de budget de démo`,
+    credits: (percent: number) => `Il vous reste ${percent} % de vos crédits de démo`,
     invalid: "Ce lien d'invitation n'est pas valide.",
     none: "La recherche en direct nécessite un lien d'invitation.",
   },
+  demo: {
+    title: "La recherche en direct est sur invitation",
+    body: "Chaque recherche utilise de vrais modèles et des recherches web en direct, l'accès passe donc par un compte de démo. Écrivez-moi sur LinkedIn et je vous en crée un.",
+    cta: "Obtenir un compte de démo",
+    later: "Plus tard",
+  },
   turn: {
-    brand: "Nexus",
     planTitle: "Voici le plan. Confirmez pour lancer la recherche, ou révisez-le.",
     confirmPlan: "Confirmer et rechercher",
     revisePlan: "Réviser",

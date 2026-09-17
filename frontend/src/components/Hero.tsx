@@ -32,7 +32,7 @@ export function Hero({ onSubmit }: HeroProps) {
         <p className="hero-sub">{t.hero.sub}</p>
 
         <div className="prompt-wrap-outer">
-          <PromptBar ref={barRef} onSubmit={onSubmit} showHint={false} />
+          <PromptBar ref={barRef} onSubmit={onSubmit} />
           <p className="chips-label">{t.hero.examplesLabel}</p>
           <div className="chips">
             {t.hero.chips.map((prompt, i) => (

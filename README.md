@@ -1,176 +1,239 @@
 # Nexus
 
-Nexus is an API-first agentic research platform. You ask a question; a team of
-agents plans it into sub-questions, searches the web, reasons over what it finds,
-and returns a single structured report where every claim is cited and traceable
-to its source.
+Nexus is a research assistant.
+You ask a question, a small team of AI agents researches it on the web, and you get back one report where every claim links to the source it came from.
 
-The agents run as an async pipeline behind a FastAPI backend, with a Vite/React
-frontend that streams their progress live and renders the cited report.
+Live demo: [nexus.ghali-bnb02.workers.dev](https://nexus.ghali-bnb02.workers.dev) (invite-only, [ask me for an account](https://www.linkedin.com/in/ghali-ben-bouzid-6b6582268)).
+
+![A finished report open next to the conversation](docs/images/report.png)
+
+## The problem
+
+A search engine gives you links to read yourself.
+A chatbot gives you an answer, but you can't easily tell where each part of it comes from.
+Nexus does the reading for you, and every sentence in its report points to a numbered source you can open and check.
+
+It's for anyone who wants a researched answer and wants to see where each part of it came from.
+It's also my portfolio project: I use it to show how I build an agent system, including how it runs in production and how I measure it.
+
+## What goes in, what comes out
+
+You type a message in a chat.
+Nexus reads the conversation and does one of three things:
+
+- **Answers directly**, when the conversation and the reports already in it cover the question.
+- **Merges earlier reports** into one longer report, with no new searching, when you ask it to combine them.
+- **Researches**: it proposes a plan (a few sub-questions), waits for you to approve or revise it, then writes a cited report.
+
+A real example from the local setup:
+
+> **You:** How do heat pumps work in very cold climates?
+>
+> **Plan proposed, waiting for approval:**
+> 1. What is the fundamental operating principle of heat pumps and how does it function when extracting heat from cold outdoor air?
+> 2. What technological advancements allow modern heat pumps (such as cold-climate air-source heat pumps) to maintain efficiency and heating capacity in sub-zero temperatures?
+> 3. What are the limitations and performance trade-offs of using heat pumps as the primary heating source in extremely cold climates?
+>
+> **After approval:** three researchers searched in parallel and the report came back with 11 cited sources, about 8 seconds later.
+
+![The plan waiting for approval](docs/images/plan.png)
 
 ## How it works
 
+```mermaid
+flowchart LR
+    M[Message] --> S{Supervisor}
+    S -->|answer| A[Reply]
+    S -->|compose| C[Merge reports] --> W[Write]
+    S -->|research| P[Plan] --> R{You approve?}
+    R -->|revise| P
+    R -->|confirm| X[Researchers, in parallel] --> K[Consolidate] --> W
+    W --> Out[Cited report]
 ```
-message -> supervisor -> answer
-                      -> compose -------------------------------------> write
-                      -> plan -> user approves -> research (fan-out) -> consolidate -> write
-```
 
-The pipeline is a LangGraph graph (`app/agents/orchestrator.py`).
-Each step below is a node that adapts a framework-free agent.
-Pausing for the user to approve the plan is an `interrupt`, and a Postgres
-checkpointer holds the paused run until a later job resumes it.
+The browser never waits on the models.
+The API saves your message and puts a job on a queue, a separate worker runs the agents, and the frontend polls for progress and shows each step as it happens.
 
-- **Supervisor** reads the conversation and picks the route: answer from what
-  is already there, compose the earlier reports into a longer one, or research.
-- **Planner** decomposes the question into a small set of self-contained,
-  non-overlapping sub-questions (a forced structured call, not prose parsing).
-- **Researchers** run a ReAct tool-use loop (`web_search`, `fetch_page` via
-  Tavily) under an iteration cap, fan out with one LangGraph `Send` per
-  sub-question (at most `MAX_CONCURRENCY` at once), and submit findings with
-  the sources that back them.
-- **Consolidator** is deterministic code: it dedupes sources by URL into one
-  global numbered list and remaps each finding's citations. No LLM ever assigns
-  a citation, which keeps the citation surface free of hallucination.
-- **Writer** renders the structured result into prose, preserving the citation
-  markers. A post-write pass strips any marker the model invents and prunes the
-  source list to what the prose actually cites.
+What each piece is used for:
 
-Failure is handled by degradation: a researcher that errors or times out becomes
-a reported gap rather than failing the run; only an empty plan or every
-researcher failing is a hard failure. Three timeout layers (per researcher,
-whole job, max tool iterations) guarantee a query never hangs.
+| Piece | Used for |
+| --- | --- |
+| FastAPI | The API: accounts, conversations, starting and stopping runs, the progress feed |
+| Redis + arq | The job queue between the API and the worker |
+| LangGraph | The agent pipeline as a graph, including the pause for plan approval |
+| Postgres (SQLAlchemy, Alembic) | Conversations, runs, progress events, the usage ledger, and paused runs |
+| OpenRouter | The language models, through one OpenAI-compatible adapter |
+| Tavily | Web search and reading pages |
+| DeepEval | Scoring the evaluation runs |
+| LangSmith | Optional tracing of every agent step |
+| React + TypeScript + Vite | The chat interface and the report panel |
+| Railway, Neon, Cloudflare | Hosting for the API and worker, the database, and the frontend |
 
-Agent progress is emitted as events and persisted, so the frontend tails a live
-"researcher k of N" feed by polling `GET /research/query/{id}/events`.
+The agents themselves are plain Python and know nothing about LangGraph:
 
-## Tech stack
+- The **supervisor** reads the conversation and picks the route.
+- The **planner** splits the question into a few self-contained sub-questions.
+- Each **researcher** searches the web and reads pages in a loop, then submits claims with the sources behind them.
+- The **consolidator** is plain code, not a model: it removes duplicate sources and numbers them.
+- The **writer** turns the claims into a report, and a final check removes any citation number that doesn't match a real source.
 
-- **Backend:** FastAPI, async SQLAlchemy + asyncpg, Alembic, Pydantic, JWT auth
-- **Agents:** a LangGraph graph with a Postgres checkpointer, over agents that
-  call models through a provider seam (one OpenAI-compatible adapter for
-  OpenRouter / Gemini / Groq / Cerebras / SambaNova) and a swappable Tavily
-  search backend, with a token + request-aware rate limiter
-- **Access and cost:** invite-only demo accounts, each with its own dollar
-  budget checked against a ledger of what every model call actually cost
-- **Frontend:** Vite, React, TypeScript, three.js (WebGL background), framework
-  -free i18n (English / French)
-- **Evaluation:** a deterministic Tier 1 harness (citation integrity, coverage)
-  plus an LLM-as-judge Tier 2 (faithfulness, relevance, coverage quality)
+## Decisions and trade-offs
 
-## Local development
+**Citations are assigned by code, not by the model.**
+Left to cite on their own, models sometimes cite a page they never read.
+So the consolidator numbers the sources and the writer can only keep the numbers it was given.
+In exchange, the writer can't add anything the researchers didn't find.
 
-### Backend
+**A queue and a worker instead of running agents inside the API.**
+A research run takes from a few seconds to a few minutes, and it used to run inside the API process, so a redeploy killed it.
+Now the worker runs it and writes a heartbeat every few seconds, and a scheduled check fails any run whose heartbeat stops.
+It does mean one more service to deploy (Redis) and a second process to keep alive.
 
-Requires [uv](https://docs.astral.sh/uv/), a Postgres database and Redis.
+**LangGraph with a Postgres checkpointer for the plan approval.**
+Before, approving a plan meant ending one job and starting another one from values saved on the database row.
+Now the graph pauses on the plan, saves its state, and the same run resumes when you answer, even on a different worker.
+Two downsides: the checkpointer keeps its own tables outside my migrations, and it only saves when a run pauses or ends, so if a worker crashes mid-run, that run fails instead of picking back up.
+
+**Invite-only accounts with a dollar budget.**
+The demo runs on paid models, so there's no public signup.
+I create each account with a budget, every model call is priced and written to a ledger, and new work is refused once the budget is spent.
+The catch is that I hand out accounts myself.
+
+**Polling instead of streaming.**
+The frontend asks for new progress events every second and a half instead of holding a stream open.
+It's simpler to host and to recover from a dropped connection, at the price of more requests.
+
+## What went wrong along the way
+
+**Every report said nothing was found.**
+Searches were returning results, but every researcher's final answer failed validation.
+The first evaluation run made it obvious: researcher success was 0% across 41 research runs.
+The cause was the tool definitions: they used JSON Schema references, which the model behind OpenRouter didn't follow, so it sent the claims as plain strings.
+Writing the schemas out in full fixed it, and researcher success went to 100% on the next run.
+
+**A question about me came back in German.**
+Language detection tripped on my name: it read "Who is Ghali Ben Bouzid?" as Dutch and "Qui est Ghali Ben Bouzid ?" as German, and every agent followed it, so one report came back in German.
+Detection now needs a minimum confidence before it sets the language.
+
+**A slower model made runs time out.**
+I tried a reasoning model that spent close to a minute per researcher step and three minutes writing, so runs hit the global timeout and lost everything.
+Researchers now have a shared time budget after which they submit what they have, and if the writer runs out of time, the report is built directly from the findings.
+I also went back to a faster default model.
+
+**Stopping a run didn't stop the model.**
+Stopping during the writing step marked the run as stopped, but the writer's model call kept going, got billed, and its report was thrown away.
+The worker now cancels whatever is running, a model call included, within one heartbeat of the stop.
+
+## Evaluation
+
+`app/evals/goldens.toml` holds 150 realistic first messages.
+They cover questions about the app and about me, current events, facts, comparisons, how-to questions, false premises, unanswerable and multilingual questions, and a stress set with typos, prompt injections and malformed input.
+Each one says what a good response should do.
+
+The harness runs them through the real pipeline and records every stage: the routing decision, the plan, each researcher's searches and claims, the report, the cost and the time.
+Then it scores each stage with simple deterministic checks (did the run finish, are the citations valid) and with DeepEval metrics judged by a separate model (is the plan relevant, is the report faithful to the findings, does the response do what the question needed).
+
+Results so far, on `google/gemini-3.1-flash-lite`:
+
+| Metric | First baseline (60 questions) | After the schema fix (6 questions) |
+| --- | --- | --- |
+| Researcher success | 0% | 100% |
+| Report faithfulness to findings | n/a | 1.00 |
+| Citation validity | 100% | 100% |
+| Response does what was expected | 23% | 67% |
+| Mean time per run | 9 s | 12 s |
+| Mean cost per run | $0.01 | $0.01 |
+
+The small run is only six questions, so it shows the fix worked, not how good the system is overall.
+The two weakest answers in it show real problems: a question about current events came back with 2024 information presented as current, and a question about me was sent to web search and came back with invented details.
+Scoring the full 150-question set is the next step.
+
+## Tests
+
+- The backend has close to 200 tests with pytest, and they run offline: a fake model and a fake search backend script the agents, so the suite is fast and deterministic.
+- They cover the graph (routing, the plan pause, revise and confirm), stopping a run, the job queue, budgets and billing, and the API.
+- The frontend has a few Vitest tests for the logic behind the progress bar, credits and turn outcomes.
+- Ruff for linting, and the TypeScript compiler for type checking.
+
+## Limitations
+
+- Access is invite-only, and I create accounts by hand.
+- Research covers the web only; searching your own documents isn't built yet.
+- Questions about current events can come back with dated information.
+- A run whose worker crashes is failed, not resumed.
+- Progress arrives by polling, so updates can lag by a second or two.
+- Slow reasoning models don't fit the time budget and fall back to a less polished report.
+- The evaluation relies on a model as a judge, and the scored runs so far are small.
+
+## Who built what
+
+I designed and built Nexus: the architecture, the agents, the evaluation and the interface.
+I wrote the first versions myself.
+For the later production work (the queue and worker split, the move to LangGraph, the evaluation harness and the invite accounts) I used Claude Code as a coding assistant: I made the design decisions, and I reviewed and tested the code it wrote.
+
+## Run it locally
+
+You need [uv](https://docs.astral.sh/uv/), Postgres, Redis and Node.
 
 ```bash
-uv sync                           # install dependencies
-cp .env.example .env              # then fill in the values (see below)
-uv run alembic upgrade head       # create the schema
-uv run uvicorn main:app --reload  # the API
+uv sync
+cp .env.example .env                  # fill in DATABASE_URL, SECRET_KEY, OPENROUTER_API_KEY, TAVILY_API_KEY
+uv run alembic upgrade head
+uv run uvicorn main:app --reload      # the API, on http://localhost:8000
 uv run arq app.worker.WorkerSettings  # the worker, in a second terminal
 ```
 
-The API records each turn and queues its jobs on Redis; the worker runs them
-(routing, planning, research, writing). Without Redis, set `JOB_QUEUE=inline`
-to run the jobs inside the API process instead.
+Without Redis, set `JOB_QUEUE=inline` and the jobs run inside the API process.
 
-The API serves at `http://localhost:8000` (`/docs` for Swagger). Set at least
-`DATABASE_URL`, `SECRET_KEY`, `TAVILY_API_KEY`, and the key for your chosen
-`LLM_PROVIDER` (OpenRouter by default). Every variable is documented in
-`.env.example`.
-
-### Demo accounts
-
-There is no signup page. Each visitor gets an account and an invite link from
-the admin command, which talks to whatever `DATABASE_URL` points at:
+Create an account and its invite link (there is no signup page):
 
 ```bash
-uv run python -m app.admin create "Jane Doe (Acme)" --budget 0.5 --days 14
-uv run python -m app.admin list                     # spend, budget, expiry
-uv run python -m app.admin update 7 --budget 1 --new-link
+uv run python -m app.admin create "Jane Doe" --budget 0.5 --days 14
+uv run python -m app.admin list
 ```
 
-The link opens the app already signed in. Every model call is billed to the
-account from the cost the provider reports, and new work is refused once the
-budget is spent. Visitors without an invite get the simulated demo.
-
-### Frontend
+Then the frontend:
 
 ```bash
 cd frontend
 npm install
-cp .env.example .env         # VITE_LIVE_MODE=true to call the real backend
-npm run dev
+cp .env.example .env    # VITE_LIVE_MODE=true and VITE_API_BASE_URL=http://localhost:8000
+npm run dev             # http://localhost:5173
 ```
 
-The frontend runs at `http://localhost:5173`. In simulated mode (the default) it
-runs instant demo research with no backend or API cost; set `VITE_LIVE_MODE=true`
-and `VITE_API_BASE_URL` to drive the real pipeline.
-
-## Testing
+Tests and evaluation:
 
 ```bash
-uv run pytest            # full backend suite (no network: fakes for LLM + search)
-uv run ruff check .      # lint
-cd frontend && npm run build   # type-check + production build
+uv run pytest
+uv run ruff check .
+cd frontend && npm test && npm run build
+
+uv run python -m app.evals run --category owner,current   # a slice; spends model, search and judge credits
 ```
-
-The suite is fully offline: a `FakeLLMProvider` and fake tools script the agents,
-so it is deterministic and CI-safe.
-
-### Evaluating quality
-
-```bash
-uv run python -m app.evals run                          # every golden, then score
-uv run python -m app.evals run --category owner,current # a slice
-uv run python -m app.evals score evals_runs/<run id>    # re-score saved traces
-```
-
-`app/evals/goldens.toml` holds 150 realistic first messages (questions about
-the app and its author, time-sensitive questions, facts, comparisons, false
-premises, unanswerable and multilingual queries, plus a stress set of typos,
-injections and malformed input), each with the behavior a good response shows. `collect` runs them through the real pipeline and records
-every stage: the routing decision, the plan, each researcher's searches, pages
-and claims, the report and its cost. `score` then measures each stage with
-deterministic checks and DeepEval metrics judged by `EVAL_JUDGE_MODEL`: plan
-relevance and searchability, researcher success and search yield, retrieval
-relevance and faithfulness, report completeness, depth, concision and gap
-honesty, and whether the final response does what the golden expects. Results
-land in `evals_runs/<run id>/summary.md`.
-
-Collecting spends provider and Tavily credits; scoring spends judge credits.
 
 ## Deployment
 
-The live stack is Railway (API, worker and Redis) + Neon (Postgres) +
-Cloudflare Pages (frontend). The API never calls a model inside a request: it
-records the turn and queues a job on Redis, and the worker runs it.
+Nexus is set up to run on Railway (API, worker and Redis), Neon (Postgres) and Cloudflare (frontend).
 
-1. **Database (Neon):** create a Postgres database and copy its connection
-   string. Use the `postgresql+asyncpg://...` form and set `DATABASE_SSL=true`.
-2. **Redis (Railway):** add a Redis service to the project. Its private URL is
-   the `REDIS_URL` both services below use.
-3. **API (Railway):** deploy from the repo root `Dockerfile`. The image runs
-   `alembic upgrade head` then serves on `$PORT`. Set the environment variables
-   from `.env.example` (`DATABASE_URL`, `DATABASE_SSL=true`, `SECRET_KEY`,
-   `CORS_ORIGINS` and `FRONTEND_URL` = your frontend URL, `TAVILY_API_KEY`,
-   `OPENROUTER_API_KEY`, `REDIS_URL`). Give the OpenRouter key a hard credit
-   limit: it caps the total bill. `GET /health` is the health check. Create
-   accounts with `railway run uv run python -m app.admin create ...`.
-4. **Worker (Railway):** a second service from the same repo and `Dockerfile`,
-   with the same variables, the start command
-   `arq app.worker.WorkerSettings` and no public domain. Scale it by adding
-   replicas; each runs `WORKER_MAX_JOBS` jobs at once. A run whose worker dies
-   is failed after 90 s without a heartbeat instead of hanging. At startup the
-   worker creates the graph's checkpoint tables (`checkpoint*`) in the same
-   database; they sit outside Alembic and only hold runs paused on a plan.
-5. **Frontend (Cloudflare Pages):** the frontend lives in a subdirectory, so set
-   the project's **root directory** to `frontend`. Build command `npm run build`,
-   build output directory `dist` (Vite compiles the static site to
-   `frontend/dist`). Set `VITE_API_BASE_URL` = the Railway URL and
-   `VITE_LIVE_MODE=true`.
+1. **Neon:** create a database and use its connection string in the `postgresql+asyncpg://` form, with `DATABASE_SSL=true`.
+2. **Railway, Redis:** add a Redis service; its private URL is `REDIS_URL`.
+3. **Railway, API:** deploy from the root `Dockerfile`, which runs the migrations and starts the API. Set the variables from `.env.example`, and give the OpenRouter key a hard credit limit.
+4. **Railway, worker:** a second service from the same repository and `Dockerfile`, with the same variables, the start command `arq app.worker.WorkerSettings` and no public domain.
+5. **Cloudflare:** build the `frontend` folder with `npm run build`, serve `dist`, and set `VITE_API_BASE_URL` and `VITE_LIVE_MODE=true`. Then set `CORS_ORIGINS` on the API to the frontend's address.
 
-Set `CORS_ORIGINS` on the backend to the deployed frontend origin so the browser
-can call the API.
+## Where things are
+
+- [`app/agents/orchestrator.py`](app/agents/orchestrator.py): the LangGraph graph
+- [`app/agents/`](app/agents/): the supervisor, planner, researcher, consolidator and writer
+- [`app/research/service.py`](app/research/service.py): the jobs that run the graph and save its progress
+- [`app/jobs.py`](app/jobs.py) and [`app/worker.py`](app/worker.py): the queue and the worker
+- [`app/billing/`](app/billing/): budgets and the usage ledger
+- [`app/evals/`](app/evals/): the evaluation harness and the 150 questions
+- [`frontend/src/`](frontend/src/): the React app
+- [`tests/`](tests/): the backend test suite
+
+## What's next
+
+- Researching your own documents alongside the web.
+- Scoring the full 150-question set, then picking a model per agent from the results.
+- An optional deep-research mode that trades speed for coverage.

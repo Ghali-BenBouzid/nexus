@@ -4,7 +4,6 @@ import { I } from "../icons";
 import { t } from "../lib/i18n";
 import type { Turn } from "../types";
 import { Markdown } from "./Markdown";
-import { NexusMark } from "./NexusLogo";
 import { ProgressBar } from "./ProgressBar";
 
 const noop = () => {};
@@ -44,7 +43,6 @@ export function TurnCard({ turn, now, inSplit, focused, onSelect, onOpenReport, 
 
       <div className="msg-row assistant">
         <div className="assistant-reply">
-          <div className="reply-agent"><span className="reply-mark"><NexusMark size={18} /></span>{t.turn.brand}</div>
 
           {turn.reply != null && (
             <div className="reply-text">
