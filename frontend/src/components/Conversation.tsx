@@ -26,6 +26,8 @@ type ConversationProps = {
   running: boolean;
   onNewChat: () => void;
   feedTag: string;
+  // One line under the composer: the demo budget left, or that runs are simulated.
+  accessNote?: string | null;
   // Left "Recent" column (live mode only): open state + toggle + load handler.
   historyOpen: boolean;
   onToggleHistory: () => void;
@@ -49,6 +51,7 @@ export function Conversation({
   running,
   onNewChat,
   feedTag,
+  accessNote,
   historyOpen,
   onToggleHistory,
   onOpenHistory,
@@ -282,6 +285,7 @@ export function Conversation({
                 autoFocus
                 placeholder={running ? t.chat.runningPlaceholder : t.chat.idlePlaceholder}
               />
+              {accessNote && <p className="composer-note">{accessNote}</p>}
             </div>
           </div>
         </div>

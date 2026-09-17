@@ -1,91 +1,98 @@
 from datetime import UTC, datetime, timedelta
 
+import jwt
 from httpx import AsyncClient
-from jose import jwt
 
+from app.auth import repository, service
 from app.core.config import settings
-from app.core.limiter import limiter
+from app.db import session as db_session
+from tests.accounts import login_as
 
 
-async def test_register_success(client: AsyncClient) -> None:
-    response = await client.post(
-        "/auth/register", json={"email": "test@test.com", "password": "secret"}
-    )
-
-    assert response.status_code == 201
-    assert response.json()["email"] == "test@test.com"
-    assert "id" in response.json()
-    assert isinstance(response.json()["id"], int)
-    assert "hashed_password" not in response.json()  # security check
+async def _expire(user_id: int) -> None:
+    async with db_session.SessionLocal() as db:
+        user = await repository.get_user_by_id(db, user_id)
+        user.expires_at = datetime.now(UTC) - timedelta(minutes=1)
+        await db.commit()
 
 
-async def test_register_conflict(client: AsyncClient) -> None:
-    await client.post(
-        "/auth/register", json={"email": "test@test.com", "password": "secret"}
-    )
-
-    response = await client.post(
-        "/auth/register", json={"email": "test@test.com", "password": "secret"}
-    )
-
-    assert response.status_code == 409
+# --- invite links -----------------------------------------------------------
 
 
-async def test_login_success(client: AsyncClient) -> None:
-    await client.post(
-        "/auth/register", json={"email": "test@test.com", "password": "secret"}
-    )
+async def test_invite_link_signs_in_and_shows_the_budget(client: AsyncClient) -> None:
+    headers = await login_as(client, "Jane (Acme)", budget_usd=0.25)
 
-    response = await client.post(
-        "/auth/login", data={"username": "test@test.com", "password": "secret"}
-    )
+    me = await client.get("/auth/me", headers=headers)
 
-    assert response.status_code == 200
-    assert isinstance(response.json()["access_token"], str)
-    assert response.json()["token_type"] == "bearer"
+    assert me.status_code == 200
+    body = me.json()
+    assert body["name"] == "Jane (Acme)"
+    assert body["budget_usd"] == 0.25
+    assert body["spent_usd"] == 0
+    assert body["remaining_usd"] == 0.25
+    assert body["expires_at"] is not None  # default access window applies
 
 
-async def test_login_invalid_email(client: AsyncClient) -> None:
-    await client.post(
-        "/auth/register", json={"email": "test@test.com", "password": "secret"}
-    )
-
-    response = await client.post(
-        "/auth/login", data={"username": "invalid_test@test.com", "password": "secret"}
-    )
+async def test_unknown_invite_token_is_rejected(client: AsyncClient) -> None:
+    response = await client.post("/auth/invite", json={"token": "not-a-real-token"})
 
     assert response.status_code == 401
+    assert response.json()["detail"] == service.INVALID_INVITE
 
 
-async def test_login_invalid_password(client: AsyncClient) -> None:
-    await client.post(
-        "/auth/register", json={"email": "test@test.com", "password": "secret"}
+async def test_expired_account_cannot_redeem_its_link(client: AsyncClient) -> None:
+    async with db_session.SessionLocal() as db:
+        user, token = await service.create_demo_account(db, name="late")
+    await _expire(user.id)
+
+    response = await client.post("/auth/invite", json={"token": token})
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == service.ACCESS_EXPIRED
+
+
+async def test_account_expiring_mid_session_is_locked_out(client: AsyncClient) -> None:
+    headers = await login_as(client, "short visit")
+    me = await client.get("/auth/me", headers=headers)
+    await _expire(me.json()["id"])
+
+    # the access token itself is still valid; the account's expiry wins anyway
+    response = await client.get("/auth/me", headers=headers)
+
+    assert response.status_code == 403
+
+
+async def test_account_with_zero_days_never_expires(client: AsyncClient) -> None:
+    headers = await login_as(client, "forever", days=0)
+
+    me = await client.get("/auth/me", headers=headers)
+
+    assert me.json()["expires_at"] is None
+
+
+async def test_new_link_revokes_the_old_one(client: AsyncClient) -> None:
+    async with db_session.SessionLocal() as db:
+        user, old_token = await service.create_demo_account(db, name="relinked")
+        new_token = await service.update_account(db, user, new_link=True)
+
+    old = await client.post("/auth/invite", json={"token": old_token})
+    new = await client.post("/auth/invite", json={"token": new_token})
+
+    assert old.status_code == 401
+    assert new.status_code == 200
+
+
+async def test_public_signup_and_password_login_are_gone(client: AsyncClient) -> None:
+    register = await client.post(
+        "/auth/register", json={"email": "a@b.c", "password": "x"}
     )
+    login = await client.post("/auth/login", data={"username": "a", "password": "x"})
 
-    response = await client.post(
-        "/auth/login", data={"username": "test@test.com", "password": "invalid_secret"}
-    )
-
-    assert response.status_code == 401
+    assert register.status_code == 404
+    assert login.status_code == 404
 
 
-async def test_me_valid_token(client: AsyncClient) -> None:
-    await client.post(
-        "/auth/register", json={"email": "test@test.com", "password": "secret"}
-    )
-
-    login_response = await client.post(
-        "/auth/login", data={"username": "test@test.com", "password": "secret"}
-    )
-
-    token = login_response.json()["access_token"]
-
-    response = await client.get(
-        "/auth/me", headers={"Authorization": f"Bearer {token}"}
-    )
-
-    assert response.status_code == 200
-    assert response.json()["email"] == "test@test.com"
+# --- access tokens ----------------------------------------------------------
 
 
 async def test_me_no_token(client: AsyncClient) -> None:
@@ -103,53 +110,11 @@ async def test_me_invalid_token(client: AsyncClient) -> None:
 
 
 async def test_me_expired_token(client: AsyncClient) -> None:
-    expired_payload = {"sub": "1", "exp": datetime.now(UTC) - timedelta(minutes=1)}
-
-    token = jwt.encode(
-        claims=expired_payload, key=settings.secret_key, algorithm=settings.algorithm
-    )
+    expired = {"sub": "1", "exp": datetime.now(UTC) - timedelta(minutes=1)}
+    token = jwt.encode(expired, key=settings.secret_key, algorithm=settings.algorithm)
 
     response = await client.get(
         "/auth/me", headers={"Authorization": f"Bearer {token}"}
     )
 
     assert response.status_code == 401
-
-
-# --- abuse guard: per-IP registration throttle ------------------------------
-
-
-async def test_register_is_rate_limited_per_ip(client: AsyncClient) -> None:
-    # The limiter is disabled for the rest of the suite (see conftest); enable it
-    # here to check that one IP can only register so many accounts before a 429,
-    # while a different IP keeps its own allowance. Distinct X-Forwarded-For values
-    # also exercise the proxy-aware key (the real client behind Cloudflare/Railway).
-    original = settings.register_rate_limit
-    settings.register_rate_limit = "2/hour"
-    limiter.enabled = True
-    try:
-        ip_a = {"X-Forwarded-For": "203.0.113.7"}
-        for i in range(2):
-            ok = await client.post(
-                "/auth/register",
-                headers=ip_a,
-                json={"email": f"a{i}@test.com", "password": "secret"},
-            )
-            assert ok.status_code == 201
-        blocked = await client.post(
-            "/auth/register",
-            headers=ip_a,
-            json={"email": "a2@test.com", "password": "secret"},
-        )
-        assert blocked.status_code == 429
-
-        # A different client IP has its own bucket and is unaffected.
-        other = await client.post(
-            "/auth/register",
-            headers={"X-Forwarded-For": "198.51.100.9"},
-            json={"email": "b@test.com", "password": "secret"},
-        )
-        assert other.status_code == 201
-    finally:
-        settings.register_rate_limit = original
-        limiter.enabled = False

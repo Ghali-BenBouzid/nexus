@@ -4,7 +4,12 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 from app.agents.language import language_directive
-from app.agents.provider import LLMProvider, Message, ProviderError
+from app.agents.provider import (
+    LLMProvider,
+    Message,
+    ProviderCreditsError,
+    ProviderError,
+)
 from app.agents.retry import RetryPolicy, retry_async
 from app.agents.schemas import AgentEvent, Report, ResearchResult, Source
 from app.observability import traced_step
@@ -29,7 +34,8 @@ _WRITER_RETRY = RetryPolicy(max_attempts=5, base_delay=2.0, max_delay=30.0)
 
 
 def _is_provider_error(exc: Exception) -> bool:
-    return isinstance(exc, ProviderError)
+    # Out of credits is final: backing off cannot bring the credits back.
+    return isinstance(exc, ProviderError) and not isinstance(exc, ProviderCreditsError)
 
 
 # The writer is a renderer, not a researcher: the consolidator owns the sources and

@@ -31,6 +31,13 @@ function detect(): Lang {
 
 export const lang: Lang = detect();
 
+// Dollar amounts for the demo budget, in the reader's number format.
+export const usd = (amount: number): string =>
+  new Intl.NumberFormat(lang === "fr" ? "fr-FR" : "en-US", {
+    style: "currency",
+    currency: "USD",
+  }).format(amount);
+
 if (typeof document !== "undefined") document.documentElement.lang = lang;
 
 // Persist the choice and reload so the resolved-once dictionary is rebuilt.
@@ -67,7 +74,7 @@ const en = {
   about: {
     title: "About",
     body: "Nexus is an agentic research platform. You ask a question, a team of agents plans it, researches the live web, and writes back a single report where every claim links to its source. I designed and built all of it: the backend, the agent orchestration, and the frontend.",
-    proof: ["Open source", "Live on a free LLM tier", "A real run takes ~1min"],
+    proof: ["Open source", "Invite-only live demo", "A real run takes ~1min"],
     builtWithLabel: "Built with",
     builtWith: [
       { label: "Backend", items: ["FastAPI", "Python", "Postgres"] },
@@ -84,7 +91,7 @@ const en = {
       compose: "When you ask to combine or deepen reports you already have, the supervisor merges them into one new report, reusing the same writer with no new web search. Code re-numbers the citations across the merged sources, so the references stay correct.",
       plan: "A forced function call returns the sub-questions as structured data, never prose. The plan is machine-checkable, so the rest of the pipeline can trust its shape instead of parsing free text.",
       review: "Before any web research runs, the plan is handed back to you. Approve it and the agents go; or send it back with a note and it loops to re-plan. Nothing spends quota until you say go.",
-      researcher: "Each sub-question runs as its own tool-using agent, with web search and page-fetch and a capped iteration budget. The orchestrator runs them as concurrent tasks but bounds how many execute at once: for now just one, to stay well under the free-tier limits. Lifting it is a one-line change.",
+      researcher: "Each sub-question runs as its own tool-using agent, with web search and page-fetch and a capped iteration budget. The orchestrator runs them in parallel, with a cap on how many run at once.",
       documents: "Planned. The same agent loop pointed at your own uploaded documents, running alongside the web agents inside the same orchestrator.",
       consolidate: "Plain code, no model. It dedupes the sources by URL and assigns the citation numbers itself. Because no model ever chooses or writes a citation, the surface where one could be hallucinated is removed.",
       write: "A single model call turns the findings into prose. It only keeps the citation markers the code already assigned and is told to add no facts of its own, so the writing step can't invent a source either.",
@@ -118,7 +125,7 @@ const en = {
     stack: [
       { lead: "Supervisor", rest: " reads your message and answers from the existing reports, merges them into one new report, or starts a research run." },
       { lead: "Plan", rest: " breaks the question into focused sub-questions, and you confirm the plan before any research runs." },
-      { lead: "Research ×N", rest: " one tool-using agent per sub-question reads the live web (concurrent tasks, currently gated to one at a time)." },
+      { lead: "Research ×N", rest: " one tool-using agent per sub-question reads the live web, all in parallel." },
       { lead: "Documents", rest: " research your own files alongside the web (RAG, next)." },
       { lead: "Consolidate", rest: " plain code dedupes and numbers the sources, no model." },
       { lead: "Write", rest: " a grounded report; every claim points to a numbered source." },
@@ -141,7 +148,7 @@ const en = {
       },
       {
         problem: "One core, four different providers.",
-        how: "Free LLM backends each speak a slightly different dialect, and Groq's Llama models kept breaking the tool-call parser. One OpenAI-compatible adapter fronts them all, Gemini by default, the rest swappable.",
+        how: "LLM backends each speak a slightly different dialect, and Groq's Llama models kept breaking the tool-call parser. One OpenAI-compatible adapter fronts them all, OpenRouter by default, the rest swappable.",
         why: "The agents never know which backend they run on, so switching provider is a config change, not a rewrite.",
       },
       {
@@ -151,8 +158,8 @@ const en = {
       },
       {
         problem: "Built for concurrency.",
-        how: "The orchestrator dispatches researchers as concurrent, non-blocking tasks, down through the providers and the database. The concurrency cap is set to one for now, to stay under free-tier limits.",
-        why: "The fan-out is real; lifting the cap is a single knob, so it scales with the budget instead of a rewrite.",
+        how: "The orchestrator dispatches researchers as concurrent, non-blocking tasks, down through the providers and the database, with one cap on how many run at once.",
+        why: "Researchers work side by side, and the cap is a single knob, so it scales with the budget instead of a rewrite.",
       },
     ],
     nextTitle: "What's next",
@@ -170,7 +177,7 @@ const en = {
     codeTitle: "Code",
     source: "Source on GitHub",
     agentOrch: "Agent orchestration",
-    note: "Nexus, deep research, cited. FastAPI and Python on the back, React on the front, agent orchestration on a free LLM tier.",
+    note: "Nexus, deep research, cited. FastAPI and Python on the back, React on the front, agent orchestration on OpenRouter.",
   },
   chat: {
     runningPlaceholder: "Researching… stop to ask something new",
@@ -179,12 +186,19 @@ const en = {
     showArtifacts: "Show artifacts",
     historyHint: "↑↓ history",
   },
+  access: {
+    simulated: "Simulated demo run. Live research is invite-only.",
+    budget: (left: string, total: string) => `${left} of ${total} demo budget left`,
+    invalid: "This invite link is not valid.",
+    none: "Live research needs an invite link.",
+  },
   turn: {
     brand: "Nexus",
     planning: "Planning the research…",
     researching: "Researching",
     stopped: "Stopped",
     done: "Done",
+    failed: "Failed",
     planTitle: "Here's the plan. Confirm to research, or revise it.",
     confirmPlan: "Confirm & research",
     revisePlan: "Revise",
@@ -286,7 +300,7 @@ const fr: Dict = {
   about: {
     title: "À propos",
     body: "Nexus est une plateforme de recherche agentique. Vous posez une question, une équipe d'agents la décompose, cherche sur le web en direct, et vous remet un seul rapport dont chaque affirmation renvoie à sa source. J'ai tout conçu et construit : la partie serveur, l'orchestration des agents et l'interface.",
-    proof: ["Open source", "Fonctionne sur une offre LLM gratuite", "Une vraie recherche prend ~1min"],
+    proof: ["Open source", "Démo en direct sur invitation", "Une vraie recherche prend ~1min"],
     builtWithLabel: "Construit avec",
     builtWith: [
       { label: "Partie serveur", items: ["FastAPI", "Python", "Postgres"] },
@@ -303,7 +317,7 @@ const fr: Dict = {
       compose: "Quand vous demandez de combiner ou d'approfondir des rapports déjà produits, le superviseur les fusionne en un nouveau rapport, avec le même rédacteur et sans nouvelle recherche web. Le code renumérote ensuite les citations sur l'ensemble des sources fusionnées, pour que les références restent justes.",
       plan: "Un appel de fonction forcé renvoie les sous-questions sous forme de données structurées, jamais en texte libre. Le plan est vérifiable par la machine, donc le reste de la chaîne peut y faire confiance sans avoir à analyser du texte.",
       review: "Avant toute recherche web, le plan vous est rendu. Vous l'approuvez et les agents partent ; ou vous le renvoyez avec une note et il repart en planification. Rien ne consomme de quota tant que vous n'avez pas dit go.",
-      researcher: "Chaque sous-question est confiée à un agent doté d'outils de recherche web et de lecture de pages, avec un budget d'itérations plafonné. L'orchestrateur les lance comme des tâches concurrentes, mais borne le nombre exécuté en même temps : pour l'instant une seule, pour rester sous les quotas de l'offre gratuite. La relever est un réglage d'une ligne.",
+      researcher: "Chaque sous-question est confiée à un agent doté d'outils de recherche web et de lecture de pages, avec un budget d'itérations plafonné. L'orchestrateur les lance en parallèle, avec un plafond sur le nombre exécuté en même temps.",
       documents: "Prévu. La même boucle d'agent pointée sur vos propres documents, tournant aux côtés des agents web dans le même orchestrateur.",
       consolidate: "Du code simple, sans modèle. Il dédoublonne les sources par URL et attribue lui-même les numéros de citation. Comme aucun modèle ne choisit ni n'écrit de citation, la surface où elle pourrait être inventée disparaît.",
       write: "Un seul appel au modèle transforme les résultats en prose. Il ne garde que les marqueurs de citation déjà attribués par le code et reçoit la consigne de n'ajouter aucun fait, donc l'étape de rédaction ne peut pas inventer de source non plus.",
@@ -337,7 +351,7 @@ const fr: Dict = {
     stack: [
       { lead: "Superviseur", rest: " lit votre message, puis répond à partir des rapports existants, les fusionne en un nouveau, ou lance une recherche." },
       { lead: "Planifier", rest: " découpe la question en sous-questions ciblées, et vous confirmez le plan avant toute recherche." },
-      { lead: "Recherche ×N", rest: " un agent outillé par sous-question lit le web en direct (tâches concurrentes, actuellement limitées à une à la fois)." },
+      { lead: "Recherche ×N", rest: " un agent outillé par sous-question lit le web en direct, tous en parallèle." },
       { lead: "Documents", rest: " cherchent dans vos propres fichiers en parallèle du web (RAG, à venir)." },
       { lead: "Consolider", rest: " du code simple dédoublonne et numérote les sources, sans modèle." },
       { lead: "Rédiger", rest: " un rapport fondé ; chaque affirmation pointe vers une source numérotée." },
@@ -360,7 +374,7 @@ const fr: Dict = {
       },
       {
         problem: "Un seul noyau, quatre fournisseurs différents.",
-        how: "Chaque fournisseur LLM gratuit parle un dialecte un peu différent, et les modèles Llama de Groq renvoyaient leurs appels d'outils dans un format qui cassait l'analyse. Un seul adaptateur compatible OpenAI les couvre tous, avec Gemini par défaut et le reste interchangeable.",
+        how: "Chaque fournisseur LLM parle un dialecte un peu différent, et les modèles Llama de Groq renvoyaient leurs appels d'outils dans un format qui cassait l'analyse. Un seul adaptateur compatible OpenAI les couvre tous, avec OpenRouter par défaut et le reste interchangeable.",
         why: "Les agents ne savent pas quel fournisseur ils utilisent : en changer relève de la configuration, pas d'une réécriture.",
       },
       {
@@ -370,8 +384,8 @@ const fr: Dict = {
       },
       {
         problem: "Conçu pour l'exécution concurrente.",
-        how: "L'orchestrateur lance les chercheurs comme des tâches concurrentes, et toute la chaîne reste non bloquante, jusqu'aux fournisseurs et à la base de données. La limite de concurrence est fixée à un pour l'instant, pour rester sous les quotas gratuits.",
-        why: "Le fan-out est réel ; relever la limite tient à un seul réglage, donc le système monte en charge avec le budget au lieu d'exiger une réécriture.",
+        how: "L'orchestrateur lance les chercheurs comme des tâches concurrentes, et toute la chaîne reste non bloquante, jusqu'aux fournisseurs et à la base de données, avec un seul plafond sur le nombre exécuté en même temps.",
+        why: "Les chercheurs travaillent côte à côte, et le plafond tient à un seul réglage, donc le système monte en charge avec le budget au lieu d'exiger une réécriture.",
       },
     ],
     nextTitle: "La suite",
@@ -389,7 +403,7 @@ const fr: Dict = {
     codeTitle: "Code",
     source: "Code sur GitHub",
     agentOrch: "Orchestration des agents",
-    note: "Nexus, recherche approfondie, sourcée. FastAPI et Python côté serveur, React côté interface, orchestration d'agents sur une offre LLM gratuite.",
+    note: "Nexus, recherche approfondie, sourcée. FastAPI et Python côté serveur, React côté interface, orchestration d'agents sur OpenRouter.",
   },
   chat: {
     runningPlaceholder: "Recherche en cours… arrêtez pour poser autre chose",
@@ -398,12 +412,19 @@ const fr: Dict = {
     showArtifacts: "Afficher les rapports",
     historyHint: "↑↓ historique",
   },
+  access: {
+    simulated: "Recherche de démonstration simulée. La recherche en direct est sur invitation.",
+    budget: (left: string, total: string) => `${left} restants sur ${total} de budget de démo`,
+    invalid: "Ce lien d'invitation n'est pas valide.",
+    none: "La recherche en direct nécessite un lien d'invitation.",
+  },
   turn: {
     brand: "Nexus",
     planning: "Planification de la recherche…",
     researching: "Recherche",
     stopped: "Arrêté",
     done: "Terminé",
+    failed: "Échec",
     planTitle: "Voici le plan. Confirmez pour lancer la recherche, ou révisez-le.",
     confirmPlan: "Confirmer et rechercher",
     revisePlan: "Réviser",

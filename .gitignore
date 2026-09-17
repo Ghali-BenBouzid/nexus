@@ -15,3 +15,5 @@ wheels/
 
 # Live eval runner output (real reports, not for version control)
 evals_runs/
+# DeepEval local cache
+.deepeval/

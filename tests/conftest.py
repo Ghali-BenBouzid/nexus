@@ -1,5 +1,6 @@
 from collections.abc import AsyncGenerator
 
+import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import (
@@ -7,23 +8,26 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool
 
-from app.core.limiter import limiter
+from app.core.config import settings
 from app.db import session as db_session
 from app.db.base import Base
 from app.db.session import get_db
 from main import app
+from tests.accounts import login_as
 
 
 @pytest_asyncio.fixture
-async def client() -> AsyncGenerator[AsyncClient]:
-    # In-memory async SQLite. StaticPool keeps a single shared connection so the
-    # schema created below is visible to every request in the test.
+async def client(tmp_path) -> AsyncGenerator[AsyncClient]:
+    # A throwaway SQLite file, and a connection per session: a job's heartbeat,
+    # its event writes and the test's own writes run as separate transactions,
+    # as they do on Postgres. One shared in-memory connection let a session
+    # closing roll back another's uncommitted write, which made tests flaky.
     engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
+        f"sqlite+aiosqlite:///{tmp_path / 'test.db'}",
+        connect_args={"timeout": 30},  # concurrent writers wait instead of failing
+        poolclass=NullPool,
     )
 
     session_local = async_sessionmaker(
@@ -37,13 +41,9 @@ async def client() -> AsyncGenerator[AsyncClient]:
         async with session_local() as db:
             yield db
 
-    # Off by default: most tests register several users and would trip the per-IP
-    # cap (they share one client IP). The throttle test re-enables it explicitly.
-    limiter.enabled = False
-
     app.dependency_overrides[get_db] = get_test_db
-    # The background research job creates its OWN session via db_session.SessionLocal
-    # (not a Depends), so point it at the test engine too.
+    # Background jobs, the event feed and the usage ledger open their OWN sessions
+    # via db_session.SessionLocal (not a Depends), so point it at the test engine.
     original_session_local = db_session.SessionLocal
     db_session.SessionLocal = session_local
 
@@ -63,14 +63,24 @@ async def client() -> AsyncGenerator[AsyncClient]:
 
 @pytest_asyncio.fixture
 async def auth_headers(client: AsyncClient) -> dict[str, str]:
-    await client.post(
-        "/auth/register", json={"email": "test@test.com", "password": "secret"}
-    )
+    return await login_as(client)
 
-    response = await client.post(
-        "/auth/login", data={"username": "test@test.com", "password": "secret"}
-    )
 
-    token = response.json()["access_token"]
+# The external API keys a developer's .env may hold. CI has none of them.
+_API_KEYS = (
+    "openrouter_api_key",
+    "gemini_api_key",
+    "groq_api_key",
+    "cerebras_api_key",
+    "sambanova_api_key",
+    "tavily_api_key",
+    "langsmith_api_key",
+)
 
-    return {"Authorization": f"Bearer {token}"}
+
+@pytest.fixture(autouse=True)
+def no_real_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Run every test as CI does, with no real provider or search keys, so a test
+    that forgets its fakes fails on a laptop too instead of only in CI."""
+    for name in _API_KEYS:
+        monkeypatch.setattr(settings, name, None)

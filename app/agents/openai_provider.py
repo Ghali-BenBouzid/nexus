@@ -3,7 +3,14 @@ from typing import Any
 
 import httpx
 
-from app.agents.provider import LLMResponse, Message, ProviderError, ToolCall, Usage
+from app.agents.provider import (
+    LLMResponse,
+    Message,
+    ProviderCreditsError,
+    ProviderError,
+    ToolCall,
+    Usage,
+)
 from app.agents.rate_limit import RateLimiter, llm_rate_limiter
 from app.agents.retry import RetryPolicy, is_transient, retry_async
 from app.agents.tools import ToolSpec
@@ -14,6 +21,8 @@ from app.observability import record_model, traced_llm
 _CHARS_PER_TOKEN = 4
 # Reserve room for the model's reply, which also counts against TPM.
 _OUTPUT_TOKEN_RESERVATION = 1024
+
+OUT_OF_CREDITS = "The model credits behind this demo have run out."
 
 
 class OpenAICompatibleProvider:
@@ -88,6 +97,8 @@ class OpenAICompatibleProvider:
         try:
             data = await retry_async(_call, policy=self.retry, transient=_retryable)
         except Exception as exc:  # never let a raw/key-bearing error escape
+            if _out_of_credits(exc):
+                raise ProviderCreditsError(OUT_OF_CREDITS) from exc
             raise ProviderError("LLM request failed") from exc
         return self._parse(data)
 
@@ -163,6 +174,8 @@ class OpenAICompatibleProvider:
             input_tokens=usage.get("prompt_tokens"),
             output_tokens=usage.get("completion_tokens"),
             total_tokens=usage.get("total_tokens"),
+            # OpenRouter reports what the call was billed, in USD credits.
+            cost_usd=usage.get("cost"),
         )
 
 
@@ -205,6 +218,19 @@ def _tool_use_failed(exc: Exception) -> bool:
     return isinstance(body, dict) and body.get("error", {}).get("code") == (
         "tool_use_failed"
     )
+
+
+def _out_of_credits(exc: Exception) -> bool:
+    """True when the provider refused for money: 402 when the account has no
+    credits, or OpenRouter's 403 "Key limit exceeded (total limit)" once the key
+    reaches its credit limit, the cap the demo relies on. Other 403s (a moderation
+    flag, a bad key) stay generic errors."""
+    if not isinstance(exc, httpx.HTTPStatusError):
+        return False
+    status = exc.response.status_code
+    if status == 402:
+        return True
+    return status == 403 and "limit exceeded" in exc.response.text.lower()
 
 
 def _retryable(exc: Exception) -> bool:

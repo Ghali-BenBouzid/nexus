@@ -1,7 +1,6 @@
 import asyncio
 import logging
 from collections.abc import Awaitable, Callable
-from datetime import UTC, datetime, timedelta
 
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -10,7 +9,7 @@ from app.agents import orchestrator, writer
 from app.agents.consolidator import merge_results
 from app.agents.orchestrator import OrchestratorCancelledError, OrchestratorError
 from app.agents.planner import PlannerError, plan
-from app.agents.provider import LLMProvider
+from app.agents.provider import LLMProvider, ProviderCreditsError
 from app.agents.schemas import AgentEvent, Report, ResearchResult
 from app.agents.search_cache import CachingSearchBackend
 from app.agents.tools import FetchPage, SearchBackend, WebSearch
@@ -20,15 +19,6 @@ from app.models.query import Query, QueryStatus
 from app.research import repository
 
 logger = logging.getLogger(__name__)
-
-
-async def over_daily_cap(db: AsyncSession, user_id: int) -> bool:
-    """Whether this user has hit the per-account research cap in the last 24h. The
-    window rolls (rather than resetting at midnight) so it can't be doubled up
-    across the boundary. Cheap COUNT on indexed columns; safe to call per request."""
-    since = datetime.now(UTC) - timedelta(hours=24)
-    count = await repository.count_queries_since(db, user_id, since)
-    return count >= settings.daily_query_cap
 
 
 class _EventSink:
@@ -111,7 +101,7 @@ async def _run_research_pipeline(
         except OrchestratorCancelledError:
             logger.info("research job %s stopped by the user", query_id)
             await repository.fail_query(db, query_id, "Research was stopped.")
-        except (PlannerError, OrchestratorError) as exc:
+        except (PlannerError, OrchestratorError, ProviderCreditsError) as exc:
             # our own domain errors carry safe, user-meaningful messages
             logger.warning("research job failed for query %s: %s", query_id, exc)
             await repository.fail_query(db, query_id, str(exc))
@@ -177,7 +167,7 @@ async def run_plan_job(
                 await repository.fail_query(db, query_id, "Research was stopped.")
             else:
                 await repository.set_plan(db, query_id, sub_questions)
-        except PlannerError as exc:
+        except (PlannerError, ProviderCreditsError) as exc:
             logger.warning("plan job failed for query %s: %s", query_id, exc)
             await repository.fail_query(db, query_id, str(exc))
         except Exception:
@@ -229,6 +219,9 @@ async def run_compose_job(
         except TimeoutError:
             logger.warning("compose job timed out for query %s", query_id)
             await repository.fail_query(db, query_id, "Composing the report timed out.")
+        except ProviderCreditsError as exc:
+            logger.warning("compose job failed for query %s: %s", query_id, exc)
+            await repository.fail_query(db, query_id, str(exc))
         except Exception:
             logger.exception("compose job crashed for query %s", query_id)
             await repository.fail_query(

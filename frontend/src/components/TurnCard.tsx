@@ -108,7 +108,14 @@ export function TurnCard({ turn, now, feedTag, inSplit, focused, onSelect, onOpe
 
           {turn.reply == null && !awaitingPlan && (running || elapsed > 0.2) && (
             <div className="reply-status">
-              {running ? t.turn.researching : turn.stopped ? t.turn.stopped : t.turn.done} · {fmt(elapsed)}
+              {running
+                ? t.turn.researching
+                : turn.stopped
+                  ? t.turn.stopped
+                  : isFailed
+                    ? t.turn.failed
+                    : t.turn.done}{" "}
+              · {fmt(elapsed)}
             </div>
           )}
 

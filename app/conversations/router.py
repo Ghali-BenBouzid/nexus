@@ -4,6 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.provider import LLMProvider
 from app.agents.tools import SearchBackend
 from app.auth.dependencies import get_current_user
+from app.billing.service import ensure_budget
 from app.conversations import repository, service
 from app.conversations.schemas import (
     ConversationCreate,
@@ -75,6 +76,8 @@ async def create(
     provider: LLMProvider = Depends(get_provider),
     backend: SearchBackend = Depends(get_search_backend),
 ):
+    # Every message costs a routing call, so the budget is checked up front.
+    await ensure_budget(db, current_user)
     conversation = await repository.create_conversation(db, current_user.id)
     await service.submit_message(
         db,
@@ -124,6 +127,7 @@ async def add_message(
     )
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    await ensure_budget(db, current_user)
     await service.submit_message(
         db,
         conversation,

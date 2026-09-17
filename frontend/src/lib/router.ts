@@ -6,10 +6,13 @@ import type { View } from "../types";
 //   /            -> home (hero + sections)
 //   /chat        -> a fresh, unsaved chat (no conversation id yet)
 //   /chat/:id    -> an existing conversation
+//   /invite/:tok -> an invite link: redeemed on load, then lands on /chat
 // Deep links and reloads work because the deploy serves index.html for unknown
 // paths (frontend/wrangler.jsonc: not_found_handling = single-page-application).
 
 export type Route = { view: View; conversationId: number | null };
+
+const INVITE_PATH = /^\/invite\/([^/]+)\/?$/;
 
 export function getRoute(): Route {
   if (typeof window === "undefined") return { view: "home", conversationId: null };
@@ -17,7 +20,16 @@ export function getRoute(): Route {
   const match = path.match(/^\/chat\/(\d+)\/?$/);
   if (match) return { view: "chat", conversationId: Number(match[1]) };
   if (path === "/chat" || path === "/chat/") return { view: "chat", conversationId: null };
+  // Opens on the chat so the first paint is already where the link lands.
+  if (INVITE_PATH.test(path)) return { view: "chat", conversationId: null };
   return { view: "home", conversationId: null };
+}
+
+// The invite token in the current URL (/invite/:token), if any.
+export function inviteFromUrl(): string | null {
+  if (typeof window === "undefined") return null;
+  const match = window.location.pathname.match(INVITE_PATH);
+  return match ? decodeURIComponent(match[1]) : null;
 }
 
 // Push (or replace) a path without reloading. A no-op when the path is already

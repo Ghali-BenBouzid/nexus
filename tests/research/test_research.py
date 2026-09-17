@@ -1,13 +1,26 @@
 from datetime import UTC, datetime, timedelta
 
+import jwt
 from httpx import AsyncClient
-from jose import jwt
+from sqlalchemy import select
 
-from app.agents.provider import LLMResponse, Message, ToolCall
+from app.agents.openai_provider import OUT_OF_CREDITS
+from app.agents.provider import (
+    LLMResponse,
+    Message,
+    ProviderCreditsError,
+    ToolCall,
+    Usage,
+)
 from app.agents.tools import SearchHit
+from app.billing import repository as billing_repository
+from app.billing.service import BUDGET_EXHAUSTED, to_micro_usd
 from app.core.config import settings
+from app.db import session as db_session
+from app.models.usage import LLMUsage
 from app.research.dependencies import get_provider, get_search_backend
 from main import app
+from tests.accounts import login_as
 
 # --- fakes for the background pipeline (no network) -------------------------
 
@@ -79,14 +92,6 @@ class FakeBackend:
 def _use_fake_pipeline(sub_questions: list[str]) -> None:
     app.dependency_overrides[get_provider] = lambda: RoleProvider(sub_questions)
     app.dependency_overrides[get_search_backend] = FakeBackend
-
-
-async def _register_and_headers(client: AsyncClient, email: str) -> dict[str, str]:
-    await client.post("/auth/register", json={"email": email, "password": "secret"})
-    response = await client.post(
-        "/auth/login", data={"username": email, "password": "secret"}
-    )
-    return {"Authorization": f"Bearer {response.json()['access_token']}"}
 
 
 # --- auth guards ------------------------------------------------------------
@@ -276,8 +281,8 @@ async def test_events_endpoint_tails_the_live_feed(
 
 
 async def test_events_endpoint_hidden_from_other_users(client: AsyncClient) -> None:
-    owner = await _register_and_headers(client, "owner2@test.com")
-    other = await _register_and_headers(client, "other2@test.com")
+    owner = await login_as(client, "owner2@test.com")
+    other = await login_as(client, "other2@test.com")
     _use_fake_pipeline(sub_questions=["q1"])
 
     created = await client.post(
@@ -290,8 +295,8 @@ async def test_events_endpoint_hidden_from_other_users(client: AsyncClient) -> N
 
 
 async def test_get_other_users_query_returns_404(client: AsyncClient) -> None:
-    owner = await _register_and_headers(client, "owner@test.com")
-    other = await _register_and_headers(client, "other@test.com")
+    owner = await login_as(client, "owner@test.com")
+    other = await login_as(client, "other@test.com")
     _use_fake_pipeline(sub_questions=["q1"])
 
     created = await client.post(
@@ -318,8 +323,8 @@ async def test_list_returns_only_callers_queries(
 
 
 async def test_cancel_endpoint_hidden_from_other_users(client: AsyncClient) -> None:
-    owner = await _register_and_headers(client, "cancel-owner@test.com")
-    other = await _register_and_headers(client, "cancel-other@test.com")
+    owner = await login_as(client, "cancel-owner@test.com")
+    other = await login_as(client, "cancel-other@test.com")
     _use_fake_pipeline(sub_questions=["q1"])
 
     created = await client.post(
@@ -347,45 +352,111 @@ async def test_cancel_endpoint_idempotent_on_terminal_query(
     assert response.status_code == 204
 
 
-# --- abuse / cost guard: per-user daily cap ---------------------------------
+# --- cost guard: per-account dollar budget ----------------------------------
 
 
-async def test_research_query_enforces_daily_cap(client: AsyncClient) -> None:
-    # The public demo caps research runs per account so a single user cannot drain
-    # the Tavily / LLM budget. At the cap, the next submission is rejected with 429.
-    headers = await _register_and_headers(client, "capped@test.com")
-    _use_fake_pipeline(sub_questions=["q1"])
-    original = settings.daily_query_cap
-    settings.daily_query_cap = 2
-    try:
-        for i in range(2):
-            ok = await client.post(
-                "/research/query", headers=headers, json={"prompt": f"p{i}"}
-            )
-            assert ok.status_code == 202
-        blocked = await client.post(
-            "/research/query", headers=headers, json={"prompt": "one too many"}
+async def _spend(client: AsyncClient, headers: dict[str, str], usd: float) -> None:
+    """Record spend against the account, as MeteredProvider does after a call."""
+    me = await client.get("/auth/me", headers=headers)
+    async with db_session.SessionLocal() as db:
+        await billing_repository.add_usage(
+            db,
+            user_id=me.json()["id"],
+            query_id=None,
+            model="m",
+            input_tokens=1,
+            output_tokens=1,
+            cost_micro_usd=to_micro_usd(usd),
         )
-        assert blocked.status_code == 429
-    finally:
-        settings.daily_query_cap = original
 
 
-async def test_daily_cap_is_per_user(client: AsyncClient) -> None:
-    # The cap is scoped per account, so one user hitting it does not block another.
+async def test_research_is_refused_once_the_budget_is_spent(
+    client: AsyncClient,
+) -> None:
+    headers = await login_as(client, "spender", budget_usd=0.10)
     _use_fake_pipeline(sub_questions=["q1"])
-    original = settings.daily_query_cap
-    settings.daily_query_cap = 1
-    try:
-        first = await _register_and_headers(client, "cap-a@test.com")
-        await client.post("/research/query", headers=first, json={"prompt": "a"})
-        blocked = await client.post(
-            "/research/query", headers=first, json={"prompt": "a2"}
-        )
-        assert blocked.status_code == 429
 
-        second = await _register_and_headers(client, "cap-b@test.com")
-        ok = await client.post("/research/query", headers=second, json={"prompt": "b"})
-        assert ok.status_code == 202
-    finally:
-        settings.daily_query_cap = original
+    await _spend(client, headers, 0.04)
+    ok = await client.post("/research/query", headers=headers, json={"prompt": "a"})
+    assert ok.status_code == 202
+
+    await _spend(client, headers, 0.06)
+    blocked = await client.post(
+        "/research/query", headers=headers, json={"prompt": "b"}
+    )
+    assert blocked.status_code == 402
+    assert blocked.json()["detail"] == BUDGET_EXHAUSTED
+
+
+async def test_budget_is_per_account(client: AsyncClient) -> None:
+    _use_fake_pipeline(sub_questions=["q1"])
+    first = await login_as(client, "a", budget_usd=0.01)
+    await _spend(client, first, 0.01)
+    blocked = await client.post("/research/query", headers=first, json={"prompt": "a"})
+    assert blocked.status_code == 402
+
+    second = await login_as(client, "b", budget_usd=0.01)
+    ok = await client.post("/research/query", headers=second, json={"prompt": "b"})
+    assert ok.status_code == 202
+
+
+class _PricedProvider(RoleProvider):
+    """The fake pipeline, with every call reporting a cost like OpenRouter does."""
+
+    async def generate(
+        self, messages: list[Message], tools: object = None, tool_choice: str = "auto"
+    ) -> LLMResponse:
+        response = await super().generate(messages, tools, tool_choice)
+        usage = Usage(input_tokens=100, output_tokens=20, cost_usd=0.001)
+        return response.model_copy(update={"usage": usage})
+
+
+async def test_every_model_call_is_billed_to_the_run(client: AsyncClient) -> None:
+    headers = await login_as(client, "billed", budget_usd=0.5)
+    app.dependency_overrides[get_provider] = lambda: _PricedProvider(["q1"])
+    app.dependency_overrides[get_search_backend] = FakeBackend
+
+    created = await client.post(
+        "/research/query", headers=headers, json={"prompt": "p"}
+    )
+    query_id = created.json()["id"]
+
+    # planner + one researcher + writer = three billed calls, all tied to the run
+    async with db_session.SessionLocal() as db:
+        rows = (await db.execute(select(LLMUsage))).scalars().all()
+    assert [row.query_id for row in rows] == [query_id] * 3
+    assert all(row.cost_micro_usd == 1_000 for row in rows)
+
+    me = (await client.get("/auth/me", headers=headers)).json()
+    assert me["spent_usd"] == 0.003
+    assert me["remaining_usd"] == 0.497
+
+
+class _BrokeProvider:
+    """A provider whose key has run out of credits."""
+
+    async def __aenter__(self) -> "_BrokeProvider":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
+
+    async def generate(self, messages, tools=None, tool_choice="auto") -> LLMResponse:
+        raise ProviderCreditsError(OUT_OF_CREDITS)
+
+
+async def test_out_of_credits_fails_the_run_with_a_clear_message(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    app.dependency_overrides[get_provider] = _BrokeProvider
+    app.dependency_overrides[get_search_backend] = FakeBackend
+
+    created = await client.post(
+        "/research/query", headers=auth_headers, json={"prompt": "p"}
+    )
+    detail = await client.get(
+        f"/research/query/{created.json()['id']}", headers=auth_headers
+    )
+
+    assert detail.json()["status"] == "failed"
+    assert detail.json()["error"] == OUT_OF_CREDITS
