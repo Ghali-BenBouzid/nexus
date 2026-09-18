@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -30,6 +30,8 @@ class Document(Base):
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     pages: Mapped[int | None] = mapped_column(Integer, nullable=True)  # PDFs only
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    # The text was read off pictures of pages, so it carries OCR mistakes.
+    ocr: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Where the original file sits in the bucket. Null once storage is unavailable
     # or the file was dropped; the text still works on its own.
     storage_key: Mapped[str | None] = mapped_column(String(255), nullable=True)

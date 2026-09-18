@@ -82,6 +82,7 @@ async def upload(
         size_bytes=len(data),
         pages=parsed.pages,
         text=text,
+        ocr=parsed.ocr,
         storage_key=key,
     )
     try:

@@ -22,6 +22,7 @@ def summary(document: Document) -> DocumentSummary:
         pages=document.pages,
         chars=len(document.text),
         truncated=service.truncated(document),
+        ocr=document.ocr,
         created_at=document.created_at,
     )
 

@@ -35,6 +35,7 @@ def upgrade() -> None:
         sa.Column("size_bytes", sa.Integer(), nullable=False),
         sa.Column("pages", sa.Integer(), nullable=True),
         sa.Column("text", sa.Text(), nullable=False),
+        sa.Column("ocr", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("storage_key", sa.String(length=255), nullable=True),
         sa.Column(
             "created_at",

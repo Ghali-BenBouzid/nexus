@@ -4,6 +4,7 @@ import pymupdf
 import pytest
 from docx import Document as DocxDocument
 
+from app.core.config import settings
 from app.documents.parser import ParseError, parse
 
 _TEXT = (
@@ -25,8 +26,21 @@ def _pdf(html: str | None = None, pages: int = 1) -> bytes:
     return data
 
 
-def _scanned_pdf(pages: int = 2) -> bytes:
-    """Pages with a picture and no text: what a scan looks like to a parser."""
+def _scanned_pdf(html: str | None = None, pages: int = 1) -> bytes:
+    """A scan: each page is a picture of a page, with no text layer at all."""
+    source = pymupdf.open(stream=_pdf(html, pages), filetype="pdf")
+    scan = pymupdf.open()
+    for page in source:
+        picture = page.get_pixmap(dpi=200)
+        scan.new_page().insert_image(scan[-1].rect, pixmap=picture)
+    data = scan.tobytes()
+    source.close()
+    scan.close()
+    return data
+
+
+def _blank_pdf(pages: int = 2) -> bytes:
+    """Pages holding a grey rectangle: nothing to read, even with OCR."""
     document = pymupdf.open()
     pixmap = pymupdf.Pixmap(pymupdf.csGRAY, pymupdf.IRect(0, 0, 200, 200), False)
     pixmap.clear_with(128)
@@ -76,10 +90,28 @@ def test_a_pdf_keeps_its_headings_and_tables_as_markdown() -> None:
     assert "|7 C|4.1|" in text
 
 
-def test_a_scanned_pdf_is_refused_and_says_why() -> None:
-    # It parses fine and yields almost nothing: the failure a user must understand.
-    with pytest.raises(ParseError, match="scanned"):
-        parse("scan.pdf", _scanned_pdf())
+def test_a_scanned_pdf_is_read_by_ocr() -> None:
+    # No text layer at all: every word here came out of the picture.
+    data = _scanned_pdf("<h1>Rental agreement</h1><p>Three months notice.</p>")
+
+    parsed = parse("scan.pdf", data)
+
+    assert "Rental agreement" in parsed.text
+    assert "Three months notice" in parsed.text
+    assert parsed.ocr
+
+
+def test_a_long_scan_is_refused_rather_than_waited_on(monkeypatch) -> None:
+    # OCR costs about three seconds a page, inside the upload request.
+    monkeypatch.setattr(settings, "max_ocr_pages", 2)
+
+    with pytest.raises(ParseError, match="read up to 2 pages"):
+        parse("long-scan.pdf", _scanned_pdf(pages=3))
+
+
+def test_pages_with_nothing_to_read_are_refused() -> None:
+    with pytest.raises(ParseError, match="No text"):
+        parse("blank.pdf", _blank_pdf())
 
 
 def test_a_damaged_pdf_is_refused() -> None:

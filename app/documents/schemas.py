@@ -14,4 +14,5 @@ class DocumentSummary(BaseSchema):
     pages: int | None
     chars: int
     truncated: bool  # the file was longer than max_document_chars
+    ocr: bool  # read off pictures of pages, so the text may contain mistakes
     created_at: datetime

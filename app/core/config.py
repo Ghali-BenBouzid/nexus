@@ -37,6 +37,9 @@ class Settings(BaseSettings):
     # Cap on the text kept from one file (about 50k tokens): enough for a long
     # report, short of a whole book blowing up a context window.
     max_document_chars: int = 200_000
+    # Scanned pages are read by OCR at roughly three seconds a page, in the
+    # request that uploaded them, so a long scan is refused rather than waited on.
+    max_ocr_pages: int = 10
 
     # agent / provider settings
     gemini_api_key: str | None = None
