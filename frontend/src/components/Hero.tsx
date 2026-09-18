@@ -3,9 +3,11 @@ import { Fragment, useRef } from "react";
 import { t } from "../lib/i18n";
 import { PromptBar, type PromptBarHandle } from "./PromptBar";
 
-type HeroProps = { onSubmit: (prompt: string) => void };
+// ``note``: the one line an invited visitor gets under the bar, their credits or
+// why their invite link did not work. The chat's composer carries the same line.
+type HeroProps = { onSubmit: (prompt: string) => void; note?: string | null };
 
-export function Hero({ onSubmit }: HeroProps) {
+export function Hero({ onSubmit, note }: HeroProps) {
   const barRef = useRef<PromptBarHandle>(null);
   // Each word is an inline-block unit (nowrap), so a line break can only happen at
   // a real space between words, never mid-word. Chars animate in with a continuous
@@ -33,6 +35,7 @@ export function Hero({ onSubmit }: HeroProps) {
 
         <div className="prompt-wrap-outer">
           <PromptBar ref={barRef} onSubmit={onSubmit} />
+          {note && <p className="composer-note">{note}</p>}
           <p className="chips-label">{t.hero.examplesLabel}</p>
           <div className="chips">
             {t.hero.chips.map((prompt, i) => (

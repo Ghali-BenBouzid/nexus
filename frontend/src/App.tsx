@@ -271,9 +271,9 @@ export default function App() {
   useEffect(() => {
     const invite = inviteFromUrl();
     if (invite) {
-      // An invite link lands straight in a fresh chat, where the composer shows the
-      // budget (or why the link did not work). The token leaves the URL at once.
-      navigate("/chat", { replace: true });
+      // An invite link lands on the landing page, where the hero shows the budget
+      // (or why the link did not work). The token leaves the URL at once.
+      navigate("/", { replace: true });
       redeemInvite(invite)
         .catch((err) => setInviteError(err instanceof Error ? err.message : t.access.invalid))
         .finally(() => setLive(isLive()));
@@ -603,7 +603,7 @@ export default function App() {
 
       {view === "home" && (
         <Fragment>
-          <Hero onSubmit={heroSubmit} />
+          <Hero onSubmit={heroSubmit} note={accessNote} />
           <About />
           <HowItWorks />
           <Footer />
