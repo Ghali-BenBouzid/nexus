@@ -941,6 +941,9 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 /* composer: sits inside the conversation column, no bar chrome of its own */
 .composer { flex: none; padding: 10px 0 16px; }
 .composer-inner { max-width: 680px; margin-inline: auto; padding-inline: 24px; }
+/* Under the hero's bar the note sits between two small lines, so it needs its
+   own air; in the chat composer it is the last thing on the screen. */
+.hero .composer-note { margin: 14px 0 6px; }
 .composer-note { margin: 8px 0 0; text-align: center; font-family: var(--font-mono); font-size: 11px;
   color: var(--faint); letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
 .cinput { display: flex; flex-direction: row; align-items: center; gap: 8px; border-radius: 999px; background: var(--panel);
