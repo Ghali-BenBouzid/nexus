@@ -209,6 +209,11 @@ Scoring the full 150-question set is still the next step.
 - The evaluation relies on a model as a judge, and the scored runs so far are small.
 - Prompt injection defences are written and structured, but not yet measured: that needs full research runs, which cost search credits.
 
+## Licence
+
+Nexus is licensed under the [GNU AGPL v3](LICENSE).
+It reads PDFs with PyMuPDF, which is AGPL, so the app it is part of is too.
+
 ## Who built what
 
 I designed Nexus and made every decision in it: the architecture, how the agents work, what the evaluation measures and how the interface looks and behaves.
