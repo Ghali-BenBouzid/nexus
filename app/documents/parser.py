@@ -1,8 +1,12 @@
 """Turn an uploaded file into text the agents can read.
 
-One function, ``parse``, picks an extractor from the file's extension: pypdf for
-PDFs, python-docx for .docx, a decode for plain text formats. Anything else, or a
-file that yields no text, raises ``ParseError`` with a message meant for the user.
+One function, ``parse``, picks an extractor from the file's extension: pymupdf4llm
+for PDFs, python-docx for .docx, a decode for plain text formats. Anything else, or
+a file that yields no text, raises ``ParseError`` with a message meant for the user.
+
+PDFs come back as Markdown, not a flat dump: pymupdf4llm keeps headings, lists and
+tables, which is what lets an agent quote a section or check a claim against the
+paragraph it came from. The cost is the licence, AGPL, which the project accepts.
 
 A scanned PDF is the common case that yields nothing: its pages are images, and
 no amount of parsing finds words in them. It is refused rather than stored empty,
@@ -12,7 +16,8 @@ so no agent ever answers from a document that turned out to be blank.
 import io
 from dataclasses import dataclass
 
-import pypdf
+import pymupdf
+import pymupdf4llm
 from docx import Document as DocxDocument
 
 # Enough of a page to count as real text. A scanned PDF often carries a few
@@ -59,27 +64,28 @@ def parse(filename: str, data: bytes) -> Parsed:
 
 def _pdf(data: bytes) -> Parsed:
     try:
-        reader = pypdf.PdfReader(io.BytesIO(data))
-        if reader.is_encrypted:
-            # An empty user password unlocks many "protected" PDFs; a real one
-            # cannot be guessed, and pypdf reads nothing from a locked file.
-            try:
-                reader.decrypt("")
-            except Exception as exc:
-                raise ParseError("This PDF is password protected.") from exc
-        pages = [page.extract_text() or "" for page in reader.pages]
-    except ParseError:
-        raise
+        document = pymupdf.open(stream=data, filetype="pdf")
     except Exception as exc:
         raise ParseError("This PDF could not be read; it may be damaged.") from exc
 
-    text = "\n\n".join(page.strip() for page in pages if page.strip())
-    if pages and len(text) < _MIN_CHARS_PER_PAGE * len(pages):
+    with document:
+        if document.needs_pass:
+            # An empty owner password unlocks many "protected" PDFs; a real one
+            # cannot be guessed, and nothing can be read from a locked file.
+            if not document.authenticate(""):
+                raise ParseError("This PDF is password protected.")
+        pages = document.page_count
+        try:
+            text = pymupdf4llm.to_markdown(document, show_progress=False).strip()
+        except Exception as exc:
+            raise ParseError("This PDF could not be read; it may be damaged.") from exc
+
+    if pages and len(text) < _MIN_CHARS_PER_PAGE * pages:
         raise ParseError(
             "This PDF looks scanned: its pages are images, with no text to read. "
             "Reading scanned documents is not supported yet."
         )
-    return Parsed(text=text, pages=len(pages))
+    return Parsed(text=text, pages=pages)
 
 
 def _docx(data: bytes) -> Parsed:

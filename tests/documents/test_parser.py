@@ -1,59 +1,41 @@
 import io
 
+import pymupdf
 import pytest
 from docx import Document as DocxDocument
 
 from app.documents.parser import ParseError, parse
 
-# A minimal one-page PDF with a text object, written by hand so the test needs no
-# PDF writer. Enough for pypdf to extract "Heat pumps move heat, they do not ..."
 _TEXT = (
     "Heat pumps move heat instead of making it, which is why they can deliver "
     "more energy than they consume."
 )
+_CSS = "table {border-collapse: collapse} td, th {border: 1px solid #000; padding: 6px}"
 
 
-def _pdf(text: str = _TEXT, pages: int = 1) -> bytes:
-    objects: list[bytes] = []
-    page_ids = [4 + 2 * i for i in range(pages)]
-    kids = " ".join(f"{pid} 0 R" for pid in page_ids)
-    objects.append(b"1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n")
-    objects.append(
-        f"2 0 obj<</Type/Pages/Count {pages}/Kids[{kids}]>>endobj\n".encode()
-    )
-    objects.append(b"3 0 obj<</Type/Font/Subtype/Type1/BaseFont/Helvetica>>endobj\n")
-    for index, pid in enumerate(page_ids):
-        stream = f"BT /F1 12 Tf 72 720 Td ({text} page {index + 1}) Tj ET".encode()
-        objects.append(
-            (
-                f"{pid} 0 obj<</Type/Page/Parent 2 0 R/MediaBox[0 0 612 792]"
-                f"/Resources<</Font<</F1 3 0 R>>>>/Contents {pid + 1} 0 R>>endobj\n"
-            ).encode()
-        )
-        objects.append(
-            f"{pid + 1} 0 obj<</Length {len(stream)}>>stream\n".encode()
-            + stream
-            + b"\nendstream endobj\n"
-        )
-
-    out = bytearray(b"%PDF-1.4\n")
-    offsets = []
-    for obj in objects:
-        offsets.append(len(out))
-        out += obj
-    start = len(out)
-    count = len(objects) + 1
-    out += f"xref\n0 {count}\n0000000000 65535 f \n".encode()
-    for offset in offsets:
-        out += f"{offset:010d} 00000 n \n".encode()
-    out += f"trailer<</Size {count}/Root 1 0 R>>\nstartxref\n{start}\n%%EOF\n".encode()
-    return bytes(out)
+def _pdf(html: str | None = None, pages: int = 1) -> bytes:
+    """A real PDF, written with pymupdf. ``html`` is laid out on every page."""
+    document = pymupdf.open()
+    for index in range(pages):
+        page = document.new_page()
+        body = html or f"<p>{_TEXT} Page {index + 1}.</p>"
+        page.insert_htmlbox(pymupdf.Rect(50, 50, 545, 750), body, css=_CSS)
+    data = document.tobytes()
+    document.close()
+    return data
 
 
-def _scanned_pdf() -> bytes:
-    """A valid PDF whose pages carry no real text: what a scan looks like to a
-    parser, which finds a stray label at most."""
-    return _pdf(text="", pages=2)
+def _scanned_pdf(pages: int = 2) -> bytes:
+    """Pages with a picture and no text: what a scan looks like to a parser."""
+    document = pymupdf.open()
+    pixmap = pymupdf.Pixmap(pymupdf.csGRAY, pymupdf.IRect(0, 0, 200, 200), False)
+    pixmap.clear_with(128)
+    for _ in range(pages):
+        page = document.new_page()
+        page.insert_image(pymupdf.Rect(50, 50, 545, 750), pixmap=pixmap)
+    data = document.tobytes()
+    document.close()
+    return data
 
 
 def _docx(paragraphs: list[str], table: list[list[str]] | None = None) -> bytes:
@@ -74,8 +56,24 @@ def test_a_pdf_gives_its_text_and_page_count() -> None:
     parsed = parse("report.pdf", _pdf(pages=2))
 
     assert "Heat pumps move heat" in parsed.text
-    assert "page 2" in parsed.text
+    assert "Page 2." in parsed.text
     assert parsed.pages == 2
+
+
+def test_a_pdf_keeps_its_headings_and_tables_as_markdown() -> None:
+    # What the agents will work from: a section can be quoted, a row read back.
+    html = """
+    <h1>Heat pump performance</h1>
+    <p>Efficiency falls in the cold, but modern units keep working.</p>
+    <table><tr><th>Outdoor temperature</th><th>COP</th></tr>
+    <tr><td>7 C</td><td>4.1</td></tr><tr><td>-15 C</td><td>2.2</td></tr></table>
+    """
+
+    text = parse("performance.pdf", _pdf(html)).text
+
+    assert "# **Heat pump performance**" in text
+    assert "|**Outdoor temperature**|**COP**|" in text
+    assert "|7 C|4.1|" in text
 
 
 def test_a_scanned_pdf_is_refused_and_says_why() -> None:
