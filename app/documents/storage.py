@@ -46,12 +46,17 @@ def _client():
     )
 
 
+def prefix_for(user_id: int) -> str:
+    """Everything one account has uploaded lives under this prefix."""
+    return f"documents/{user_id}/"
+
+
 def key_for(user_id: int, filename: str) -> str:
-    """A unique key, namespaced by owner. The name is not taken from the user's
-    filename: it could collide, or carry path separators."""
+    """A unique key, under its owner's prefix. The name is not taken from the
+    user's filename: it could collide, or carry path separators."""
     from app.documents.parser import suffix_of
 
-    return f"documents/{user_id}/{uuid.uuid4().hex}{suffix_of(filename)}"
+    return f"{prefix_for(user_id)}{uuid.uuid4().hex}{suffix_of(filename)}"
 
 
 async def put(key: str, data: bytes, media_type: str) -> None:
@@ -71,6 +76,31 @@ async def get(key: str) -> bytes:
 
 async def delete(key: str) -> None:
     await _run(lambda: _client().delete_object(Bucket=settings.r2_bucket, Key=key))
+
+
+async def delete_prefix(prefix: str) -> int:
+    """Delete every object under ``prefix`` and return how many. Deleting rows
+    cascades in the database; the bucket knows nothing about that, so whoever
+    removes an owner removes their files here too."""
+
+    def purge() -> int:
+        client = _client()
+        removed = 0
+        pages = client.get_paginator("list_objects_v2").paginate(
+            Bucket=settings.r2_bucket, Prefix=prefix
+        )
+        for page in pages:
+            keys = [{"Key": item["Key"]} for item in page.get("Contents", [])]
+            if not keys:
+                continue
+            # delete_objects takes 1000 keys at a time, which is what a page holds.
+            client.delete_objects(
+                Bucket=settings.r2_bucket, Delete={"Objects": keys, "Quiet": True}
+            )
+            removed += len(keys)
+        return removed
+
+    return await _run(purge)
 
 
 async def _run(call):

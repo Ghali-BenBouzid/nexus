@@ -240,6 +240,7 @@ Create an account and its invite link (there is no signup page):
 ```bash
 uv run python -m app.admin create "Jane Doe" --budget 0.5 --days 14
 uv run python -m app.admin list
+uv run python -m app.admin delete 1   # the account, its conversations and its uploaded files
 ```
 
 Then the frontend:

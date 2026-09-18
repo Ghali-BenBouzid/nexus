@@ -109,5 +109,14 @@ async def _forget(key: str | None) -> None:
         pass
 
 
+async def forget_account(user_id: int) -> int:
+    """Remove every file this account uploaded, and say how many. Its rows go
+    with the account through the database's cascade; its objects would otherwise
+    stay in the bucket forever."""
+    if not storage.available():
+        return 0
+    return await storage.delete_prefix(storage.prefix_for(user_id))
+
+
 def truncated(document: Document) -> bool:
     return len(document.text) >= settings.max_document_chars

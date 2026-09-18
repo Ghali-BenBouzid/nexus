@@ -16,6 +16,7 @@ from app.auth import repository, service
 from app.billing import repository as billing_repository
 from app.billing.service import to_usd
 from app.db import session as db_session
+from app.documents import service as documents
 
 
 async def _create(args: argparse.Namespace) -> None:
@@ -58,6 +59,23 @@ async def _update(args: argparse.Namespace) -> None:
         print(service.invite_url(token))
 
 
+async def _delete(args: argparse.Namespace) -> None:
+    async with db_session.SessionLocal() as db:
+        user = await repository.get_user_by_id(db, args.id)
+        if user is None:
+            raise SystemExit(f"No account with id {args.id}.")
+        if not args.yes:
+            answer = input(f"Delete {user.name} (id {user.id}) and its data? [y/N] ")
+            if answer.strip().lower() not in ("y", "yes"):
+                raise SystemExit("Nothing was deleted.")
+        # The files first: a failure here leaves the account intact and the
+        # command repeatable, where the reverse would orphan the objects.
+        files = await documents.forget_account(user.id)
+        await db.delete(user)
+        await db.commit()
+    print(f"Deleted account {args.id}, and {files} uploaded file(s).")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="python -m app.admin")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -80,6 +98,13 @@ def main() -> None:
         "--new-link", action="store_true", help="issue a new link; the old one dies"
     )
     update.set_defaults(run=_update)
+
+    delete = commands.add_parser(
+        "delete", help="delete an account, its conversations and its uploads"
+    )
+    delete.add_argument("id", type=int)
+    delete.add_argument("--yes", action="store_true", help="skip the confirmation")
+    delete.set_defaults(run=_delete)
 
     args = parser.parse_args()
     asyncio.run(args.run(args))
