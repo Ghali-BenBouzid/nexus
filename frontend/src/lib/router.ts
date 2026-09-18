@@ -20,8 +20,9 @@ export function getRoute(): Route {
   const match = path.match(/^\/chat\/(\d+)\/?$/);
   if (match) return { view: "chat", conversationId: Number(match[1]) };
   if (path === "/chat" || path === "/chat/") return { view: "chat", conversationId: null };
-  // Opens on the chat so the first paint is already where the link lands.
-  if (INVITE_PATH.test(path)) return { view: "chat", conversationId: null };
+  // An invite link opens the landing page: a visitor arriving from it should see
+  // what Nexus is before its chat. The token is redeemed on mount either way.
+  if (INVITE_PATH.test(path)) return { view: "home", conversationId: null };
   return { view: "home", conversationId: null };
 }
 
