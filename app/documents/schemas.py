@@ -1,0 +1,17 @@
+from datetime import datetime
+
+from app.schemas.base import BaseSchema
+
+
+class DocumentSummary(BaseSchema):
+    """An uploaded document as the interface lists it. The text is not sent: it
+    can be long, and the thread only needs to show what is attached."""
+
+    id: int
+    filename: str
+    media_type: str
+    size_bytes: int
+    pages: int | None
+    chars: int
+    truncated: bool  # the file was longer than max_document_chars
+    created_at: datetime

@@ -3,6 +3,7 @@ from datetime import datetime
 from pydantic import BaseModel
 
 from app.agents.schemas import Source
+from app.documents.schemas import DocumentSummary
 from app.models.conversation import MessageRole
 from app.models.query import QueryStatus
 from app.schemas.base import BaseSchema
@@ -52,9 +53,11 @@ class MessageResponse(BaseModel):
 
 
 class ConversationDetail(BaseSchema):
-    """The full thread: ordered messages, each with its report when it has one."""
+    """The full thread: ordered messages, each with its report when it has one,
+    and the documents uploaded into it."""
 
     id: int
     title: str | None
     created_at: datetime
     messages: list[MessageResponse]
+    documents: list[DocumentSummary] = []

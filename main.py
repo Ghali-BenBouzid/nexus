@@ -9,6 +9,7 @@ from app.auth.router import router as auth_router
 from app.conversations.router import router as conversations_router
 from app.core.config import settings
 from app.db import session as db_session
+from app.documents.router import router as documents_router
 from app.observability import configure_tracing
 from app.research import repository
 from app.research import service as research_service
@@ -56,6 +57,7 @@ if settings.cors_origin_list:
 app.include_router(auth_router)
 app.include_router(research_router)
 app.include_router(conversations_router)
+app.include_router(documents_router)
 
 
 @app.get("/health")

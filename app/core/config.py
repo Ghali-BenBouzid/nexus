@@ -25,6 +25,19 @@ class Settings(BaseSettings):
     default_budget_usd: float = 0.50
     default_access_days: int = 14  # 0 = never expires
 
+    # Uploaded documents. The text goes in the database; the original file goes
+    # in an S3-compatible bucket (Cloudflare R2). Unset means uploads are refused
+    # with a clear error, so the app still runs without a bucket.
+    r2_endpoint_url: str | None = None
+    r2_access_key_id: str | None = None
+    r2_secret_access_key: str | None = None
+    r2_bucket: str | None = None
+    max_upload_mb: float = 10.0
+    max_documents_per_conversation: int = 10
+    # Cap on the text kept from one file (about 50k tokens): enough for a long
+    # report, short of a whole book blowing up a context window.
+    max_document_chars: int = 200_000
+
     # agent / provider settings
     gemini_api_key: str | None = None
     tavily_api_key: str | None = None
