@@ -14,18 +14,19 @@ import time
 from datetime import UTC, datetime
 from typing import Literal
 
+from langchain_core.language_models import BaseChatModel
+
 from app.agents import supervisor
 from app.agents.consolidator import consolidate
 from app.agents.planner import plan
-from app.agents.provider import LLMProvider
 from app.agents.researcher import research
 from app.agents.schemas import AgentEvent, Finding
 from app.agents.search_cache import CachingSearchBackend
-from app.agents.tools import FetchPage, SearchBackend, WebSearch
+from app.agents.tools import SearchBackend
 from app.agents.writer import write
 from app.core.config import settings
 from app.evals.goldens import Golden
-from app.evals.recording import RecordingProvider, RecordingSearchBackend
+from app.evals.recording import RecordingSearchBackend, StageUsage
 from app.evals.trace import ClaimRecord, ResearcherTrace, RunTrace, SourceRecord
 
 logger = logging.getLogger(__name__)
@@ -37,26 +38,26 @@ _NOTABLE_EVENTS = {"researcher_forced", "submit_invalid", "tool_error"}
 async def collect_one(
     golden: Golden,
     *,
-    provider: LLMProvider,
+    model: BaseChatModel,
     backend: SearchBackend,
     until: Literal["plan"] | None = None,
 ) -> RunTrace:
     """Run one golden end to end, or only through planning with ``until="plan"``.
-    Never raises: a failure is recorded on the trace. ``provider`` and ``backend``
-    must already be open; each golden gets its own search cache, as each
-    production job does."""
-    recorder = RecordingProvider(provider)
+    Never raises: a failure is recorded on the trace. ``backend`` must already be
+    open; each golden gets its own search cache, as each production job does."""
+    usage = StageUsage()
+    model.callbacks = [usage]  # every call counted, agent or not
     trace = RunTrace(
         golden_id=golden.id,
         input=golden.input,
         run_date=datetime.now(UTC).date().isoformat(),
-        model=recorder.model,
+        model=getattr(model, "model_name", "unknown"),
         until=until,
     )
     started = time.monotonic()
     try:
         await asyncio.wait_for(
-            _run(golden, trace, recorder, CachingSearchBackend(backend)),
+            _run(golden, trace, model, usage, CachingSearchBackend(backend)),
             timeout=settings.global_timeout,
         )
     except TimeoutError:
@@ -65,14 +66,15 @@ async def collect_one(
         logger.warning("golden %s failed", golden.id, exc_info=exc)
         trace.error = f"{type(exc).__name__}: {exc}"
     trace.seconds = round(time.monotonic() - started, 1)
-    trace.usage = recorder.usage
+    trace.usage = usage.usage
     return trace
 
 
 async def _run(
     golden: Golden,
     trace: RunTrace,
-    provider: RecordingProvider,
+    model: BaseChatModel,
+    usage: StageUsage,
     backend: SearchBackend,
 ) -> None:
     routing_backend = RecordingSearchBackend(backend)
@@ -80,7 +82,7 @@ async def _run(
         decision = await supervisor.decide(
             golden.input,
             [],  # every golden is a first message: no conversation before it
-            provider=provider,
+            model=model,
             backend=routing_backend,
             reports=[],
             max_iters=settings.supervisor_max_iters,
@@ -96,18 +98,21 @@ async def _run(
     # research on the message instead, so both routes continue here.
     query = decision.query or golden.input
     trace.research_query = query
-    provider.stage = "plan"
+    usage.stage = "plan"
     trace.plan = await plan(
-        query, provider=provider, cap=settings.cap, retry_cap=settings.planner_retry_cap
+        query, model=model, cap=settings.cap, retry_cap=settings.planner_retry_cap
     )
     if trace.until == "plan":
         return
 
-    provider.stage = "research"
+    usage.stage = "research"
     semaphore = asyncio.Semaphore(settings.max_concurrency)
     deadline = time.monotonic() + settings.research_budget
     results = await asyncio.gather(
-        *(_research_one(q, provider, backend, semaphore, deadline) for q in trace.plan)
+        *(
+            _research_one(q, model, usage, backend, semaphore, deadline)
+            for q in trace.plan
+        )
     )
     trace.researchers = [researcher for researcher, _ in results]
     findings = [finding for _, finding in results if finding is not None]
@@ -124,21 +129,21 @@ async def _run(
         for point in result.points
         for claim in point.claims
     ]
-    provider.stage = "write"
-    report = await write(result, provider=provider, timeout=settings.writer_timeout)
+    usage.stage = "write"
+    report = await write(result, model=model, timeout=settings.writer_timeout)
     trace.report = report.content
     trace.sources = [SourceRecord(title=s.title, url=s.url) for s in report.sources]
 
 
 async def _research_one(
     sub_question: str,
-    provider: LLMProvider,
+    model: BaseChatModel,
+    usage: StageUsage,
     backend: SearchBackend,
     semaphore: asyncio.Semaphore,
     deadline: float,
 ) -> tuple[ResearcherTrace, Finding | None]:
     recorder = RecordingSearchBackend(backend)
-    tools = [WebSearch(backend=recorder), FetchPage(backend=recorder)]
     trace = ResearcherTrace(sub_question=sub_question)
 
     async def emit(event: AgentEvent) -> None:
@@ -152,8 +157,8 @@ async def _research_one(
             finding = await asyncio.wait_for(
                 research(
                     sub_question,
-                    provider=provider,
-                    tools=tools,
+                    model=model,
+                    backend=recorder,
                     emit=emit,
                     max_iters=settings.max_iters,
                     deadline=deadline,

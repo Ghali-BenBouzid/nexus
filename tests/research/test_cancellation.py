@@ -6,7 +6,7 @@ import app.research.service as research_service
 from app.db import session as db_session
 from app.models.query import Query, QueryStatus
 from app.research import repository as research_repository
-from tests.research.test_research import FakeBackend, RoleProvider, _use_fake_pipeline
+from tests.research.test_research import FakeBackend, RoleModel, _use_fake_pipeline
 
 
 async def _make_pending_query(
@@ -47,19 +47,22 @@ async def _eventually(check, timeout: float = 5.0) -> bool:
     return True
 
 
-class _StopWhile(RoleProvider):
-    """Like RoleProvider, but the user stops the run while the agent whose system
+class _StopWhile(RoleModel):
+    """Like RoleModel, but the user stops the run while the agent whose system
     prompt mentions ``agent`` is calling the model."""
 
-    def __init__(self, sub_questions: list[str], query_id: int, agent: str) -> None:
-        super().__init__(sub_questions)
+    query_id: int = 0
+    agent: str = ""
+
+    def __init__(self, sub_questions, query_id: int, agent: str, **kwargs) -> None:
+        super().__init__(sub_questions, **kwargs)
         self.query_id = query_id
         self.agent = agent
 
-    async def generate(self, messages, tools=None, tool_choice="auto"):
-        if self.agent in (messages[0].content or ""):
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        if self.agent in str(messages[0].content or ""):
             await _stop(self.query_id)
-        return await super().generate(messages, tools, tool_choice)
+        return self._generate(messages, stop, run_manager, **kwargs)
 
 
 async def test_a_stop_during_planning_wins_over_the_plan(
@@ -71,7 +74,8 @@ async def test_a_stop_during_planning_wins_over_the_plan(
     await research_service.run_graph(
         qid,
         {"message": "a question", "history": [], "prior": []},
-        provider=_StopWhile(["q1"], qid, "research planner"),
+        model=_StopWhile(["q1"], qid, "research planner"),
+        user_id=1,
         backend=FakeBackend(),
     )
 
@@ -92,7 +96,7 @@ async def test_a_stop_during_the_write_keeps_the_run_stopped(
         qid,
         "a question",
         user_id=user_id,
-        provider=_StopWhile(["q1"], qid, "research writer"),
+        model=_StopWhile(["q1"], qid, "research writer"),
         backend=FakeBackend(),
     )
 
@@ -105,11 +109,11 @@ class _SlowWriter(_StopWhile):
     """The user stops the run while the writer's model call is still going, as
     with a reasoning model that thinks for minutes."""
 
-    async def generate(self, messages, tools=None, tool_choice="auto"):
-        if "research writer" in (messages[0].content or ""):
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        if self.agent in str(messages[0].content or ""):
             await _stop(self.query_id)
             await asyncio.sleep(60)
-        return await super().generate(messages, tools, tool_choice)
+        return self._generate(messages, stop, run_manager, **kwargs)
 
 
 async def test_a_stop_cancels_the_model_call_in_flight(
@@ -125,7 +129,7 @@ async def test_a_stop_cancels_the_model_call_in_flight(
             qid,
             "a question",
             user_id=user_id,
-            provider=_SlowWriter(["q1"], qid, "research writer"),
+            model=_SlowWriter(["q1"], qid, "research writer"),
             backend=FakeBackend(),
         ),
         timeout=5,
@@ -150,7 +154,7 @@ async def test_a_job_stopped_while_queued_does_nothing(
         qid,
         "a question",
         user_id=user_id,
-        provider=RoleProvider(["q1"]),
+        model=RoleModel(["q1"]),
         backend=FakeBackend(),
     )
 
@@ -170,7 +174,7 @@ async def test_a_review_with_no_paused_run_fails_the_query(
         qid,
         user_id=user_id,
         approved=True,
-        provider=RoleProvider(["q1"]),
+        model=RoleModel(["q1"]),
         backend=FakeBackend(),
     )
 

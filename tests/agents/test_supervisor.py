@@ -1,144 +1,134 @@
-from app.agents.provider import LLMResponse, ToolCall
+"""The supervisor, with a scripted model: which move it commits to, what it may
+read first, and what happens when it commits to nothing.
+"""
+
 from app.agents.schemas import Turn
 from app.agents.supervisor import decide
 from app.agents.tools import SearchHit
+from tests.agents.fakes import ScriptedModel, call, says
+
+DECIDE = "Decision"  # the decision schema's name, as the model sees the tool
 
 
-class _ScriptedProvider:
-    """Returns scripted responses in order, recording the tool specs it was given
-    so a test can assert which tools the supervisor exposed."""
+class FakeBackend:
+    def __init__(self) -> None:
+        self.searches: list[str] = []
 
-    def __init__(self, responses: list[LLMResponse]) -> None:
-        self.responses = responses
-        self.tool_names: list[list[str]] = []
-
-    async def __aenter__(self) -> "_ScriptedProvider":
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        return None
-
-    async def generate(self, messages, tools=None, tool_choice="auto") -> LLMResponse:
-        self.tool_names.append([t.name for t in (tools or [])])
-        self.seen = [(m.role, m.content) for m in messages]
-        return self.responses.pop(0)
-
-
-class _FakeBackend:
-    async def __aenter__(self) -> "_FakeBackend":
+    async def __aenter__(self) -> "FakeBackend":
         return self
 
     async def __aexit__(self, *exc: object) -> None:
         return None
 
     async def search(self, query: str, max_results: int) -> list[SearchHit]:
-        return [SearchHit(title="A page", url="http://a", content="snippet")]
+        self.searches.append(query)
+        return [SearchHit(title="A", url="http://a", content="alpha")]
 
     async def extract(self, url: str) -> str:
-        return "full page text"
+        return "page text"
 
 
-def _call(name: str, args: dict) -> LLMResponse:
-    return LLMResponse(tool_calls=[ToolCall(id=name, name=name, args=args)])
-
-
-async def _decide(
-    provider, *, reports=None, message="a message", max_iters=4, history=None
-):
+async def _decide(model, *, reports=None, message="a message", history=None, **kwargs):
     return await decide(
         message,
         history or [],
-        provider=provider,
-        backend=_FakeBackend(),
+        model=model,
+        backend=kwargs.pop("backend", FakeBackend()),
         reports=reports or [],
-        max_iters=max_iters,
+        **kwargs,
     )
 
 
-async def test_decide_routes_to_research() -> None:
-    provider = _ScriptedProvider(
-        [_call("research", {"query": "what is X", "title": "About X"})]
+async def test_it_can_send_researchers() -> None:
+    model = ScriptedModel(
+        [call(DECIDE, action="research", query="what is X", title="About X")]
     )
-    decision = await _decide(provider, message="tell me about X")
+
+    decision = await _decide(model, message="tell me about X")
+
     assert decision.action == "research"
     assert decision.query == "what is X"
     assert decision.title == "About X"  # the supervisor names the report
 
 
-async def test_decide_routes_to_answer() -> None:
-    provider = _ScriptedProvider([_call("answer", {"reply": "It is blue."})])
-    decision = await _decide(provider)
+async def test_it_can_answer_from_what_is_already_there() -> None:
+    model = ScriptedModel([call(DECIDE, action="answer", reply="It is blue.")])
+
+    decision = await _decide(model)
+
     assert decision.action == "answer"
     assert decision.reply == "It is blue."
 
 
-async def test_decide_routes_to_compose() -> None:
-    provider = _ScriptedProvider(
-        [_call("compose_report", {"instructions": "merge", "title": "Combined"})]
+async def test_it_can_merge_the_conversations_reports() -> None:
+    model = ScriptedModel(
+        [call(DECIDE, action="compose_report", instructions="merge", title="Combined")]
     )
-    decision = await _decide(
-        provider, reports=[("q1", "report one"), ("q2", "report two")]
-    )
+
+    decision = await _decide(model, reports=[("q1", "report one"), ("q2", "two")])
+
     assert decision.action == "compose"
     assert decision.instructions == "merge"
     assert decision.title == "Combined"
 
 
-async def test_decide_reads_reports_then_composes() -> None:
-    # A genuine tool loop: it reads the full reports first, then composes.
-    provider = _ScriptedProvider(
+async def test_it_reads_the_full_reports_before_merging_them() -> None:
+    # The conversation only carries excerpts, so merging starts with a read.
+    model = ScriptedModel(
         [
-            _call("read_reports", {}),
-            _call("compose_report", {"instructions": "combine them"}),
+            call("read_reports"),
+            call(DECIDE, action="compose_report", instructions="merge both"),
         ]
     )
-    decision = await _decide(provider, reports=[("q1", "the full report text")])
+
+    decision = await _decide(model, reports=[("q1", "the full text of report one")])
+
     assert decision.action == "compose"
-    assert decision.instructions == "combine them"
-    # read_reports was offered as a tool on the first call
-    assert "read_reports" in provider.tool_names[0]
+    read = [m for turn in model.seen for m in turn if m.type == "tool"]
+    assert "the full text of report one" in read[0].content
 
 
-async def test_decide_can_web_search_before_answering() -> None:
-    provider = _ScriptedProvider(
+async def test_it_can_check_one_fact_before_answering() -> None:
+    backend = FakeBackend()
+    model = ScriptedModel(
         [
-            _call("web_search", {"query": "today", "max_results": 3}),
-            _call("answer", {"reply": "Found it."}),
+            call("web_search", query="price of X", max_results=3),
+            call(DECIDE, action="answer", reply="About ten euros."),
         ]
     )
-    decision = await _decide(provider)
+
+    decision = await _decide(model, backend=backend)
+
     assert decision.action == "answer"
-    assert decision.reply == "Found it."
+    assert backend.searches == ["price of X"]
 
 
-async def test_decide_answer_without_reply_falls_back_to_research() -> None:
-    # An "answer" with no actual reply is useless: nudge, then exhaust to research.
-    provider = _ScriptedProvider(
-        [
-            _call("answer", {"reply": "   "}),
-            _call("answer", {"reply": ""}),
-        ]
-    )
-    decision = await _decide(provider, message="a message", max_iters=2)
+async def test_an_empty_answer_becomes_research_rather_than_a_blank_reply() -> None:
+    model = ScriptedModel([call(DECIDE, action="answer", reply="   ")])
+
+    decision = await _decide(model, message="what is X?")
+
     assert decision.action == "research"
-    assert decision.query == "a message"  # the raw message is the safe fallback
+    assert decision.query == "what is X?"
 
 
-async def test_decide_exhausts_to_research() -> None:
-    # If it only ever calls a gather tool, the budget runs out and it researches.
-    provider = _ScriptedProvider([_call("read_reports", {}), _call("read_reports", {})])
-    decision = await _decide(provider, message="keep reading", max_iters=2)
+async def test_a_supervisor_that_never_commits_researches_the_message() -> None:
+    # Out of rounds without a decision: doing the work beats a hollow answer.
+    model = ScriptedModel(respond=lambda messages, tools: says("thinking out loud"))
+
+    decision = await _decide(model, message="tell me", max_iters=2)
+
     assert decision.action == "research"
-    assert decision.query == "keep reading"
+    assert decision.query == "tell me"
 
 
 async def test_the_thread_reaches_the_model_as_separate_messages() -> None:
     # It used to arrive as one user message holding the rendered thread, where the
     # user's words and a report excerpt were indistinguishable.
-    provider = _ScriptedProvider([_call("answer", {"reply": "Blue."})])
+    model = ScriptedModel([call(DECIDE, action="answer", reply="Blue.")])
 
     await _decide(
-        provider,
+        model,
         message="what colour?",
         history=[
             Turn(role="user", content="research the sky"),
@@ -148,8 +138,9 @@ async def test_the_thread_reaches_the_model_as_separate_messages() -> None:
         ],
     )
 
-    assert provider.seen[1:] == [
-        ("user", "research the sky"),
-        ("assistant", '<report question="sky">it is blue</report>'),
-        ("user", "what colour?"),
+    sent = model.seen[0]
+    assert [(m.type, m.content) for m in sent[-3:]] == [
+        ("human", "research the sky"),
+        ("ai", '<report question="sky">it is blue</report>'),
+        ("human", "what colour?"),
     ]

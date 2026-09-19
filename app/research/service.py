@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
 
+from langchain_core.language_models import BaseChatModel
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from langgraph.graph.state import CompiledStateGraph
@@ -23,6 +24,7 @@ from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.agents.model import Errors, Guard, Pacing, retrying
 from app.agents.orchestrator import (
     SERDE,
     Deps,
@@ -33,16 +35,16 @@ from app.agents.orchestrator import (
     run_config,
 )
 from app.agents.planner import PlannerError
-from app.agents.provider import LLMProvider, ProviderCreditsError, ProviderError
+from app.agents.provider import ProviderCreditsError, ProviderError
 from app.agents.schemas import AgentEvent
 from app.agents.search_cache import CachingSearchBackend
 from app.agents.tools import SearchBackend
-from app.billing.metering import MeteredProvider
+from app.billing.metering import billing
 from app.core.config import settings
 from app.db import session as db_session
 from app.models.query import QueryStatus
 from app.research import repository
-from app.research.dependencies import get_provider, get_search_backend
+from app.research.dependencies import get_model, get_search_backend
 
 logger = logging.getLogger(__name__)
 
@@ -195,24 +197,39 @@ async def job_liveness(query_id: int) -> AsyncIterator[Liveness]:
 # --- running the graph ------------------------------------------------------
 
 
-def _metered(provider: LLMProvider | None, *, user_id: int, query_id: int):
-    """The provider a job bills its calls through. An inline job reuses the
-    request's (the tests' fakes); a worker builds its own from settings."""
-    return MeteredProvider(
-        provider or get_provider(), user_id=user_id, query_id=query_id
-    )
+def _model(model: BaseChatModel | None) -> BaseChatModel:
+    """The model a job runs on. An inline job reuses the request's (the tests'
+    fake); a worker builds its own from settings."""
+    return model or get_model()
+
+
+def _middleware(model: BaseChatModel, *, stopped) -> list:
+    """What wraps every call an agent makes: pacing under the provider's limits,
+    one clear error instead of an SDK traceback, no new call once the user has
+    stopped, and retries where retrying can help.
+
+    Billing is not here: middleware only sees an agent's calls, and the planner
+    and the writer call the model directly, so it rides on the model instead."""
+    limiter = getattr(model, "rate_limiter", None)
+    return [
+        Errors(),
+        Guard(should_cancel=stopped),
+        *([Pacing(limiter)] if limiter is not None else []),
+        retrying(settings.retry_max_attempts),
+    ]
 
 
 async def run_graph(
     query_id: int,
     graph_input: dict[str, Any] | Command,
     *,
-    provider: LLMProvider,
+    model: BaseChatModel,
     backend: SearchBackend,
+    user_id: int,
     on_route: OnRoute | None = None,
 ) -> None:
     """Run the graph for one query (or resume it, given a Command) and always
-    resolve the query's status. ``provider`` bills to the query's owner."""
+    resolve the query's status. Every call is billed to ``user_id``."""
     graph = _get_graph()
     config = run_config(query_id)
     async with db_session.SessionLocal() as db, job_liveness(query_id) as live:
@@ -227,13 +244,17 @@ async def run_graph(
             return
         paused = False
         try:
+            # Billing rides on the model, so a call is billed wherever it was
+            # made, inside an agent or not.
+            model.callbacks = [billing(user_id=user_id, query_id=query_id)]
             backend = CachingSearchBackend(backend)
-            async with provider, backend:
+            async with backend:
                 deps = Deps(
-                    provider=provider,
+                    model=model,
                     backend=backend,
                     emit=EventSink(query_id),
                     should_cancel=lambda: live.stopped,
+                    middleware=_middleware(model, stopped=lambda: live.stopped),
                 )
                 updates = graph.astream(
                     graph_input,
@@ -325,7 +346,7 @@ async def run_research_job(
     prompt: str,
     *,
     user_id: int,
-    provider: LLMProvider | None = None,
+    model: BaseChatModel | None = None,
     backend: SearchBackend | None = None,
 ) -> None:
     """A one-shot run (POST /research/query): plan, research and write, with no
@@ -333,7 +354,8 @@ async def run_research_job(
     await run_graph(
         query_id,
         {"prompt": prompt, "auto_approve": True},
-        provider=_metered(provider, user_id=user_id, query_id=query_id),
+        model=_model(model),
+        user_id=user_id,
         backend=backend or get_search_backend(),
     )
 
@@ -344,7 +366,7 @@ async def review_plan_job(
     user_id: int,
     approved: bool,
     feedback: str = "",
-    provider: LLMProvider | None = None,
+    model: BaseChatModel | None = None,
     backend: SearchBackend | None = None,
 ) -> None:
     """Resume a run paused on its plan with the user's answer. A confirm
@@ -352,6 +374,7 @@ async def review_plan_job(
     await run_graph(
         query_id,
         Command(resume=Review(approved=approved, feedback=feedback)),
-        provider=_metered(provider, user_id=user_id, query_id=query_id),
+        model=_model(model),
+        user_id=user_id,
         backend=backend or get_search_backend(),
     )

@@ -1,36 +1,24 @@
 import httpx
 from httpx import AsyncClient
+from langchain_core.outputs import ChatGeneration, ChatResult
 
-from app.agents.openai_provider import OUT_OF_CREDITS
-from app.agents.provider import LLMResponse, ProviderError, ToolCall
+from app.agents.model import OUT_OF_CREDITS
+from app.agents.provider import ProviderError
 from app.billing.service import BUDGET_EXHAUSTED
-from app.research.dependencies import get_provider, get_search_backend
+from app.research.dependencies import get_model, get_search_backend
 from app.research.service import PROVIDER_DOWN
 from main import app
 from tests.accounts import login_as
-from tests.agents.test_openai_provider import NO_BACKOFF, _provider
+from tests.agents.fakes import ScriptedModel, call, says
 from tests.research.test_research import FakeBackend, _use_fake_pipeline
 
 
-class _AnswerProvider:
-    """Supervisor that always routes to a direct answer (no research)."""
+class _AnswerModel(ScriptedModel):
+    """A supervisor that always answers from what the conversation holds."""
 
-    async def __aenter__(self) -> "_AnswerProvider":
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        return None
-
-    async def generate(self, messages, tools=None, tool_choice="auto") -> LLMResponse:
-        return LLMResponse(
-            tool_calls=[
-                ToolCall(
-                    id="d",
-                    name="answer",
-                    args={"reply": "Answer from the report."},
-                )
-            ]
-        )
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        reply = call("Decision", action="answer", reply="Answer from the report.")
+        return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
 async def test_create_conversation_plans_then_confirms(
@@ -156,7 +144,7 @@ async def test_supervisor_answers_from_context_without_research(
     )
     conversation_id = created.json()["id"]
 
-    app.dependency_overrides[get_provider] = _AnswerProvider
+    app.dependency_overrides[get_model] = lambda: _AnswerModel()
     followed = await client.post(
         f"/conversations/{conversation_id}/messages",
         headers=auth_headers,
@@ -174,33 +162,25 @@ async def test_supervisor_answers_from_context_without_research(
     assert last["query"]["report"] is None
 
 
-class _ComposeProvider:
-    """Supervisor that routes to compose_report; also answers the writer call the
-    compose job makes, with the merged report text."""
+class _ComposeModel(ScriptedModel):
+    """A supervisor that merges the conversation's reports, then the writer."""
 
-    async def __aenter__(self) -> "_ComposeProvider":
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        return None
-
-    async def generate(self, messages, tools=None, tool_choice="auto") -> LLMResponse:
-        system = messages[0].content or ""
-        if "controller of a research assistant" in system:
-            return LLMResponse(
-                tool_calls=[
-                    ToolCall(
-                        id="c",
-                        name="compose_report",
-                        args={
-                            "instructions": "merge them into one",
-                            "title": "Combined Report",
-                        },
-                    )
-                ]
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        names = {
+            tool.get("function", {}).get("name") or tool.get("name", "")
+            for tool in (kwargs.get("tools") or [])
+        }
+        reply = (
+            call(
+                "Decision",
+                action="compose_report",
+                instructions="merge them into one",
+                title="Combined Report",
             )
-        # the writer call inside the compose job
-        return LLMResponse(text="MERGED REPORT")
+            if "Decision" in names
+            else says("MERGED REPORT")
+        )
+        return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
 async def test_supervisor_composes_a_merged_report(
@@ -216,7 +196,7 @@ async def test_supervisor_composes_a_merged_report(
     query_id = created.json()["messages"][1]["query_id"]
     await client.post(f"/research/query/{query_id}/confirm", headers=auth_headers)
 
-    app.dependency_overrides[get_provider] = _ComposeProvider
+    app.dependency_overrides[get_model] = lambda: _ComposeModel()
     followed = await client.post(
         f"/conversations/{conversation_id}/messages",
         headers=auth_headers,
@@ -271,14 +251,10 @@ async def test_spent_budget_refuses_the_message_up_front(client: AsyncClient) ->
     assert (await client.get("/conversations", headers=headers)).json() == []
 
 
-class _DownProvider:
-    async def __aenter__(self) -> "_DownProvider":
-        return self
+class _DownModel(ScriptedModel):
+    """A provider that is not answering at all."""
 
-    async def __aexit__(self, *exc: object) -> None:
-        return None
-
-    async def generate(self, messages, tools=None, tool_choice="auto") -> LLMResponse:
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         raise ProviderError("LLM request failed")
 
 
@@ -291,7 +267,7 @@ async def test_a_provider_outage_fails_the_turn_with_a_clear_message(
     )
     conversation_id = created.json()["id"]
 
-    app.dependency_overrides[get_provider] = _DownProvider
+    app.dependency_overrides[get_model] = lambda: _DownModel()
     followed = await client.post(
         f"/conversations/{conversation_id}/messages",
         headers=auth_headers,
@@ -312,13 +288,7 @@ async def test_a_key_over_its_credit_limit_tells_the_user_credits_ran_out(
 ) -> None:
     # OpenRouter's real answer once the demo key reaches its credit limit. It is a
     # 403, not a 402, and it used to reach the user as "provider not responding".
-    def key_limit(request: httpx.Request) -> httpx.Response:
-        body = {"error": {"code": 403, "message": "Key limit exceeded (total limit)."}}
-        return httpx.Response(403, json=body)
-
-    app.dependency_overrides[get_provider] = lambda: _provider(
-        key_limit, retry=NO_BACKOFF
-    )
+    app.dependency_overrides[get_model] = lambda: _KeyLimitModel()
     app.dependency_overrides[get_search_backend] = FakeBackend
     created = await client.post(
         "/conversations", headers=auth_headers, json={"prompt": "first"}
@@ -331,3 +301,15 @@ async def test_a_key_over_its_credit_limit_tells_the_user_credits_ran_out(
     turn = detail.json()["messages"][1]["query"]
     assert turn["status"] == "failed"
     assert turn["error"] == OUT_OF_CREDITS
+
+
+class _KeyLimitModel(ScriptedModel):
+    """OpenRouter's real answer once the demo key reaches its credit limit: a 403,
+    not a 402, which used to reach the user as "provider not responding"."""
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        request = httpx.Request("POST", "https://openrouter.ai/api/v1/chat/completions")
+        response = httpx.Response(
+            403, text="Key limit exceeded (total limit).", request=request
+        )
+        raise httpx.HTTPStatusError("403", request=request, response=response)

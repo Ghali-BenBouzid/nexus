@@ -12,8 +12,8 @@ from typing import Any
 
 from arq.connections import ArqRedis, RedisSettings, create_pool
 from fastapi import BackgroundTasks
+from langchain_core.language_models import BaseChatModel
 
-from app.agents.provider import LLMProvider
 from app.agents.tools import SearchBackend
 from app.core.config import settings
 
@@ -47,15 +47,15 @@ async def submit(
     background_tasks: BackgroundTasks,
     job: Job,
     *,
-    provider: LLMProvider | None = None,
+    model: BaseChatModel | None = None,
     backend: SearchBackend | None = None,
     **kwargs: Any,
 ) -> None:
     """Run ``job`` off the request, under its function name. Inline, it reuses
-    the request's provider and backend (the tests' fakes). On Redis only
-    ``kwargs`` travel, plain ids and text, and the worker builds its own."""
+    the request's model and backend (the tests' fakes). On Redis only ``kwargs``
+    travel, plain ids and text, and the worker builds its own."""
     if settings.job_queue == "inline":
-        clients = {"provider": provider, "backend": backend}
+        clients = {"model": model, "backend": backend}
         kwargs |= {name: value for name, value in clients.items() if value is not None}
         background_tasks.add_task(job, **kwargs)
         return

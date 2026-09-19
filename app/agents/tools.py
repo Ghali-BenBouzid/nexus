@@ -160,6 +160,33 @@ class WebSearchArgs(BaseModel):
     max_results: int = Field(default=5, description="How many results to return")
 
 
+async def web_search_results(
+    backend: SearchBackend, query: str, max_results: int = 5
+) -> RetrievalResult:
+    """One web search, tagged as retrieved material. Shared by every agent that
+    searches, so results look the same wherever they are read."""
+    hits = await backend.search(query, max_results)
+    sources = [Source(title=hit.title, url=hit.url) for hit in hits]
+    body = (
+        "\n\n".join(f"{hit.title}\n{hit.url}\n{hit.content}" for hit in hits)
+        or "No results found."
+    )
+    return RetrievalResult(
+        content=tagged("search_results", body, query=query), sources=sources
+    )
+
+
+async def fetch_page_text(backend: SearchBackend, url: str) -> RetrievalResult:
+    """One page, cleaned and capped so it cannot blow the context window."""
+    text = await backend.extract(url)
+    if len(text) > MAX_PAGE_CHARS:
+        text = text[:MAX_PAGE_CHARS] + "\n\n[...truncated]"
+    return RetrievalResult(
+        content=tagged("page", text, url=url),
+        sources=[Source(title=url, url=url)],
+    )
+
+
 class WebSearch(BaseTool):
     name = "web_search"
     description = "Run a web search for a query and return up to max_results results."
@@ -169,16 +196,7 @@ class WebSearch(BaseTool):
         self.backend = backend
 
     async def _run(self, args: WebSearchArgs) -> RetrievalResult:
-        hits = await self.backend.search(args.query, args.max_results)
-        sources = [Source(title=hit.title, url=hit.url) for hit in hits]
-        body = (
-            "\n\n".join(f"{hit.title}\n{hit.url}\n{hit.content}" for hit in hits)
-            or "No results found."
-        )
-        return RetrievalResult(
-            content=tagged("search_results", body, query=args.query),
-            sources=sources,
-        )
+        return await web_search_results(self.backend, args.query, args.max_results)
 
 
 class FetchPageArgs(BaseModel):
@@ -200,10 +218,4 @@ class FetchPage(BaseTool):
         self.backend = backend
 
     async def _run(self, args: FetchPageArgs) -> RetrievalResult:
-        text = await self.backend.extract(args.url)
-        if len(text) > MAX_PAGE_CHARS:
-            text = text[:MAX_PAGE_CHARS] + "\n\n[...truncated]"
-        return RetrievalResult(
-            content=tagged("page", text, url=args.url),
-            sources=[Source(title=args.url, url=args.url)],
-        )
+        return await fetch_page_text(self.backend, args.url)

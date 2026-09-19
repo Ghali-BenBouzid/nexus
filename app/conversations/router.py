@@ -1,7 +1,8 @@
+from typing import Any
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.provider import LLMProvider
 from app.agents.tools import SearchBackend
 from app.auth.dependencies import get_current_user
 from app.billing.service import ensure_budget
@@ -20,7 +21,7 @@ from app.documents.router import summary as document_summary
 from app.models.conversation import Conversation, Message
 from app.models.query import Query
 from app.models.user import User
-from app.research.dependencies import get_provider, get_search_backend
+from app.research.dependencies import get_model, get_search_backend
 from app.research.repository import stopped_by_user
 from app.research.router import _load_result
 
@@ -80,7 +81,9 @@ async def create(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    provider: LLMProvider = Depends(get_provider),
+    # Any, not BaseChatModel: it is a pydantic model, and FastAPI would read
+    # the annotation as a request body rather than a dependency.
+    model: Any = Depends(get_model),
     backend: SearchBackend = Depends(get_search_backend),
 ):
     # Every message costs a routing call, so the budget is checked up front.
@@ -90,7 +93,7 @@ async def create(
         db,
         conversation,
         payload.prompt,
-        provider=provider,
+        model=model,
         backend=backend,
         background_tasks=background_tasks,
     )
@@ -126,7 +129,9 @@ async def add_message(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    provider: LLMProvider = Depends(get_provider),
+    # Any, not BaseChatModel: it is a pydantic model, and FastAPI would read
+    # the annotation as a request body rather than a dependency.
+    model: Any = Depends(get_model),
     backend: SearchBackend = Depends(get_search_backend),
 ):
     conversation = await repository.get_conversation(
@@ -139,7 +144,7 @@ async def add_message(
         db,
         conversation,
         payload.content,
-        provider=provider,
+        model=model,
         backend=backend,
         background_tasks=background_tasks,
     )

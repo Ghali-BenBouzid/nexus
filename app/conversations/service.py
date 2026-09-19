@@ -2,21 +2,20 @@ import logging
 from typing import Any
 
 from fastapi import BackgroundTasks
+from langchain_core.language_models import BaseChatModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import jobs
 from app.agents.orchestrator import PriorReport
-from app.agents.provider import LLMProvider
 from app.agents.schemas import Turn
 from app.agents.tools import SearchBackend, tagged
-from app.billing.metering import MeteredProvider
 from app.conversations import repository
 from app.db import session as db_session
 from app.models.conversation import Conversation, Message, MessageRole
 from app.models.query import Query, QueryStatus
 from app.research import repository as research_repository
 from app.research import service as research_service
-from app.research.dependencies import get_provider, get_search_backend
+from app.research.dependencies import get_search_backend
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,7 @@ async def submit_message(
     conversation: Conversation,
     content: str,
     *,
-    provider: LLMProvider,
+    model: BaseChatModel,
     backend: SearchBackend,
     background_tasks: BackgroundTasks,
 ) -> Message:
@@ -78,7 +77,7 @@ async def submit_message(
     await jobs.submit(
         background_tasks,
         route_message,
-        provider=provider,
+        model=model,
         backend=backend,
         query_id=query.id,
         conversation_id=conversation.id,
@@ -92,7 +91,7 @@ async def route_message(
     conversation_id: int,
     message_id: int,
     *,
-    provider: LLMProvider | None = None,
+    model: BaseChatModel | None = None,
     backend: SearchBackend | None = None,
 ) -> None:
     """The job for a new message: runs the research graph from the supervisor,
@@ -141,9 +140,8 @@ async def route_message(
     await research_service.run_graph(
         query_id,
         graph_input,
-        provider=MeteredProvider(
-            provider or get_provider(), user_id=user_id, query_id=query_id
-        ),
+        model=research_service._model(model),
+        user_id=user_id,
         backend=backend or get_search_backend(),
         on_route=on_route,
     )

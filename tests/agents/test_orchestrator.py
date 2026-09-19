@@ -1,4 +1,5 @@
 import pytest
+from langchain_core.outputs import ChatGeneration, ChatResult
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.types import Command
 
@@ -11,8 +12,8 @@ from app.agents.orchestrator import (
     compile_graph,
     run_config,
 )
-from app.agents.provider import LLMResponse, Message, ToolCall
 from app.agents.schemas import AgentEvent
+from tests.agents.fakes import ScriptedModel, call, says
 
 
 class FakeBackend:
@@ -23,84 +24,65 @@ class FakeBackend:
         return ""
 
 
-class RoleProvider:
-    """A fake provider that dispatches on the tools each agent is given (not on
-    prompt wording, which changes as prompts improve), so it works under the
-    concurrent fan-out (unlike a single scripted queue). ``route`` is the
-    supervisor's tool call, when a test starts from a conversation turn."""
+class RoleModel(ScriptedModel):
+    """One model standing in for every agent, dispatching on the tools each was
+    given rather than on prompt wording, which changes as prompts improve. A
+    single scripted queue could not do this: researchers run concurrently."""
 
-    def __init__(
-        self,
-        sub_questions: list[str],
-        fail: set[str] | None = None,
-        route: ToolCall | None = None,
-    ) -> None:
-        self.sub_questions = sub_questions
-        self.fail = fail or set()
-        self.route = route
-        self.planner_prompts: list[str] = []
-        self.writer_prompts: list[str] = []
+    sub_questions: list[str] = []
+    fail: set[str] = set()
+    decision: dict | None = None  # the supervisor's move, on a conversation turn
+    planner_prompts: list[str] = []
+    writer_prompts: list[str] = []
 
-    async def generate(
-        self,
-        messages: list[Message],
-        tools: object = None,
-        tool_choice: str = "auto",
-    ) -> LLMResponse:
-        names = {tool.name for tool in tools or []}  # type: ignore[attr-defined]
-        if "answer" in names:
-            return LLMResponse(tool_calls=[self.route])
-        if "submit_plan" in names:
-            self.planner_prompts.append(messages[1].content or "")
-            return LLMResponse(
-                tool_calls=[
-                    ToolCall(
-                        id="p",
-                        name="submit_plan",
-                        args={"sub_questions": self.sub_questions},
-                    )
-                ]
+    def __init__(self, sub_questions=None, fail=None, decision=None, **kwargs):
+        super().__init__(**kwargs)
+        self.sub_questions = list(sub_questions or [])
+        self.fail = set(fail or ())
+        self.decision = decision
+        self.planner_prompts = []
+        self.writer_prompts = []
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        names = {
+            tool.get("function", {}).get("name") or tool.get("name", "")
+            for tool in (kwargs.get("tools") or [])
+        }
+        last = messages[-1].content or ""
+        if "Decision" in names:
+            reply = call("Decision", **(self.decision or {"action": "research"}))
+        elif "SubmitPlanArgs" in names:
+            self.planner_prompts.append(last)
+            reply = call("SubmitPlanArgs", sub_questions=self.sub_questions)
+        elif "SubmitFindingArgs" in names:
+            if last in self.fail:
+                raise RuntimeError(f"researcher boom: {last}")
+            reply = call(
+                "SubmitFindingArgs",
+                claims=[{"text": f"answer to {last}", "cited_source_ids": []}],
+                found_info=True,
             )
-        if "submit_finding" in names:
-            sub_question = messages[1].content or ""
-            if sub_question in self.fail:
-                raise RuntimeError(f"researcher boom: {sub_question}")
-            return LLMResponse(
-                tool_calls=[
-                    ToolCall(
-                        id="f",
-                        name="submit_finding",
-                        args={
-                            "claims": [
-                                {
-                                    "text": f"answer to {sub_question}",
-                                    "cited_source_ids": [],
-                                }
-                            ],
-                            "found_info": True,
-                        },
-                    )
-                ]
-            )
-        self.writer_prompts.append(messages[1].content or "")
-        return LLMResponse(text="FINAL REPORT")
+        else:
+            self.writer_prompts.append(last)
+            reply = says("FINAL REPORT")
+        return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
 def _graph():
     return compile_graph(InMemorySaver(serde=SERDE))
 
 
-async def _one_shot(provider: RoleProvider, **deps) -> dict:
-    """A one-shot run: plan, research, write, with no pause for the plan."""
+async def _one_shot(model: RoleModel, **deps) -> dict:
+    """A one-shot run: plan, research, write."""
     return await _graph().ainvoke(
         {"prompt": "big question", "auto_approve": True},
         run_config(1),
-        context=Deps(provider=provider, backend=FakeBackend(), **deps),
+        context=Deps(model=model, backend=FakeBackend(), **deps),
     )
 
 
 async def test_run_full_pipeline() -> None:
-    state = await _one_shot(RoleProvider(sub_questions=["q1", "q2"]))
+    state = await _one_shot(RoleModel(sub_questions=["q1", "q2"]))
 
     assert state["report"].content == "FINAL REPORT"
     assert state["report"].failed_subquestions == []
@@ -110,7 +92,7 @@ async def test_run_full_pipeline() -> None:
 
 
 async def test_run_degrades_on_partial_failure() -> None:
-    state = await _one_shot(RoleProvider(sub_questions=["q1", "q2"], fail={"q2"}))
+    state = await _one_shot(RoleModel(sub_questions=["q1", "q2"], fail={"q2"}))
 
     # survivor produced a report; the failed sub-question is reported as a gap
     assert state["report"].content == "FINAL REPORT"
@@ -127,7 +109,7 @@ async def test_run_writes_a_report_when_the_research_budget_runs_out() -> None:
         events.append(event)
 
     state = await _one_shot(
-        RoleProvider(sub_questions=["q1", "q2"]), emit=emit, research_budget=0.0
+        RoleModel(sub_questions=["q1", "q2"]), emit=emit, research_budget=0.0
     )
 
     assert state["report"].content == "FINAL REPORT"
@@ -137,7 +119,7 @@ async def test_run_writes_a_report_when_the_research_budget_runs_out() -> None:
 
 async def test_run_raises_when_all_researchers_fail() -> None:
     with pytest.raises(OrchestratorError):
-        await _one_shot(RoleProvider(sub_questions=["q1", "q2"], fail={"q1", "q2"}))
+        await _one_shot(RoleModel(sub_questions=["q1", "q2"], fail={"q1", "q2"}))
 
 
 async def test_run_emits_indexed_researcher_lifecycle() -> None:
@@ -147,7 +129,7 @@ async def test_run_emits_indexed_researcher_lifecycle() -> None:
     async def collect(event: AgentEvent) -> None:
         events.append(event)
 
-    await _one_shot(RoleProvider(sub_questions=["q1", "q2"], fail={"q2"}), emit=collect)
+    await _one_shot(RoleModel(sub_questions=["q1", "q2"], fail={"q2"}), emit=collect)
 
     starts = {
         (e.data["index"], e.data["total"], e.data["sub_question"])
@@ -169,12 +151,12 @@ async def test_run_aborts_when_cancelled() -> None:
     # The stop is checked once the plan is approved, so the run stops before any
     # researcher fan-out.
     with pytest.raises(OrchestratorCancelledError):
-        await _one_shot(RoleProvider(sub_questions=["q1"]), should_cancel=lambda: True)
+        await _one_shot(RoleModel(sub_questions=["q1"]), should_cancel=lambda: True)
 
 
 # --- a conversation turn ----------------------------------------------------
 
-_RESEARCH = ToolCall(id="d", name="research", args={"query": "rq", "title": "T"})
+_RESEARCH = {"action": "research", "query": "rq", "title": "T"}
 
 
 def _turn(prior: list | None = None) -> dict:
@@ -183,8 +165,8 @@ def _turn(prior: list | None = None) -> dict:
 
 async def test_a_turn_pauses_on_the_plan_until_the_user_confirms() -> None:
     graph = _graph()
-    provider = RoleProvider(sub_questions=["q1"], route=_RESEARCH)
-    deps = Deps(provider=provider, backend=FakeBackend())
+    model = RoleModel(sub_questions=["q1"], decision=_RESEARCH)
+    deps = Deps(model=model, backend=FakeBackend())
 
     paused = await graph.ainvoke(_turn(), run_config(1), context=deps)
 
@@ -201,7 +183,7 @@ async def test_a_turn_pauses_on_the_plan_until_the_user_confirms() -> None:
         context=deps,
     )
     assert "__interrupt__" in revised
-    assert "go deeper" in provider.planner_prompts[-1]
+    assert "go deeper" in model.planner_prompts[-1]
 
     # a confirm, in a later run (a later job), researches and writes
     done = await graph.ainvoke(
@@ -212,25 +194,24 @@ async def test_a_turn_pauses_on_the_plan_until_the_user_confirms() -> None:
 
 
 async def test_a_turn_the_supervisor_answers_ends_without_research() -> None:
-    answer = ToolCall(id="a", name="answer", args={"reply": "From the report."})
-    provider = RoleProvider(sub_questions=["q1"], route=answer)
+    answer = {"action": "answer", "reply": "From the report."}
+    model = RoleModel(sub_questions=["q1"], decision=answer)
 
     state = await _graph().ainvoke(
-        _turn(), run_config(1), context=Deps(provider=provider, backend=FakeBackend())
+        _turn(), run_config(1), context=Deps(model=model, backend=FakeBackend())
     )
 
     assert state["route"] == "answer"
     assert state["reply"] == "From the report."
-    assert "plan" not in state and provider.planner_prompts == []
+    assert "plan" not in state and model.planner_prompts == []
 
 
 async def test_compose_merges_earlier_reports_without_new_research() -> None:
-    compose = ToolCall(
-        id="c",
-        name="compose_report",
-        args={"instructions": "merge them", "title": "Both"},
-    )
-    provider = RoleProvider(sub_questions=["q1"], route=compose)
+    compose = {
+        "action": "compose_report",
+        **{"instructions": "merge them", "title": "Both"},
+    }
+    model = RoleModel(sub_questions=["q1"], decision=compose)
     earlier = {
         "points": [{"sub_question": "old q", "claims": [{"text": "a fact"}]}],
         "sources": [],
@@ -240,21 +221,21 @@ async def test_compose_merges_earlier_reports_without_new_research() -> None:
     state = await _graph().ainvoke(
         _turn([{"prompt": "old", "report": "OLD", "result": earlier}]),
         run_config(1),
-        context=Deps(provider=provider, backend=FakeBackend()),
+        context=Deps(model=model, backend=FakeBackend()),
     )
 
     assert state["report"].content == "FINAL REPORT"
-    assert provider.planner_prompts == []  # no plan, no research
-    assert "a fact" in provider.writer_prompts[0]
-    assert "merge them" in provider.writer_prompts[0]
+    assert model.planner_prompts == []  # no plan, no research
+    assert "a fact" in model.writer_prompts[0]
+    assert "merge them" in model.writer_prompts[0]
 
 
 async def test_compose_with_no_earlier_report_researches_instead() -> None:
-    compose = ToolCall(id="c", name="compose_report", args={"instructions": "x"})
-    provider = RoleProvider(sub_questions=["q1"], route=compose)
+    compose = {"action": "compose_report", **{"instructions": "x"}}
+    model = RoleModel(sub_questions=["q1"], decision=compose)
 
     state = await _graph().ainvoke(
-        _turn(), run_config(1), context=Deps(provider=provider, backend=FakeBackend())
+        _turn(), run_config(1), context=Deps(model=model, backend=FakeBackend())
     )
 
     assert state["route"] == "research"

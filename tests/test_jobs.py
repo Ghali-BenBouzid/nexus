@@ -5,7 +5,7 @@ from app.core.config import settings
 from app.worker import JOBS, WorkerSettings
 
 
-async def _job(query_id: int, *, provider: object = None) -> None:
+async def _job(query_id: int, *, model: object = None) -> None:
     return None
 
 
@@ -18,13 +18,13 @@ class _FakePool:
 
 
 async def test_on_redis_only_plain_arguments_are_queued(monkeypatch) -> None:
-    # The worker builds its own provider and backend: clients never cross Redis.
+    # The worker builds its own model and backend: clients never cross Redis.
     pool = _FakePool()
     monkeypatch.setattr(settings, "job_queue", "redis")
     monkeypatch.setattr(jobs, "_pool", pool)
 
     await jobs.submit(
-        BackgroundTasks(), _job, provider=object(), backend=object(), query_id=7
+        BackgroundTasks(), _job, model=object(), backend=object(), query_id=7
     )
 
     assert pool.enqueued == [("_job", {"query_id": 7})]
@@ -32,14 +32,14 @@ async def test_on_redis_only_plain_arguments_are_queued(monkeypatch) -> None:
 
 async def test_inline_jobs_reuse_the_request_clients(monkeypatch) -> None:
     monkeypatch.setattr(settings, "job_queue", "inline")
-    provider = object()
+    model = object()
     tasks = BackgroundTasks()
 
-    await jobs.submit(tasks, _job, provider=provider, query_id=7)
+    await jobs.submit(tasks, _job, model=model, query_id=7)
 
     [task] = tasks.tasks
     assert task.func is _job
-    assert task.kwargs == {"query_id": 7, "provider": provider}
+    assert task.kwargs == {"query_id": 7, "model": model}
 
 
 def test_the_worker_runs_every_job_the_api_queues() -> None:

@@ -1,7 +1,8 @@
+from typing import Any
+
 from fastapi import HTTPException
 
-from app.agents.openai_provider import OpenAICompatibleProvider
-from app.agents.provider import LLMProvider
+from app.agents.model import build_model
 from app.agents.rate_limit import RateLimiter
 from app.agents.retry import RetryPolicy
 from app.agents.search import TavilyBackend
@@ -81,6 +82,7 @@ def _rate_limiter(provider: str, model: str) -> RateLimiter:
 
 
 def _retry_policy() -> RetryPolicy:
+    """Backoff for the search backend. Model calls retry through middleware."""
     return RetryPolicy(
         max_attempts=settings.retry_max_attempts,
         base_delay=settings.retry_base_delay,
@@ -88,32 +90,36 @@ def _retry_policy() -> RetryPolicy:
     )
 
 
-def get_provider() -> LLMProvider:
-    """A fresh, client-less provider (an async context manager the job opens).
+def get_model() -> Any:  # ChatOpenAI; see the note below
+    """The chat model the agents run on, built from settings.
+
+    Returned as ``Any`` on purpose: a chat model is itself a pydantic model, and
+    FastAPI reads a dependency's return annotation as a request field.
+
 
     Dispatches on settings.llm_provider; fails fast with a clear 503 when the
-    selected provider's key is missing.
+    selected provider's key is missing. Pacing, billing, retries and error
+    mapping are middleware around the agent, not the client's business, so the
+    limiter this model should be paced by rides along as ``rate_limiter``.
     """
     provider = settings.llm_provider
+    if provider not in _OPENAI_PRESETS:
+        raise HTTPException(status_code=503, detail=f"Unknown LLM provider: {provider}")
 
-    if provider in _OPENAI_PRESETS:
-        base_url, default_model, key_attr = _OPENAI_PRESETS[provider]
-        api_key = getattr(settings, key_attr)
-        if not api_key:
-            raise HTTPException(
-                status_code=503,
-                detail=f"Research is not configured (missing {provider} API key).",
-            )
-        model = settings.llm_model or default_model
-        return OpenAICompatibleProvider(
-            base_url=base_url,
-            model=model,
-            api_key=api_key,
-            retry=_retry_policy(),
-            rate_limiter=_rate_limiter(provider, model),
+    base_url, default_model, key_attr = _OPENAI_PRESETS[provider]
+    api_key = getattr(settings, key_attr)
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail=f"Research is not configured (missing {provider} API key).",
         )
-
-    raise HTTPException(status_code=503, detail=f"Unknown LLM provider: {provider}")
+    name = settings.llm_model or default_model
+    model = build_model(model=name, base_url=base_url, api_key=api_key)
+    # The limiter is per provider+model and shared by every agent on this model,
+    # so a fan-out paces against itself rather than each researcher getting its
+    # own quota. Carried on the model so callers need not rebuild it.
+    model.rate_limiter = _rate_limiter(provider, name)
+    return model
 
 
 def get_search_backend() -> TavilyBackend:

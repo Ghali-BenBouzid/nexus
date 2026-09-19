@@ -26,6 +26,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal, TypedDict
 
+from langchain_core.language_models import BaseChatModel
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
@@ -37,12 +38,12 @@ from pydantic import ValidationError
 
 from app.agents import supervisor
 from app.agents.consolidator import consolidate, merge_results
-from app.agents.narration import ThinkingProvider
+from app.agents.model import Progress
 from app.agents.planner import plan
-from app.agents.provider import LLMProvider, ProviderCreditsError
+from app.agents.provider import ProviderCreditsError
 from app.agents.researcher import research
 from app.agents.schemas import AgentEvent, Finding, Report, ResearchResult, Turn
-from app.agents.tools import FetchPage, SearchBackend, WebSearch
+from app.agents.tools import SearchBackend
 from app.agents.writer import write
 from app.core.config import settings
 
@@ -131,10 +132,13 @@ class Deps:
     """The runtime context: what the nodes need that is not state. Never
     checkpointed, so every run (a resume too) passes its own."""
 
-    provider: LLMProvider
+    model: BaseChatModel
     backend: SearchBackend
     emit: Emit = _noop
     should_cancel: ShouldCancel = lambda: False
+    # Billing, pacing, error mapping and the stop check: the same for every agent
+    # in a run, built once by the job that owns the run.
+    middleware: list = field(default_factory=list)
     cap: int = _setting("cap")
     planner_retry_cap: int = _setting("planner_retry_cap")
     supervisor_max_iters: int = _setting("supervisor_max_iters")
@@ -142,6 +146,18 @@ class Deps:
     per_researcher_timeout: float = _setting("per_researcher_timeout")
     research_budget: float = _setting("research_budget")
     writer_timeout: float = _setting("writer_timeout")
+
+
+def _middleware(
+    deps: "Deps", agent: str, emit: Emit | None = None, **data: Any
+) -> list:
+    """What wraps every call an agent makes: billing and pacing come from the job
+    (they are the same for the whole run), progress is per agent so the feed can
+    say who is working."""
+    return [
+        *deps.middleware,
+        Progress(emit or deps.emit, agent=agent, **data),
+    ]
 
 
 def _tagged(emit: Emit, **data: Any) -> Emit:
@@ -164,7 +180,8 @@ async def supervisor_node(state: ResearchState, runtime: Runtime[Deps]) -> dict:
     decision = await supervisor.decide(
         state["message"],
         state.get("history", []),
-        provider=ThinkingProvider(deps.provider, deps.emit, agent="supervisor"),
+        model=deps.model,
+        middleware=_middleware(deps, "supervisor"),
         backend=deps.backend,
         reports=[(r["prompt"], r["report"]) for r in prior],
         emit=deps.emit,
@@ -184,7 +201,7 @@ async def plan_node(state: ResearchState, runtime: Runtime[Deps]) -> dict:
     deps = runtime.context
     sub_questions = await plan(
         state["prompt"],
-        provider=ThinkingProvider(deps.provider, deps.emit, agent="planner"),
+        model=deps.model,
         emit=deps.emit,
         cap=deps.cap,
         retry_cap=deps.planner_retry_cap,
@@ -241,13 +258,12 @@ async def researcher_node(task: ResearcherTask, runtime: Runtime[Deps]) -> dict:
         finding = await asyncio.wait_for(
             research(
                 sub_question,
-                provider=ThinkingProvider(deps.provider, own_emit, agent="researcher"),
-                tools=[
-                    WebSearch(backend=deps.backend),
-                    FetchPage(backend=deps.backend),
-                ],
+                model=deps.model,
+                backend=deps.backend,
+                middleware=_middleware(
+                    deps, "researcher", own_emit, index=index, total=task["total"]
+                ),
                 emit=own_emit,
-                should_cancel=deps.should_cancel,
                 max_iters=deps.max_iters,
                 deadline=time.monotonic() + (task["deadline"] - time.time()),
             ),
@@ -318,7 +334,7 @@ async def write_node(state: ResearchState, runtime: Runtime[Deps]) -> dict:
     deps = runtime.context
     report = await write(
         state["result"],
-        provider=ThinkingProvider(deps.provider, deps.emit, agent="writer"),
+        model=deps.model,
         emit=deps.emit,
         guidance=state.get("guidance", ""),
         timeout=deps.writer_timeout,

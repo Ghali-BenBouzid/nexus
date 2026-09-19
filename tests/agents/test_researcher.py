@@ -1,260 +1,214 @@
-import asyncio
+"""One researcher, end to end, with a scripted model.
+
+What these pin: a claim can only cite a source that was really retrieved, work is
+never lost when the rounds or the clock run out, and finding nothing is a real
+answer rather than a failure.
+"""
+
 import time
 
-from app.agents.provider import FakeLLMProvider, LLMResponse, ToolCall
 from app.agents.researcher import research
 from app.agents.schemas import AgentEvent
-from app.agents.tools import SearchHit, WebSearch
+from app.agents.tools import SearchHit
+from tests.agents.fakes import ScriptedModel, call
+
+SUBMIT = "SubmitFindingArgs"  # the submit schema's name, as the model sees it
 
 
 class FakeSearchBackend:
-    def __init__(self, hits: list[SearchHit]) -> None:
-        self.hits = hits
+    def __init__(self, hits: list[SearchHit] | None = None, slow: float = 0.0) -> None:
+        self.hits = hits or [
+            SearchHit(title="A", url="http://a", content="alpha"),
+            SearchHit(title="B", url="http://b", content="beta"),
+        ]
+        self.slow = slow
+        self.searches: list[str] = []
+
+    async def __aenter__(self) -> "FakeSearchBackend":
+        return self
+
+    async def __aexit__(self, *exc: object) -> None:
+        return None
 
     async def search(self, query: str, max_results: int) -> list[SearchHit]:
+        self.searches.append(query)
+        if self.slow:
+            import asyncio
+
+            await asyncio.sleep(self.slow)
         return self.hits[:max_results]
 
     async def extract(self, url: str) -> str:
-        return ""
+        return "the whole page"
 
 
-def _web_search_tool() -> WebSearch:
-    hits = [
-        SearchHit(title="A", url="http://a", content="alpha"),
-        SearchHit(title="B", url="http://b", content="beta"),
-    ]
-    return WebSearch(backend=FakeSearchBackend(hits))
+def _submit(**args) -> object:
+    return call(SUBMIT, **args)
 
 
-def _call(name: str, **args: object) -> ToolCall:
-    return ToolCall(id="c", name=name, args=dict(args))
+def _search(query: str = "q") -> object:
+    return call("web_search", query=query, max_results=5)
 
 
-async def test_research_searches_then_submits() -> None:
-    provider = FakeLLMProvider(
-        responses=[
-            LLMResponse(tool_calls=[_call("web_search", query="q", max_results=5)]),
-            LLMResponse(
-                tool_calls=[
-                    _call(
-                        "submit_finding",
-                        claims=[{"text": "the answer", "cited_source_ids": [0]}],
-                        found_info=True,
-                    )
-                ]
+async def test_a_researcher_searches_then_submits_with_its_sources() -> None:
+    model = ScriptedModel(
+        [
+            _search(),
+            _submit(
+                claims=[{"text": "the answer", "cited_source_ids": [0]}],
+                found_info=True,
             ),
         ]
     )
+    backend = FakeSearchBackend()
 
-    finding = await research(
-        "sub q", provider=provider, tools=[_web_search_tool()], max_iters=5
-    )
+    finding = await research("sub q", model=model, backend=backend, max_iters=5)
 
     assert finding.answer == "the answer"
-    assert finding.found_info is True
+    assert finding.found_info
+    assert backend.searches == ["q"]
+    # everything retrieved is kept; only what a claim cited is cited
     assert [s.url for s in finding.consulted_sources] == ["http://a", "http://b"]
     assert [s.url for s in finding.cited_sources] == ["http://a"]
 
 
-async def test_research_builds_claim_level_sources() -> None:
-    # Two claims, each citing a different source id, become two claims with their
-    # own sources (claim-level attribution).
-    provider = FakeLLMProvider(
-        responses=[
-            LLMResponse(tool_calls=[_call("web_search", query="q", max_results=5)]),
-            LLMResponse(
-                tool_calls=[
-                    _call(
-                        "submit_finding",
-                        claims=[
-                            {"text": "claim one", "cited_source_ids": [0]},
-                            {"text": "claim two", "cited_source_ids": [1]},
-                        ],
-                        found_info=True,
-                    )
-                ]
+async def test_each_claim_carries_the_sources_it_cited() -> None:
+    model = ScriptedModel(
+        [
+            _search(),
+            _submit(
+                claims=[
+                    {"text": "from A", "cited_source_ids": [0]},
+                    {"text": "from B", "cited_source_ids": [1]},
+                ],
+                found_info=True,
             ),
         ]
     )
 
     finding = await research(
-        "sub q", provider=provider, tools=[_web_search_tool()], max_iters=5
+        "sub q", model=model, backend=FakeSearchBackend(), max_iters=5
     )
 
-    assert [c.text for c in finding.claims] == ["claim one", "claim two"]
-    assert [s.url for s in finding.claims[0].sources] == ["http://a"]
-    assert [s.url for s in finding.claims[1].sources] == ["http://b"]
+    assert [[s.url for s in claim.sources] for claim in finding.claims] == [
+        ["http://a"],
+        ["http://b"],
+    ]
 
 
-async def test_research_recovers_from_malformed_submit() -> None:
-    # first submit_finding omits the required 'found_info' -> fed back; recovers
-    malformed = LLMResponse(
-        tool_calls=[ToolCall(id="b", name="submit_finding", args={"claims": []})]
-    )
-    good = LLMResponse(
-        tool_calls=[
-            _call(
-                "submit_finding",
-                claims=[{"text": "ok", "cited_source_ids": []}],
+async def test_a_cited_id_that_was_never_retrieved_is_dropped() -> None:
+    # The guarantee: a number the tools never handed out cannot reach a report.
+    model = ScriptedModel(
+        [
+            _search(),
+            _submit(
+                claims=[{"text": "invented", "cited_source_ids": [7]}],
                 found_info=True,
-            )
+            ),
         ]
     )
-    provider = FakeLLMProvider(responses=[malformed, good])
 
     finding = await research(
-        "sub q", provider=provider, tools=[_web_search_tool()], max_iters=5
+        "sub q", model=model, backend=FakeSearchBackend(), max_iters=5
+    )
+
+    assert finding.claims[0].sources == []
+
+
+async def test_a_malformed_submission_is_fed_back_and_recovered() -> None:
+    # The first submission omits found_info; the researcher has already paid for
+    # its searching, so it is told what was wrong instead of losing the work.
+    model = ScriptedModel(
+        [
+            _submit(claims=[]),  # missing found_info
+            _submit(claims=[{"text": "ok", "cited_source_ids": []}], found_info=True),
+        ]
+    )
+
+    finding = await research(
+        "sub q", model=model, backend=FakeSearchBackend(), max_iters=5
     )
 
     assert finding.answer == "ok"
-    assert len(provider.calls) == 2  # one retry after the malformed submit
 
 
-async def test_research_soft_no_answer() -> None:
-    provider = FakeLLMProvider(
-        responses=[
-            LLMResponse(
-                tool_calls=[
-                    _call(
-                        "submit_finding",
-                        claims=[
-                            {"text": "couldn't find anything", "cited_source_ids": []}
-                        ],
-                        found_info=False,
-                    )
-                ]
-            ),
+async def test_finding_nothing_is_an_answer_not_a_failure() -> None:
+    model = ScriptedModel(
+        [
+            _submit(
+                claims=[{"text": "nothing found", "cited_source_ids": []}],
+                found_info=False,
+            )
         ]
     )
 
     finding = await research(
-        "sub q", provider=provider, tools=[_web_search_tool()], max_iters=5
+        "sub q", model=model, backend=FakeSearchBackend(), max_iters=5
     )
 
     assert finding.found_info is False
     assert finding.cited_sources == []
 
 
-async def test_research_forces_finding_on_cap() -> None:
-    search = LLMResponse(tool_calls=[_call("web_search", query="q", max_results=5)])
-    forced = LLMResponse(
-        tool_calls=[
-            _call(
-                "submit_finding",
-                claims=[{"text": "forced", "cited_source_ids": []}],
-                found_info=False,
-            )
-        ]
-    )
-    # never submits during the loop -> cap hit -> one forced submit_finding
-    provider = FakeLLMProvider(responses=[search, search, forced])
-
-    finding = await research(
-        "sub q", provider=provider, tools=[_web_search_tool()], max_iters=2
-    )
-
-    assert finding.answer == "forced"
-    assert finding.found_info is False
-    # the final call forced the specific tool
-    assert provider.calls[-1][2] == "submit_finding"
-
-
-class SlowSearchBackend(FakeSearchBackend):
-    async def search(self, query: str, max_results: int) -> list[SearchHit]:
-        await asyncio.sleep(0.05)
-        return await super().search(query, max_results)
-
-
-async def test_research_out_of_time_submits_what_it_has_read() -> None:
-    # The deadline passes during the first search: instead of searching again, the
-    # researcher is forced to submit, and can still cite what it already read.
-    hits = [SearchHit(title="A", url="http://a", content="alpha")]
-    search = LLMResponse(tool_calls=[_call("web_search", query="q", max_results=5)])
-    salvaged = LLMResponse(
-        tool_calls=[
-            _call(
-                "submit_finding",
-                claims=[{"text": "from the first search", "cited_source_ids": [0]}],
-                found_info=True,
-            )
-        ]
-    )
-    provider = FakeLLMProvider(responses=[search, salvaged])
-    events: list[AgentEvent] = []
-
-    async def emit(event: AgentEvent) -> None:
-        events.append(event)
-
-    finding = await research(
-        "sub q",
-        provider=provider,
-        tools=[WebSearch(backend=SlowSearchBackend(hits))],
-        emit=emit,
-        max_iters=5,
-        deadline=time.monotonic() + 0.01,
-    )
-
-    assert [s.url for s in finding.cited_sources] == ["http://a"]
-    assert len(provider.calls) == 2  # one search round, then the forced submit
-    assert provider.calls[-1][2] == "submit_finding"
-    forced = [e.message for e in events if e.type == "researcher_forced"]
-    assert forced == ["Time budget reached"]
-
-
-async def test_research_emits_events() -> None:
+async def test_running_out_of_rounds_still_submits_what_was_read() -> None:
     events: list[AgentEvent] = []
 
     async def collect(event: AgentEvent) -> None:
         events.append(event)
 
-    provider = FakeLLMProvider(
-        responses=[
-            LLMResponse(tool_calls=[_call("web_search", query="q", max_results=5)]),
-            LLMResponse(
-                tool_calls=[
-                    _call(
-                        "submit_finding",
-                        claims=[{"text": "a", "cited_source_ids": []}],
-                        found_info=True,
-                    )
-                ]
-            ),
-        ]
+    # It keeps searching and never submits, so the cap ends the loop and the
+    # researcher is asked once more, with the schema forced.
+    model = ScriptedModel(
+        respond=lambda messages, tools: (
+            _submit(
+                claims=[{"text": "forced", "cited_source_ids": [0]}], found_info=True
+            )
+            if tools == [SUBMIT]
+            else _search()
+        )
+    )
+
+    finding = await research(
+        "sub q", model=model, backend=FakeSearchBackend(), emit=collect, max_iters=2
+    )
+
+    assert finding.answer == "forced"
+    assert [s.url for s in finding.cited_sources] == ["http://a"]
+    assert [e.type for e in events] == ["researcher_forced"]
+
+
+async def test_out_of_time_is_reported_as_the_reason() -> None:
+    events: list[AgentEvent] = []
+
+    async def collect(event: AgentEvent) -> None:
+        events.append(event)
+
+    model = ScriptedModel(
+        respond=lambda messages, tools: (
+            _submit(claims=[], found_info=False) if tools == [SUBMIT] else _search()
+        )
     )
 
     await research(
         "sub q",
-        provider=provider,
-        tools=[_web_search_tool()],
+        model=model,
+        backend=FakeSearchBackend(),
         emit=collect,
-        max_iters=5,
+        max_iters=1,
+        deadline=time.monotonic() - 1,  # already past
     )
 
-    # researcher_start/done is the orchestrator's job (it knows index/total); the
-    # leaf emits only its internal steps.
-    types = [e.type for e in events]
-    assert "researcher_start" not in types
-    assert "tool_call" in types
-    tool_call = next(e for e in events if e.type == "tool_call")
-    assert tool_call.data == {
-        "tool": "web_search",
-        "args": {"query": "q", "max_results": 5},
-    }
+    assert [e.message for e in events] == ["Time budget reached"]
 
 
-async def test_research_bails_when_cancelled() -> None:
-    # should_cancel is true from the start, so the researcher returns a no-info
-    # finding without ever calling the provider (no quota spent).
-    provider = FakeLLMProvider(responses=[])
+async def test_a_researcher_that_never_submits_returns_an_empty_finding() -> None:
+    # Nothing usable came back even when forced: a gap, not a crash.
+    model = ScriptedModel(respond=lambda messages, tools: _search())
 
     finding = await research(
-        "sub q",
-        provider=provider,
-        tools=[_web_search_tool()],
-        should_cancel=lambda: True,
-        max_iters=5,
+        "sub q", model=model, backend=FakeSearchBackend(), max_iters=1
     )
 
     assert finding.found_info is False
     assert finding.claims == []
-    assert provider.calls == []
+    assert [s.url for s in finding.consulted_sources] == ["http://a", "http://b"]

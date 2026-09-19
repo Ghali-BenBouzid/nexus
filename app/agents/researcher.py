@@ -1,18 +1,37 @@
+"""One researcher: a sub-agent that answers a single sub-question from the web.
+
+It searches, reads promising pages, and finishes by submitting claims, each with
+the sources that back it. The loop itself is LangChain's; what lives here is the
+part that makes a finding trustworthy:
+
+- Sources are registered by code as the tools return them, so a claim can only
+  cite something that was really retrieved.
+- Running out of rounds or out of time does not lose the work: the researcher is
+  asked once more, with the submit schema forced, to say what it found.
+- An empty-handed finding is a real answer (``found_info=False``), not a failure.
+"""
+
 import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware, ModelCallLimitMiddleware
+from langchain.agents.structured_output import ToolStrategy
+from langchain_core.language_models import BaseChatModel
+from langchain_core.tools import StructuredTool
 from pydantic import ValidationError
 
 from app.agents.language import detect_language
-from app.agents.provider import LLMProvider, LLMResponse, Message
+from app.agents.model import Deadline
 from app.agents.schemas import AgentEvent, Finding, FindingClaim, Source
 from app.agents.tools import (
-    RetrievalResult,
-    SubmitFinding,
+    FetchPageArgs,
+    SearchBackend,
     SubmitFindingArgs,
-    Tool,
-    ToolResult,
+    WebSearchArgs,
+    fetch_page_text,
+    web_search_results,
 )
 from app.observability import traced_step
 from app.prompts import render
@@ -34,172 +53,149 @@ def _never_cancel() -> bool:
 async def research(
     sub_question: str,
     *,
-    provider: LLMProvider,
-    tools: list[Tool],
+    model: BaseChatModel,
+    backend: SearchBackend,
+    middleware: list[AgentMiddleware] | None = None,
     emit: Emit = _noop,
-    should_cancel: Callable[[], bool] = _never_cancel,
-    max_iters: int,
+    max_iters: int = 3,
     deadline: float | None = None,
 ) -> Finding:
-    """Run the ReAct tool-use loop for one sub-question and return a Finding.
-
-    The model is given the executable ``tools`` plus the ``submit_finding``
-    control tool; it searches/reads until it calls ``submit_finding`` (the
-    terminal step), or the iteration cap or the ``deadline`` (a
-    ``time.monotonic()`` instant) forces a final answer from what it has read.
-    """
-    submit = SubmitFinding()
-    specs = [*tools, submit]
-    executables = {tool.name: tool for tool in tools}
+    """Answer one sub-question and return what was found, with its sources."""
     consulted: list[Source] = []
+    tools = _tools(backend, consulted, emit)
+    agent = create_agent(
+        model=model,
+        tools=tools,
+        system_prompt=_system_prompt(sub_question),
+        response_format=ToolStrategy(
+            SubmitFindingArgs,
+            # A malformed submission is fed back rather than lost: the researcher
+            # has already paid for the searching by this point.
+            handle_errors="submit_finding arguments were invalid: {error}. "
+            "Call it again with valid arguments.",
+        ),
+        middleware=[
+            *(middleware or []),
+            # Both end the loop rather than raise: an out-of-rounds or out-of-time
+            # researcher still has findings worth submitting, which the forced
+            # finish below collects.
+            Deadline(deadline),
+            ModelCallLimitMiddleware(run_limit=max_iters, exit_behavior="end"),
+        ],
+    )
+
+    state = await agent.ainvoke({"messages": [("user", sub_question)]})
+    submission = state.get("structured_response")
+    if submission is None:
+        reason = "Time budget reached" if _out_of_time(deadline) else "Max rounds"
+        await emit(AgentEvent(type="researcher_forced", message=reason))
+        submission = await _forced_finish(model, state["messages"])
+
+    return _finding(sub_question, submission, consulted)
+
+
+def _system_prompt(sub_question: str) -> str:
     messages = render(
         PROMPT,
         sub_question=sub_question,
         today=today(),
         language=detect_language(sub_question) or "",
     )
+    return messages[0].content or ""
 
-    # The researcher_start/done lifecycle is emitted by the orchestrator, which
-    # knows this researcher's index and the total. The leaf emits only its own
-    # internal steps (tool calls, errors, forced finish).
-    out_of_time = False
-    for _ in range(max_iters):
-        # Cooperative cancel: bail before the next (expensive) model/tool round so a
-        # stopped run stops spending quota. The empty finding becomes a gap, and the
-        # orchestrator surfaces the cancellation after the fan-out.
-        if should_cancel():
-            return Finding(
-                sub_question=sub_question,
-                claims=[],
-                consulted_sources=consulted,
-                found_info=False,
-            )
-        # Out of time: stop searching and submit what was read so far (below),
-        # rather than start a round that would push the whole run past its budget.
-        if deadline is not None and time.monotonic() >= deadline:
-            out_of_time = True
-            break
-        response = await provider.generate(messages, tools=specs, tool_choice="auto")
-        messages.append(_assistant_message(response))
 
-        if not response.tool_calls:
-            messages.append(
-                Message(
-                    role="user",
-                    content="Call a tool, or submit_finding when you are done.",
-                )
-            )
-            continue
+def _tools(
+    backend: SearchBackend, consulted: list[Source], emit: Emit
+) -> list[StructuredTool]:
+    """The researcher's two tools. Each registers what it retrieved into
+    ``consulted`` and hands back the ids, which are the only ones a claim may
+    cite. A failure is told to the researcher and to the feed, never raised: one
+    dead search should cost a search, not the sub-question."""
 
-        for call in response.tool_calls:
-            if call.name == submit.name:
-                try:
-                    return _build_finding(sub_question, call.args, consulted)
-                except ValidationError as exc:
-                    # Malformed final call: feed the error back (like a tool error)
-                    # so the model can fix it while iterations remain, instead of
-                    # hard-failing a researcher that already did the work.
-                    await emit(
-                        AgentEvent(
-                            type="submit_invalid",
-                            message=f"submit_finding was malformed: {exc}",
-                        )
-                    )
-                    messages.append(
-                        Message(
-                            role="tool",
-                            tool_call_id=call.id,
-                            name=call.name,
-                            content=(
-                                f"submit_finding arguments were invalid: {exc}. "
-                                "Call submit_finding again with valid arguments."
-                            ),
-                        )
-                    )
-                    continue
-
-            result = await _run_tool(call.name, call.args, executables, emit)
-            messages.append(
-                Message(
-                    role="tool",
-                    tool_call_id=call.id,
-                    name=call.name,
-                    content=_register_and_format(result, consulted),
-                )
-            )
-
-    # Iteration cap or deadline hit: force one final submit_finding (found_info is
-    # the escape hatch so the model can honestly say it found nothing instead of
-    # confabulating).
-    reason = "Time budget reached" if out_of_time else "Max iterations reached"
-    await emit(AgentEvent(type="researcher_forced", message=reason))
-    response = await provider.generate(
-        messages, tools=[submit], tool_choice=submit.name
-    )
-    if response.tool_calls:
+    async def retrieve(what: str, retrieving) -> str:
         try:
-            return _build_finding(sub_question, response.tool_calls[0].args, consulted)
-        except ValidationError:
-            pass
-    return Finding(
-        sub_question=sub_question,
-        claims=[],
-        consulted_sources=consulted,
-        found_info=False,
-    )
+            result = await retrieving()
+        except Exception as exc:  # noqa: BLE001 -- a failed tool is not a failed run
+            await emit(
+                AgentEvent(
+                    type="tool_error",
+                    message=f"{what} failed: {exc}",
+                    data={"agent": "researcher", "tool": what},
+                )
+            )
+            return f"{what} failed: {exc}. Try a different approach."
+        return _with_ids(result.content, result.sources, consulted)
 
-
-def _assistant_message(response: LLMResponse) -> Message:
-    return Message(
-        role="assistant",
-        content=response.text,
-        tool_calls=response.tool_calls,
-    )
-
-
-async def _run_tool(
-    name: str,
-    args: dict[str, Any],
-    executables: dict[str, Tool],
-    emit: Emit,
-) -> ToolResult:
-    tool = executables.get(name)
-    if tool is None:
-        return ToolResult(content=f"Unknown tool: {name}")
-    await emit(
-        AgentEvent(
-            type="tool_call",
-            message=f"{name}({args})",
-            data={"tool": name, "args": args},
+    async def web_search(query: str, max_results: int = 5) -> str:
+        return await retrieve(
+            "web_search", lambda: web_search_results(backend, query, max_results)
         )
-    )
-    try:
-        return await tool.execute(**args)
-    except Exception as exc:  # one failed tool call must not kill the whole loop
-        await emit(AgentEvent(type="tool_error", message=f"{name} failed: {exc}"))
-        return ToolResult(content=f"Tool {name} failed: {exc}")
+
+    async def fetch_page(url: str) -> str:
+        return await retrieve("fetch_page", lambda: fetch_page_text(backend, url))
+
+    return [
+        StructuredTool.from_function(
+            coroutine=web_search,
+            name="web_search",
+            description=(
+                "Run a web search for a query and return up to max_results results."
+            ),
+            args_schema=WebSearchArgs,
+        ),
+        StructuredTool.from_function(
+            coroutine=fetch_page,
+            name="fetch_page",
+            description=(
+                "Fetch a web page by URL and return its cleaned full text, for when "
+                "a search snippet is promising but insufficient."
+            ),
+            args_schema=FetchPageArgs,
+        ),
+    ]
 
 
-def _register_and_format(result: ToolResult, consulted: list[Source]) -> str:
-    """Register a tool result's sources into the running consulted list, assigning
-    each a stable id (its index), and append a legend so the model can cite by id."""
-    if not isinstance(result, RetrievalResult) or not result.sources:
-        return result.content
+def _with_ids(content: str, sources: list[Source], consulted: list[Source]) -> str:
+    """Register a tool's sources and append the legend the model cites from."""
+    if not sources:
+        return content
     lines = []
-    for source in result.sources:
-        source_id = len(consulted)
+    for source in sources:
         consulted.append(source)
-        lines.append(f"[{source_id}] {source.title} ({source.url})")
-    legend = "\n".join(lines)
-    return f"{result.content}\n\nCite these sources by id:\n{legend}"
+        lines.append(f"[{len(consulted) - 1}] {source.title} ({source.url})")
+    return f"{content}\n\nCite these sources by id:\n" + "\n".join(lines)
 
 
-def _build_finding(
-    sub_question: str,
-    args: dict[str, Any],
-    consulted: list[Source],
-) -> Finding:
-    parsed = SubmitFindingArgs(**args)
+async def _forced_finish(model: BaseChatModel, messages: list[Any]) -> Any:
+    """Ask once more, with the schema forced, so a researcher that ran out of
+    rounds still reports what it read instead of returning nothing."""
+    bound = model.bind_tools([SubmitFindingArgs], tool_choice="any")
+    reply = await bound.ainvoke(
+        [
+            *messages,
+            (
+                "user",
+                "Submit what you found now with submit_finding, from what you have "
+                "already read. Set found_info=false if you found nothing relevant.",
+            ),
+        ]
+    )
+    for call in reply.tool_calls or []:
+        try:
+            return SubmitFindingArgs(**call["args"])
+        except ValidationError:
+            continue
+    return None
+
+
+def _finding(sub_question: str, submission: Any, consulted: list[Source]) -> Finding:
+    if submission is None:
+        return Finding(
+            sub_question=sub_question,
+            claims=[],
+            consulted_sources=consulted,
+            found_info=False,
+        )
     claims = [
         FindingClaim(
             text=claim.text,
@@ -207,11 +203,15 @@ def _build_finding(
                 consulted[i] for i in claim.cited_source_ids if 0 <= i < len(consulted)
             ],
         )
-        for claim in parsed.claims
+        for claim in submission.claims
     ]
     return Finding(
         sub_question=sub_question,
         claims=claims,
         consulted_sources=consulted,
-        found_info=parsed.found_info,
+        found_info=submission.found_info,
     )
+
+
+def _out_of_time(deadline: float | None) -> bool:
+    return deadline is not None and time.monotonic() >= deadline

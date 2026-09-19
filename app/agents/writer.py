@@ -3,12 +3,11 @@ import logging
 import re
 from collections.abc import Awaitable, Callable
 
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage, SystemMessage
+
 from app.agents.language import detect_language
-from app.agents.provider import (
-    LLMProvider,
-    ProviderCreditsError,
-    ProviderError,
-)
+from app.agents.provider import ProviderCreditsError, ProviderError
 from app.agents.retry import RetryPolicy, retry_async
 from app.agents.schemas import AgentEvent, Report, ResearchResult, Source
 from app.observability import traced_step
@@ -48,7 +47,7 @@ async def _noop(event: AgentEvent) -> None:
 async def write(
     result: ResearchResult,
     *,
-    provider: LLMProvider,
+    model: BaseChatModel,
     emit: Emit = _noop,
     guidance: str = "",
     timeout: float | None = None,
@@ -73,6 +72,12 @@ async def write(
         )
 
     await emit(AgentEvent(type="writer_start", message="Writing report"))
+    # The live feed shows who is waiting on the model; a plain call says so itself.
+    await emit(
+        AgentEvent(
+            type="thinking", message="Writer is thinking", data={"agent": "writer"}
+        )
+    )
     messages = render(
         PROMPT,
         findings=_render(result),
@@ -85,13 +90,13 @@ async def write(
     try:
         response = await asyncio.wait_for(
             retry_async(
-                lambda: provider.generate(messages),
+                lambda: model.ainvoke(_as_chat(messages)),
                 policy=_WRITER_RETRY,
                 transient=_is_provider_error,
             ),
             timeout=timeout,
         )
-        text, done = response.text or "", "Report written"
+        text, done = _text_of(response), "Report written"
     except TimeoutError:
         logger.warning("writer ran past %ss; assembling the findings", timeout)
         text, done = _findings_report(result), "Out of time: report assembled"
@@ -115,6 +120,30 @@ async def write(
         sources=sources,
         failed_subquestions=result.gaps,
     )
+
+
+def _as_chat(messages: list) -> list:
+    """Our rendered prompt as chat messages."""
+    return [
+        HumanMessage(m.content or "")
+        if m.role == "user"
+        else SystemMessage(m.content or "")
+        for m in messages
+    ]
+
+
+def _text_of(response: object) -> str:
+    """The reply's text. A model may answer in content blocks rather than one
+    string, and a report assembled from those blocks reads the same."""
+    content = getattr(response, "content", "")
+    if isinstance(content, str):
+        return content
+    parts = [
+        block.get("text", "")
+        for block in content or []
+        if isinstance(block, dict) and block.get("type") == "text"
+    ]
+    return "".join(parts)
 
 
 def _finalize_citations(

@@ -1,12 +1,12 @@
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import jobs
-from app.agents.provider import LLMProvider
 from app.agents.schemas import ResearchResult
 from app.agents.tools import SearchBackend
 from app.auth.dependencies import get_current_user
@@ -15,7 +15,7 @@ from app.db.session import get_db
 from app.models.query import QueryStatus
 from app.models.user import User
 from app.research import repository, service
-from app.research.dependencies import get_provider, get_search_backend
+from app.research.dependencies import get_model, get_search_backend
 from app.research.schemas import (
     QueryCreate,
     QueryDetail,
@@ -55,7 +55,9 @@ async def create_query(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    provider: LLMProvider = Depends(get_provider),
+    # Any, not BaseChatModel: it is a pydantic model, and FastAPI would read
+    # the annotation as a request body rather than a dependency.
+    model: Any = Depends(get_model),
     backend: SearchBackend = Depends(get_search_backend),
 ):
     await ensure_budget(db, current_user)
@@ -67,7 +69,7 @@ async def create_query(
     await jobs.submit(
         background_tasks,
         service.run_research_job,
-        provider=provider,
+        model=model,
         backend=backend,
         query_id=query.id,
         prompt=query.prompt,
@@ -173,7 +175,9 @@ async def confirm_plan(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    provider: LLMProvider = Depends(get_provider),
+    # Any, not BaseChatModel: it is a pydantic model, and FastAPI would read
+    # the annotation as a request body rather than a dependency.
+    model: Any = Depends(get_model),
     backend: SearchBackend = Depends(get_search_backend),
 ):
     """Approve the proposed plan and run the research (phase 2). Only valid while
@@ -192,7 +196,7 @@ async def confirm_plan(
     await jobs.submit(
         background_tasks,
         service.review_plan_job,
-        provider=provider,
+        model=model,
         backend=backend,
         query_id=query_id,
         user_id=current_user.id,
@@ -207,7 +211,9 @@ async def revise_plan(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    provider: LLMProvider = Depends(get_provider),
+    # Any, not BaseChatModel: it is a pydantic model, and FastAPI would read
+    # the annotation as a request body rather than a dependency.
+    model: Any = Depends(get_model),
     backend: SearchBackend = Depends(get_search_backend),
 ):
     """Reject the plan (optionally with feedback) and re-plan. Loops back to
@@ -224,7 +230,7 @@ async def revise_plan(
     await jobs.submit(
         background_tasks,
         service.review_plan_job,
-        provider=provider,
+        model=model,
         backend=backend,
         query_id=query_id,
         user_id=current_user.id,

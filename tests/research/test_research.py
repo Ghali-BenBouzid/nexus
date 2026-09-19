@@ -2,77 +2,56 @@ from datetime import UTC, datetime, timedelta
 
 import jwt
 from httpx import AsyncClient
+from langchain_core.outputs import ChatGeneration, ChatResult
 from sqlalchemy import select
 
-from app.agents.openai_provider import OUT_OF_CREDITS
-from app.agents.provider import (
-    LLMResponse,
-    Message,
-    ProviderCreditsError,
-    ToolCall,
-    Usage,
-)
+from app.agents.model import OUT_OF_CREDITS
+from app.agents.provider import ProviderCreditsError
 from app.agents.tools import SearchHit
 from app.billing import repository as billing_repository
 from app.billing.service import BUDGET_EXHAUSTED, to_micro_usd
 from app.core.config import settings
 from app.db import session as db_session
 from app.models.usage import LLMUsage
-from app.research.dependencies import get_provider, get_search_backend
+from app.research.dependencies import get_model, get_search_backend
 from main import app
 from tests.accounts import login_as
+from tests.agents.fakes import ScriptedModel, call, says
 
 # --- fakes for the background pipeline (no network) -------------------------
 
 
-class RoleProvider:
-    def __init__(self, sub_questions: list[str]) -> None:
-        self.sub_questions = sub_questions
+class RoleModel(ScriptedModel):
+    """Stands in for every agent, dispatching on the tools each was given."""
 
-    async def __aenter__(self) -> "RoleProvider":
-        return self
+    sub_questions: list[str] = []
+    usage: tuple[int, int] | None = None
 
-    async def __aexit__(self, *exc: object) -> None:
-        return None
+    def __init__(self, sub_questions=None, usage=None, **kwargs):
+        super().__init__(**kwargs)
+        self.sub_questions = list(sub_questions or [])
+        self.usage = usage
 
-    async def generate(
-        self, messages: list[Message], tools: object = None, tool_choice: str = "auto"
-    ) -> LLMResponse:
-        system = messages[0].content or ""
-        if "controller of a research assistant" in system:
-            return LLMResponse(
-                tool_calls=[
-                    ToolCall(
-                        id="d",
-                        name="research",
-                        args={"query": "research", "title": "Research Topic"},
-                    )
-                ]
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        names = {
+            tool.get("function", {}).get("name") or tool.get("name", "")
+            for tool in (kwargs.get("tools") or [])
+        }
+        if "Decision" in names:
+            reply = call(
+                "Decision", action="research", query="research", title="Research Topic"
             )
-        if "research planner" in system:
-            return LLMResponse(
-                tool_calls=[
-                    ToolCall(
-                        id="p",
-                        name="submit_plan",
-                        args={"sub_questions": self.sub_questions},
-                    )
-                ]
+        elif "SubmitPlanArgs" in names:
+            reply = call("SubmitPlanArgs", sub_questions=self.sub_questions)
+        elif "SubmitFindingArgs" in names:
+            reply = call(
+                "SubmitFindingArgs",
+                claims=[{"text": "an answer", "cited_source_ids": []}],
+                found_info=True,
             )
-        if "research agent" in system:
-            return LLMResponse(
-                tool_calls=[
-                    ToolCall(
-                        id="f",
-                        name="submit_finding",
-                        args={
-                            "claims": [{"text": "an answer", "cited_source_ids": []}],
-                            "found_info": True,
-                        },
-                    )
-                ]
-            )
-        return LLMResponse(text="FINAL REPORT")
+        else:
+            reply = says("FINAL REPORT", usage=self.usage)
+        return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
 class FakeBackend:
@@ -89,8 +68,8 @@ class FakeBackend:
         return ""
 
 
-def _use_fake_pipeline(sub_questions: list[str]) -> None:
-    app.dependency_overrides[get_provider] = lambda: RoleProvider(sub_questions)
+def _use_fake_pipeline(sub_questions: list[str], **kwargs) -> None:
+    app.dependency_overrides[get_model] = lambda: RoleModel(sub_questions, **kwargs)
     app.dependency_overrides[get_search_backend] = FakeBackend
 
 
@@ -174,54 +153,33 @@ async def test_a_run_shows_signs_of_life(
     assert {"agent": "writer"} in thinking
 
 
-class _ProvenanceProvider:
+class _ProvenanceModel(ScriptedModel):
     """Searches once (consulting two sources) then cites only the first, so the
     consulted set is a strict superset of the cited set."""
 
-    def __init__(self) -> None:
-        self.agent_calls = 0
+    agent_calls: int = 0
 
-    async def __aenter__(self) -> "_ProvenanceProvider":
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        return None
-
-    async def generate(
-        self, messages: list[Message], tools: object = None, tool_choice: str = "auto"
-    ) -> LLMResponse:
-        system = messages[0].content or ""
-        if "research planner" in system:
-            return LLMResponse(
-                tool_calls=[
-                    ToolCall(id="p", name="submit_plan", args={"sub_questions": ["q1"]})
-                ]
-            )
-        if "research agent" in system:
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        names = {
+            tool.get("function", {}).get("name") or tool.get("name", "")
+            for tool in (kwargs.get("tools") or [])
+        }
+        if "SubmitPlanArgs" in names:
+            reply = call("SubmitPlanArgs", sub_questions=["q1"])
+        elif "SubmitFindingArgs" in names:
             self.agent_calls += 1
-            if self.agent_calls == 1:
-                return LLMResponse(
-                    tool_calls=[
-                        ToolCall(
-                            id="s",
-                            name="web_search",
-                            args={"query": "q", "max_results": 5},
-                        )
-                    ]
+            reply = (
+                call("web_search", query="q", max_results=5)
+                if self.agent_calls == 1
+                else call(
+                    "SubmitFindingArgs",
+                    claims=[{"text": "ans", "cited_source_ids": [0]}],
+                    found_info=True,
                 )
-            return LLMResponse(
-                tool_calls=[
-                    ToolCall(
-                        id="f",
-                        name="submit_finding",
-                        args={
-                            "claims": [{"text": "ans", "cited_source_ids": [0]}],
-                            "found_info": True,
-                        },
-                    )
-                ]
             )
-        return LLMResponse(text="REPORT [1]")
+        else:
+            reply = says("REPORT [1]")
+        return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
 class _ProvenanceBackend:
@@ -244,7 +202,7 @@ class _ProvenanceBackend:
 async def test_detail_provenance_is_opt_in_and_excludes_cited(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    app.dependency_overrides[get_provider] = _ProvenanceProvider
+    app.dependency_overrides[get_model] = lambda: _ProvenanceModel()
     app.dependency_overrides[get_search_backend] = _ProvenanceBackend
 
     created = await client.post(
@@ -424,20 +382,32 @@ async def test_budget_is_per_account(client: AsyncClient) -> None:
     assert ok.status_code == 202
 
 
-class _PricedProvider(RoleProvider):
-    """The fake pipeline, with every call reporting a cost like OpenRouter does."""
+def _priced(message):
+    """A reply that reports its cost, the way OpenRouter does."""
+    message.usage_metadata = {
+        "input_tokens": 100,
+        "output_tokens": 20,
+        "total_tokens": 120,
+    }
+    message.response_metadata = {
+        "token_usage": {"prompt_tokens": 100, "completion_tokens": 20, "cost": 0.001},
+        "model_name": "fake/model",
+    }
+    return message
 
-    async def generate(
-        self, messages: list[Message], tools: object = None, tool_choice: str = "auto"
-    ) -> LLMResponse:
-        response = await super().generate(messages, tools, tool_choice)
-        usage = Usage(input_tokens=100, output_tokens=20, cost_usd=0.001)
-        return response.model_copy(update={"usage": usage})
+
+class _PricedModel(RoleModel):
+    """The fake pipeline, with every call reporting a cost."""
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        result = super()._generate(messages, stop, run_manager, **kwargs)
+        _priced(result.generations[0].message)
+        return result
 
 
 async def test_every_model_call_is_billed_to_the_run(client: AsyncClient) -> None:
     headers = await login_as(client, "billed", budget_usd=0.5)
-    app.dependency_overrides[get_provider] = lambda: _PricedProvider(["q1"])
+    app.dependency_overrides[get_model] = lambda: _PricedModel(["q1"])
     app.dependency_overrides[get_search_backend] = FakeBackend
 
     created = await client.post(
@@ -456,23 +426,17 @@ async def test_every_model_call_is_billed_to_the_run(client: AsyncClient) -> Non
     assert me["remaining_usd"] == 0.497
 
 
-class _BrokeProvider:
-    """A provider whose key has run out of credits."""
+class _BrokeModel(ScriptedModel):
+    """A key that has run out of credits."""
 
-    async def __aenter__(self) -> "_BrokeProvider":
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        return None
-
-    async def generate(self, messages, tools=None, tool_choice="auto") -> LLMResponse:
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         raise ProviderCreditsError(OUT_OF_CREDITS)
 
 
 async def test_out_of_credits_fails_the_run_with_a_clear_message(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    app.dependency_overrides[get_provider] = _BrokeProvider
+    app.dependency_overrides[get_model] = lambda: _BrokeModel()
     app.dependency_overrides[get_search_backend] = FakeBackend
 
     created = await client.post(

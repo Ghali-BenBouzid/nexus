@@ -24,6 +24,7 @@ of credits is final, since backing off cannot bring the money back.
 
 import json
 import logging
+import time
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -33,8 +34,11 @@ from langchain.agents.middleware import (
     ModelResponse,
     ModelRetryMiddleware,
     ToolCallRequest,
+    hook_config,
 )
+from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.outputs import LLMResult
 from langchain_openai import ChatOpenAI
 from langgraph.types import Command
 
@@ -88,21 +92,23 @@ class Pacing(AgentMiddleware):
         return await handler(request)
 
 
-class Billing(AgentMiddleware):
-    """Writes each call's tokens and cost to the usage ledger, which is what a
-    demo account's budget is spent from. ``record`` is injected so this module
-    never imports the billing package."""
+class Usage(AsyncCallbackHandler):
+    """Every model call's tokens and cost, wherever it was made.
+
+    A callback rather than middleware on purpose: middleware only wraps an
+    agent's calls, and the planner and the writer call the model directly. What
+    an account is billed cannot depend on which agent happened to spend it.
+    """
 
     def __init__(self, record: Callable[[dict[str, Any]], Awaitable[None]]) -> None:
-        super().__init__()
         self.record = record
 
-    async def awrap_model_call(self, request: ModelRequest, handler) -> ModelResponse:
-        response = await handler(request)
-        usage = _usage_of(response)
-        if usage:
-            await self.record(usage)
-        return response
+    async def on_llm_end(self, response: LLMResult, **kwargs: Any) -> None:
+        for generation in response.generations:
+            for item in generation:
+                message = getattr(item, "message", None)
+                if isinstance(message, AIMessage):
+                    await self.record(_usage_of(message) or {})
 
 
 class Guard(AgentMiddleware):
@@ -126,6 +132,30 @@ class Guard(AgentMiddleware):
         if self.out_of_time():
             raise TimeoutError("the turn ran out of time")
         return await handler(request)
+
+
+class Deadline(AgentMiddleware):
+    """Ends an agent's loop once its time is up, rather than failing it: a
+    researcher out of time still has findings worth submitting, and the caller
+    asks it once more with the schema forced. Pair with a caller that knows what
+    to do with an unfinished loop."""
+
+    def __init__(self, deadline: float | None) -> None:
+        super().__init__()
+        self.deadline = deadline
+
+    @hook_config(can_jump_to=["end"])
+    def before_model(self, state, runtime) -> dict[str, Any] | None:
+        if self.deadline is not None and time.monotonic() >= self.deadline:
+            return {
+                "jump_to": "end",
+                "messages": [AIMessage(content="Out of time for this step.")],
+            }
+        return None
+
+    @hook_config(can_jump_to=["end"])
+    async def abefore_model(self, state, runtime) -> dict[str, Any] | None:
+        return self.before_model(state, runtime)
 
 
 class Errors(AgentMiddleware):

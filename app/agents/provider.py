@@ -1,235 +1,29 @@
-import uuid
-from typing import Any, Literal, Protocol
+"""What a model call can fail with, and the message shape our prompts render to.
 
-from google import genai
-from google.genai import types
+The calls themselves are LangChain's now (see ``app.agents.model``); what stayed
+here is the vocabulary the rest of the app speaks: two errors a user may be shown,
+and the plain message a rendered prompt produces before it becomes a chat message.
+"""
+
+from typing import Literal
+
 from pydantic import BaseModel
-
-from app.agents.retry import RetryPolicy, retry_async
-from app.agents.tools import ToolSpec
-from app.observability import record_model, traced_llm
 
 
 class ProviderError(Exception):
-    """An LLM provider call failed (network/SDK error). Carries no SDK detail so
-    a leaked API key can't ride along; the original is chained via ``__cause__``."""
+    """A model call failed. Carries no SDK detail, so a leaked API key cannot ride
+    along; the original is chained through ``__cause__``."""
 
 
 class ProviderCreditsError(ProviderError):
     """The provider refused the call for lack of credits (HTTP 402, or a key that
-    reached its credit limit). Retrying cannot help until the key is topped up,
-    and the message is safe to show."""
-
-
-class ToolCall(BaseModel):
-    id: str
-    name: str
-    args: dict[str, Any]
-    # Opaque provider data echoed back unchanged on the next turn. Gemini 3 thinking
-    # models return a thought_signature here that must be replayed or they 400.
-    extra: dict[str, Any] | None = None
+    reached its limit). Retrying cannot help until it is topped up, and the
+    message is safe to show."""
 
 
 class Message(BaseModel):
+    """One rendered prompt message. Prompts render to these, and each agent turns
+    them into the chat messages its model expects."""
+
     role: Literal["system", "user", "assistant", "tool"]
     content: str | None = None
-    tool_calls: list[ToolCall] | None = None  # on an assistant tool-call message
-    tool_call_id: str | None = None  # on a tool-result message
-    name: str | None = None  # tool name on a tool result (Gemini matches by it)
-
-
-class Usage(BaseModel):
-    """Token counts for one model call. Optional throughout: a provider that does
-    not report usage leaves these None, and tracing simply omits the cost figure."""
-
-    input_tokens: int | None = None
-    output_tokens: int | None = None
-    total_tokens: int | None = None
-    cost_usd: float | None = None  # billed cost, when reported (OpenRouter does)
-
-
-class LLMResponse(BaseModel):
-    text: str | None = None
-    tool_calls: list[ToolCall] | None = None
-    usage: Usage | None = None  # token counts, for tracing/cost (when reported)
-
-
-class LLMProvider(Protocol):
-    async def __aenter__(self) -> "LLMProvider": ...
-
-    async def __aexit__(self, exc_type, exc, tb) -> None: ...
-
-    async def generate(
-        self,
-        messages: list[Message],
-        tools: list[ToolSpec] | None = None,
-        tool_choice: str = "auto",
-    ) -> LLMResponse: ...
-
-
-class FakeLLMProvider:
-    def __init__(self, responses: list[LLMResponse]):
-        self.responses = responses
-        self.calls: list[tuple] = []  # call arguments
-
-    async def __aenter__(self) -> "FakeLLMProvider":
-        return self
-
-    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-        return None
-
-    async def generate(
-        self,
-        messages: list[Message],
-        tools: list[ToolSpec] | None = None,
-        tool_choice: str = "auto",
-    ) -> LLMResponse:
-        self.calls.append((messages, tools, tool_choice))
-        return self.responses.pop(0)
-
-
-class GeminiProvider:
-    """Adapter over the google-genai SDK. Translates neutral types <-> SDK and
-    does exactly one model round-trip per ``generate``. Use as an async context
-    manager so the SDK client is opened and closed with the job."""
-
-    def __init__(self, api_key: str, model: str, retry: RetryPolicy | None = None):
-        self.api_key = api_key
-        self.model = model
-        self.retry = retry or RetryPolicy()
-        self._client: genai.Client | None = None
-
-    async def __aenter__(self) -> "GeminiProvider":
-        self._client = genai.Client(api_key=self.api_key)
-        return self
-
-    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
-        if self._client is not None:
-            await self._client.aio.aclose()
-            self._client = None
-
-    @traced_llm("gemini.generate")
-    async def generate(
-        self,
-        messages: list[Message],
-        tools: list[ToolSpec] | None = None,
-        tool_choice: str = "auto",
-    ) -> LLMResponse:
-        if self._client is None:
-            raise RuntimeError("GeminiProvider must be used within 'async with'")
-        record_model("google", self.model)
-
-        system_instruction, contents = self._to_contents(messages)
-        config = types.GenerateContentConfig(
-            system_instruction=system_instruction or None,
-            tools=self._to_tools(tools),
-            tool_config=self._to_tool_config(tool_choice, tools),
-        )
-        client = self._client
-
-        async def _call() -> types.GenerateContentResponse:
-            return await client.aio.models.generate_content(
-                model=self.model, contents=contents, config=config
-            )
-
-        try:
-            # retry_async handles transient 429/5xx/network blips; on a permanent
-            # error or exhausted retries it re-raises, which we normalize below.
-            response = await retry_async(_call, policy=self.retry)
-        except Exception as exc:  # never let a raw SDK error (key-bearing) escape
-            raise ProviderError("LLM request failed") from exc
-
-        usage = self._to_usage(response)
-        calls = response.function_calls
-        if calls:
-            return LLMResponse(
-                tool_calls=[
-                    ToolCall(
-                        id=call.id or uuid.uuid4().hex,
-                        name=call.name or "",
-                        args=dict(call.args or {}),
-                    )
-                    for call in calls
-                ],
-                usage=usage,
-            )
-        return LLMResponse(text=response.text, usage=usage)
-
-    @staticmethod
-    def _to_usage(response: types.GenerateContentResponse) -> Usage | None:
-        meta = response.usage_metadata
-        if meta is None:
-            return None
-        return Usage(
-            input_tokens=meta.prompt_token_count,
-            output_tokens=meta.candidates_token_count,
-            total_tokens=meta.total_token_count,
-        )
-
-    @staticmethod
-    def _to_contents(
-        messages: list[Message],
-    ) -> tuple[str, list[types.Content]]:
-        """Split out system messages (Gemini takes them separately) and map the
-        rest to SDK ``Content`` (roles: user/model; tool results as function
-        responses under a user-role turn)."""
-        system_parts: list[str] = []
-        contents: list[types.Content] = []
-
-        for message in messages:
-            if message.role == "system":
-                if message.content:
-                    system_parts.append(message.content)
-            elif message.role == "tool":
-                part = types.Part.from_function_response(
-                    name=message.name or "",
-                    response={"result": message.content},
-                )
-                contents.append(types.Content(role="user", parts=[part]))
-            elif message.role == "assistant":
-                parts: list[types.Part] = []
-                if message.content:
-                    parts.append(types.Part.from_text(text=message.content))
-                for call in message.tool_calls or []:
-                    parts.append(
-                        types.Part.from_function_call(name=call.name, args=call.args)
-                    )
-                contents.append(types.Content(role="model", parts=parts))
-            else:  # user
-                contents.append(
-                    types.Content(
-                        role="user",
-                        parts=[types.Part.from_text(text=message.content or "")],
-                    )
-                )
-
-        return "\n\n".join(system_parts), contents
-
-    @staticmethod
-    def _to_tools(tools: list[ToolSpec] | None) -> list[types.Tool] | None:
-        if not tools:
-            return None
-        declarations = [
-            types.FunctionDeclaration(
-                name=tool.name,
-                description=tool.description,
-                parameters_json_schema=tool.parameters,
-            )
-            for tool in tools
-        ]
-        return [types.Tool(function_declarations=declarations)]
-
-    @staticmethod
-    def _to_tool_config(
-        tool_choice: str, tools: list[ToolSpec] | None
-    ) -> types.ToolConfig | None:
-        # "auto" (or no tools) -> SDK default (AUTO), so send nothing.
-        if not tools or tool_choice == "auto":
-            return None
-        mode = types.FunctionCallingConfigMode.ANY  # force a function call
-        allowed = None if tool_choice == "required" else [tool_choice]
-        return types.ToolConfig(
-            function_calling_config=types.FunctionCallingConfig(
-                mode=mode, allowed_function_names=allowed
-            )
-        )

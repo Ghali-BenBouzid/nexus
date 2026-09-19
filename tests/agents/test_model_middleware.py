@@ -6,6 +6,7 @@ account gets billed wrong or a stopped run keeps spending.
 import httpx
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.outputs import ChatGeneration, LLMResult
 
 from app.agents import model as agent_model
 from app.agents.provider import ProviderCreditsError, ProviderError
@@ -38,6 +39,11 @@ def _reply(*, tokens=(10, 5), cost=0.00021, model="a/model") -> AIMessage:
         "model_name": model,
     }
     return message
+
+
+def _result(message: AIMessage) -> LLMResult:
+    """What a callback is handed after a call."""
+    return LLMResult(generations=[[ChatGeneration(message=message)]])
 
 
 def _handler(result):
@@ -76,12 +82,12 @@ async def test_every_call_is_paced_against_the_token_budget() -> None:
 
 
 async def test_a_call_is_billed_with_its_tokens_and_cost() -> None:
+    # A callback, not middleware: middleware only sees an agent's calls, and the
+    # planner and writer call the model directly. Billing cannot have holes.
     billed: list[dict] = []
-    middleware = agent_model.Billing(record=lambda usage: _collect(billed, usage))
+    usage = agent_model.Usage(record=lambda seen: _collect(billed, seen))
 
-    await middleware.awrap_model_call(
-        _Request(), _handler(_reply(tokens=(120, 40), cost=0.00042))
-    )
+    await usage.on_llm_end(_result(_reply(tokens=(120, 40), cost=0.00042)), run_id=1)
 
     assert billed == [
         {
@@ -96,10 +102,9 @@ async def test_a_call_is_billed_with_its_tokens_and_cost() -> None:
 
 async def test_a_reply_without_usage_bills_nothing_rather_than_zero() -> None:
     billed: list[dict] = []
-    middleware = agent_model.Billing(record=lambda usage: _collect(billed, usage))
-    bare = AIMessage("hi")
+    usage = agent_model.Usage(record=lambda seen: _collect(billed, seen))
 
-    await middleware.awrap_model_call(_Request(), _handler(bare))
+    await usage.on_llm_end(_result(AIMessage("hi")), run_id=1)
 
     assert billed == [
         {

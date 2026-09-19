@@ -1,39 +1,40 @@
-"""The supervisor: the top-level agent the user talks to in a conversation.
+"""The supervisor: the agent the user talks to.
 
-It runs a small tool-using loop over the conversation so far. It can read the
-full reports already produced and do a quick web check, then commit to exactly
-one of three actions:
+It sees the conversation and the documents attached to it, can read the reports
+already produced and check one small fact on the web, and then commits to one of
+three moves:
 
-- ``answer`` — reply directly in chat from the conversation and its reports.
-- ``compose`` — synthesize a new, longer report by merging and expanding the
-  reports already gathered, with no new web research.
-- ``research`` — start a fresh research run (rewriting the message into a
-  self-contained query), for genuinely new information.
+- ``answer``: reply from the conversation and what it has read.
+- ``compose``: merge the conversation's reports into one longer report.
+- ``research``: send researchers after genuinely new information.
 
-The terminal action is a forced function call (answer / compose_report /
-research); read_reports / web_search / fetch_page are intermediate tools it may
-call first. On a malformed or exhausted loop it falls back to ``research`` on the
-raw message: doing the work beats a hollow answer.
+The loop is LangChain's; the decision is a structured output, so "which move" is
+a schema the model fills rather than prose someone has to parse. Reading reports
+and searching are ordinary tools it may use first, as many times as it judges
+useful.
 """
 
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Literal
 
-from langchain_core.messages import AIMessage, HumanMessage
-from pydantic import BaseModel, Field, ValidationError
+from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware, ModelCallLimitMiddleware
+from langchain.agents.structured_output import ToolStrategy
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.tools import StructuredTool
+from pydantic import BaseModel, Field
 
 from app.agents.language import detect_language
-from app.agents.provider import LLMProvider, LLMResponse, Message
 from app.agents.schemas import AgentEvent, Turn
 from app.agents.tools import (
-    BaseTool,
-    BaseToolSpec,
-    FetchPage,
+    FetchPageArgs,
     SearchBackend,
-    ToolResult,
-    WebSearch,
+    WebSearchArgs,
+    fetch_page_text,
     tagged,
+    web_search_results,
 )
 from app.prompts import render
 from app.prompts.common import today
@@ -52,100 +53,34 @@ class SupervisorDecision(BaseModel):
     title: str = ""  # research/compose: a short title for the report artifact
 
 
-# --- the supervisor's tools -------------------------------------------------
+class Decision(BaseModel):
+    """What the supervisor commits to, once it has read what it needs."""
 
-
-class ReadReportsArgs(BaseModel):
-    pass  # no arguments: it reads every report in the conversation
-
-
-class ReadReports(BaseTool):
-    name = "read_reports"
-    description = (
-        "Read the full text of the research reports already produced in this "
-        "conversation, so you can answer from them or merge them. The conversation "
-        "only shows excerpts; call this for the complete text."
+    action: Literal["answer", "compose_report", "research"] = Field(
+        description="answer: reply now from the conversation and its reports. "
+        "compose_report: merge those reports into one longer report, no new "
+        "search. research: send researchers after new information."
     )
-    args_model = ReadReportsArgs
-
-    def __init__(self, reports: list[tuple[str, str]]) -> None:
-        # (original prompt, full report text), in order produced
-        self.reports = reports
-
-    async def _run(self, args: BaseModel) -> ToolResult:
-        if not self.reports:
-            return ToolResult(content="No reports have been produced yet.")
-        blocks = [
-            tagged("report", content, index=str(index), question=prompt)
-            for index, (prompt, content) in enumerate(self.reports, start=1)
-        ]
-        return ToolResult(content="\n\n---\n\n".join(blocks))
-
-
-class AnswerArgs(BaseModel):
     reply: str = Field(
         default="",
-        description="the reply to the user, in the user's language, grounded only "
-        "in the conversation and the reports already gathered",
+        description="answer only: the reply to the user, in the user's language, "
+        "grounded only in the conversation and the reports already gathered",
     )
-
-
-class Answer(BaseToolSpec):
-    name = "answer"
-    description = (
-        "Reply directly to the user from the conversation and the reports already "
-        "gathered, with no new research. Use for questions, summaries, and "
-        "clarifications the existing material already covers."
-    )
-    args_model = AnswerArgs
-
-
-class ComposeReportArgs(BaseModel):
-    instructions: str = Field(
-        default="",
-        description="what to synthesize: which reports to merge and how to expand "
-        "them into one longer, more comprehensive report, in the user's language",
-    )
-    title: str = Field(
-        default="",
-        description="a short title (a few words, in the user's language) naming the "
-        "composed report",
-    )
-
-
-class ComposeReport(BaseToolSpec):
-    name = "compose_report"
-    description = (
-        "Produce a new, longer report by merging and expanding the reports already "
-        "in this conversation, with NO new web search. Use this when the user asks "
-        "to combine, lengthen, deepen, or rewrite existing reports into one."
-    )
-    args_model = ComposeReportArgs
-
-
-class ResearchArgs(BaseModel):
     query: str = Field(
         default="",
-        description="a clear, self-contained research question, in the user's "
-        "language, capturing what to find and the relevant context",
+        description="research only: a clear, self-contained research question in "
+        "the user's language, carrying the context a researcher needs",
+    )
+    instructions: str = Field(
+        default="",
+        description="compose_report only: which reports to merge and how to expand "
+        "them into one longer report, in the user's language",
     )
     title: str = Field(
         default="",
-        description="a short title (a few words, in the user's language) naming the "
-        "report this research will produce",
+        description="research and compose_report: a short title, a few words in "
+        "the user's language, naming the report this will produce",
     )
-
-
-class Research(BaseToolSpec):
-    name = "research"
-    description = (
-        "Start a fresh web research run. Use only when the answer needs new "
-        "information the existing reports do not contain."
-    )
-    args_model = ResearchArgs
-
-
-_TERMINAL = {"answer", "compose_report", "research"}
 
 
 async def _noop(event: AgentEvent) -> None:
@@ -156,138 +91,122 @@ async def decide(
     message: str,
     history: list[Turn],
     *,
-    provider: LLMProvider,
+    model: BaseChatModel,
     backend: SearchBackend,
     reports: list[tuple[str, str]],
+    middleware: list[AgentMiddleware] | None = None,
     emit: Emit = _noop,
     max_iters: int = 4,
 ) -> SupervisorDecision:
-    """Route the latest message through a small tool loop. ``history`` is the
-    conversation before this message, one entry per turn; ``reports`` is the full
-    text of prior reports (exposed via read_reports). The provider and backend
-    must already be open."""
-    read_reports = ReadReports(reports)
-    web_search = WebSearch(backend=backend)
-    fetch_page = FetchPage(backend=backend)
-    tools = [
-        read_reports,
-        web_search,
-        fetch_page,
-        Answer(),
-        ComposeReport(),
-        Research(),
-    ]
-    executables = {
-        read_reports.name: read_reports,
-        web_search.name: web_search,
-        fetch_page.name: fetch_page,
-    }
-    messages = render(
-        PROMPT,
-        history=[
-            HumanMessage(turn.content)
-            if turn.role == "user"
-            else AIMessage(turn.content)
-            for turn in history
+    """Route the latest message. ``history`` is the conversation before it, one
+    entry per turn; ``reports`` is the full text of the reports produced in it,
+    which the supervisor reads on demand rather than carrying in context."""
+    agent = create_agent(
+        model=model,
+        tools=_tools(backend, reports),
+        system_prompt=_system_prompt(message),
+        response_format=ToolStrategy(Decision),
+        middleware=[
+            *(middleware or []),
+            # Out of rounds means decide now with what it has, not fail the turn.
+            ModelCallLimitMiddleware(run_limit=max_iters, exit_behavior="end"),
         ],
+    )
+
+    state = await agent.ainvoke({"messages": _conversation(history, message)})
+    decision = state.get("structured_response")
+    if decision is None:
+        # Budget spent without committing: do the work rather than answer hollowly.
+        return SupervisorDecision(action="research", query=message)
+    return _decision(decision, message)
+
+
+def _system_prompt(message: str) -> str:
+    rendered = render(
+        PROMPT,
+        history=[],
         message=message,
         today=today(),
         language=detect_language(message) or "",
     )
+    return rendered[0].content or ""
 
-    for _ in range(max_iters):
-        response = await provider.generate(
-            messages, tools=tools, tool_choice="required"
+
+def _conversation(history: list[Turn], message: str) -> list[BaseMessage]:
+    """The thread as real messages: each earlier turn its own, the new message
+    last. A report inside a turn is already tagged as retrieved material."""
+    messages: list[BaseMessage] = [
+        HumanMessage(turn.content) if turn.role == "user" else AIMessage(turn.content)
+        for turn in history
+    ]
+    messages.append(HumanMessage(message))
+    return messages
+
+
+def _tools(
+    backend: SearchBackend, reports: list[tuple[str, str]]
+) -> list[StructuredTool]:
+    async def read_reports() -> str:
+        if not reports:
+            return "No reports have been produced yet."
+        blocks = [
+            tagged("report", content, index=str(index), question=prompt)
+            for index, (prompt, content) in enumerate(reports, start=1)
+        ]
+        return "\n\n---\n\n".join(blocks)
+
+    async def web_search(query: str, max_results: int = 5) -> str:
+        return (await web_search_results(backend, query, max_results)).content
+
+    async def fetch_page(url: str) -> str:
+        return (await fetch_page_text(backend, url)).content
+
+    return [
+        StructuredTool.from_function(
+            coroutine=read_reports,
+            name="read_reports",
+            description=(
+                "Read the full text of the research reports already produced in "
+                "this conversation, so you can answer from them or merge them. The "
+                "conversation only shows excerpts; call this for the complete text."
+            ),
+        ),
+        StructuredTool.from_function(
+            coroutine=web_search,
+            name="web_search",
+            description=(
+                "Run a web search for one small fact you need to answer directly. "
+                "For anything substantial, choose research instead."
+            ),
+            args_schema=WebSearchArgs,
+        ),
+        StructuredTool.from_function(
+            coroutine=fetch_page,
+            name="fetch_page",
+            description=(
+                "Fetch a web page by URL and return its cleaned full text, for when "
+                "a search snippet is promising but insufficient."
+            ),
+            args_schema=FetchPageArgs,
+        ),
+    ]
+
+
+def _decision(decision: Decision, message: str) -> SupervisorDecision:
+    if decision.action == "answer" and decision.reply.strip():
+        return SupervisorDecision(action="answer", reply=decision.reply.strip())
+    if decision.action == "compose_report":
+        return SupervisorDecision(
+            action="compose",
+            instructions=decision.instructions.strip(),
+            title=decision.title.strip(),
         )
-        messages.append(_assistant_message(response))
-
-        if not response.tool_calls:
-            messages.append(Message(role="user", content="Call one of the tools."))
-            continue
-
-        call = response.tool_calls[0]
-        if call.name in _TERMINAL:
-            decision = _decision_from(call.name, call.args, message)
-            if decision is not None:
-                return decision
-            # Malformed terminal call: feed the error back and let it retry within
-            # the budget, like the researcher's malformed-submit handling.
-            messages.append(
-                Message(
-                    role="tool",
-                    tool_call_id=call.id,
-                    name=call.name,
-                    content="Invalid arguments. Call the tool again with valid ones.",
-                )
-            )
-            continue
-
-        result = await _run_tool(call.id, call.name, call.args, executables, emit)
-        messages.append(
-            Message(
-                role="tool",
-                tool_call_id=call.id,
-                name=call.name,
-                content=result.content,
-            )
-        )
-
-    # Budget exhausted without a clean decision: do the work rather than answer
-    # hollowly (mirrors the parse-failure default).
-    return SupervisorDecision(action="research", query=message)
-
-
-def _decision_from(name: str, args: dict, message: str) -> SupervisorDecision | None:
-    try:
-        if name == "answer":
-            reply = AnswerArgs(**args).reply.strip()
-            return SupervisorDecision(action="answer", reply=reply) if reply else None
-        if name == "compose_report":
-            parsed = ComposeReportArgs(**args)
-            return SupervisorDecision(
-                action="compose",
-                instructions=parsed.instructions.strip(),
-                title=parsed.title.strip(),
-            )
-        if name == "research":
-            parsed = ResearchArgs(**args)
-            return SupervisorDecision(
-                action="research",
-                query=parsed.query.strip() or message,
-                title=parsed.title.strip(),
-            )
-    except ValidationError:
-        return None
-    return None
-
-
-async def _run_tool(
-    call_id: str,
-    name: str,
-    args: dict,
-    executables: dict[str, BaseTool],
-    emit: Emit,
-) -> ToolResult:
-    tool = executables.get(name)
-    if tool is None:
-        return ToolResult(content=f"Unknown tool: {name}")
-    await emit(
-        AgentEvent(
-            type="supervisor_tool",
-            message=f"{name}({args})",
-            data={"tool": name, "args": args},
-        )
+    # research, and an answer with nothing in it: doing the work beats a blank reply
+    return SupervisorDecision(
+        action="research",
+        query=decision.query.strip() or message,
+        title=decision.title.strip(),
     )
-    try:
-        return await tool.execute(**args)
-    except Exception as exc:  # a failed tool call must not kill the routing loop
-        await emit(AgentEvent(type="tool_error", message=f"{name} failed: {exc}"))
-        return ToolResult(content=f"Tool {name} failed: {exc}")
 
 
-def _assistant_message(response: LLMResponse) -> Message:
-    return Message(
-        role="assistant",
-        content=response.text,
-        tool_calls=response.tool_calls,
-    )
+__all__ = ["Decision", "SupervisorDecision", "decide"]
