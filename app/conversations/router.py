@@ -15,6 +15,8 @@ from app.conversations.schemas import (
     MessageResponse,
 )
 from app.db.session import get_db
+from app.documents import repository as documents_repository
+from app.documents.router import summary as document_summary
 from app.models.conversation import Conversation, Message
 from app.models.query import Query
 from app.models.user import User
@@ -62,11 +64,13 @@ async def _detail(db: AsyncSession, conversation: Conversation) -> ConversationD
     messages = await repository.list_messages(db, conversation.id)
     query_ids = [m.query_id for m in messages if m.query_id is not None]
     queries = await repository.queries_by_id(db, query_ids)
+    documents = await documents_repository.list_for_conversation(db, conversation.id)
     return ConversationDetail(
         id=conversation.id,
         title=conversation.title,
         created_at=conversation.created_at,
         messages=_to_responses(messages, queries),
+        documents=[document_summary(d) for d in documents],
     )
 
 
