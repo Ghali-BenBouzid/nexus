@@ -1,10 +1,8 @@
-from abc import ABC, abstractmethod
 from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
 from app.agents.schemas import Source
-from app.observability import record_run_name, traced_tool
 
 
 def tagged(tag: str, body: str, **attributes: str) -> str:
@@ -54,16 +52,6 @@ class SearchBackend(Protocol):
     async def extract(self, url: str) -> str: ...
 
 
-class ToolSpec(Protocol):
-    name: str
-    description: str
-    parameters: dict[str, Any]
-
-
-class Tool(ToolSpec, Protocol):
-    async def execute(self, **kwargs: Any) -> ToolResult: ...
-
-
 def inline_refs(schema: dict[str, Any]) -> dict[str, Any]:
     """The same JSON schema with every ``$ref`` replaced by the definition it
     points to, and ``$defs`` dropped.
@@ -88,45 +76,8 @@ def inline_refs(schema: dict[str, Any]) -> dict[str, Any]:
     return resolve(schema)
 
 
-class BaseToolSpec(ABC):
-    """Shared spec plumbing: the JSON-schema parameters are derived from
-    args_model, so each tool only declares its name, description, and args."""
-
-    name: str
-    description: str
-    args_model: type[BaseModel]
-
-    @property
-    def parameters(self) -> dict[str, Any]:
-        # Self-contained on purpose: see inline_refs for the failure it prevents.
-        return inline_refs(self.args_model.model_json_schema())
-
-
-class BaseTool(BaseToolSpec):
-    """Executable tool: validates incoming kwargs through args_model before
-    running the tool's real work."""
-
-    @traced_tool()
-    async def execute(self, **kwargs: Any) -> ToolResult:
-        record_run_name(self.name)
-        args = self.args_model(**kwargs)
-        return await self._run(args)
-
-    @abstractmethod
-    async def _run(self, args: BaseModel) -> ToolResult: ...
-
-
 class SubmitPlanArgs(BaseModel):
     sub_questions: list[str] = Field(description="The list of sub-questions")
-
-
-class SubmitPlan(BaseToolSpec):
-    name = "submit_plan"
-    description = (
-        "Submit the final research plan as a list of complementary "
-        "sub-questions that together exhaustively cover the user's question."
-    )
-    args_model = SubmitPlanArgs
 
 
 class SubmitFindingClaim(BaseModel):
@@ -144,15 +95,6 @@ class SubmitFindingArgs(BaseModel):
         "source ids that support it; empty if no relevant info was found",
     )
     found_info: bool = Field(description="False if no relevant info was found")
-
-
-class SubmitFinding(BaseToolSpec):
-    name = "submit_finding"
-    description = (
-        "Submit your findings as a list of claims, each with the ids of the "
-        "sources that back it."
-    )
-    args_model = SubmitFindingArgs
 
 
 class WebSearchArgs(BaseModel):
@@ -187,35 +129,8 @@ async def fetch_page_text(backend: SearchBackend, url: str) -> RetrievalResult:
     )
 
 
-class WebSearch(BaseTool):
-    name = "web_search"
-    description = "Run a web search for a query and return up to max_results results."
-    args_model = WebSearchArgs
-
-    def __init__(self, backend: SearchBackend) -> None:
-        self.backend = backend
-
-    async def _run(self, args: WebSearchArgs) -> RetrievalResult:
-        return await web_search_results(self.backend, args.query, args.max_results)
-
-
 class FetchPageArgs(BaseModel):
     url: str = Field(description="The URL of the page to fetch and read in full")
 
 
 MAX_PAGE_CHARS = 6_000  # cap fetched page text so it can't blow the token budget
-
-
-class FetchPage(BaseTool):
-    name = "fetch_page"
-    description = (
-        "Fetch a web page by URL and return its cleaned full text, for when a "
-        "search snippet is promising but insufficient."
-    )
-    args_model = FetchPageArgs
-
-    def __init__(self, backend: SearchBackend) -> None:
-        self.backend = backend
-
-    async def _run(self, args: FetchPageArgs) -> RetrievalResult:
-        return await fetch_page_text(self.backend, args.url)

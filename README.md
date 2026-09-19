@@ -61,16 +61,16 @@ What each piece is used for:
 | FastAPI | The API: accounts, conversations, starting and stopping runs, the progress feed |
 | Redis + arq | The job queue between the API and the worker |
 | LangGraph | The agent pipeline as a graph, including the pause for plan approval |
-| LangChain | The agents' prompts, as versioned templates |
+| LangChain | The agents themselves, their tools and their prompts |
 | Postgres (SQLAlchemy, Alembic) | Conversations, runs, progress events, the usage ledger, and paused runs |
-| OpenRouter | The language models, through one OpenAI-compatible adapter |
+| OpenRouter | The language models, through one OpenAI-compatible endpoint |
 | Tavily | Web search and reading pages |
 | DeepEval | Scoring the evaluation runs |
 | LangSmith | Optional tracing of every agent step |
 | React + TypeScript + Vite | The chat interface and the report panel |
 | Railway, Neon, Cloudflare | Hosting for the API and worker, the database, and the frontend |
 
-The agents themselves are plain Python and know nothing about LangGraph:
+Each agent is a LangChain agent: a prompt, a set of tools and the loop that runs them.
 
 - The **supervisor** reads the conversation and picks the route.
 - The **planner** splits the question into self-contained sub-questions, as many as the question needs and at most six: a plain fact gets one or two, a three-way comparison gets six.
@@ -84,6 +84,11 @@ The agents themselves are plain Python and know nothing about LangGraph:
 Left to cite on their own, models sometimes cite a page they never read.
 So the consolidator numbers the sources and the writer can only keep the numbers it was given.
 In exchange, the writer can't add anything the researchers didn't find.
+
+**The agents run on LangChain's loop, with our own concerns as middleware.**
+Writing the tool loop by hand is a day's work; keeping it correct is not, and the framework's loop comes with structured output, tool errors and retries already thought through.
+What the app cannot delegate rides alongside it: billing and pacing hang on the model itself, because middleware only sees an agent's calls and two of our four agents call the model directly.
+That distinction was worth finding: the first version billed only what agents spent.
 
 **Prompts are versioned objects, not strings in the code.**
 Each agent's prompt is a LangChain template in `app/prompts` carrying a version, and a lock file pins that version to a hash of its text, so a test fails if the wording changes without a bump.
