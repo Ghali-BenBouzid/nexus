@@ -24,7 +24,7 @@ from psycopg_pool import AsyncConnectionPool
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.model import Errors, Guard, Pacing, retrying
+from app.agents.model import Errors, Guard, retrying
 from app.agents.orchestrator import (
     SERDE,
     Deps,
@@ -204,17 +204,16 @@ def _model(model: BaseChatModel | None) -> BaseChatModel:
 
 
 def _middleware(model: BaseChatModel, *, stopped) -> list:
-    """What wraps every call an agent makes: pacing under the provider's limits,
-    one clear error instead of an SDK traceback, no new call once the user has
-    stopped, and retries where retrying can help.
+    """What wraps every call an agent makes: one clear error instead of an SDK
+    traceback, no new call once the user has stopped, and retries where retrying
+    can help.
 
-    Billing is not here: middleware only sees an agent's calls, and the planner
-    and the writer call the model directly, so it rides on the model instead."""
-    limiter = getattr(model, "rate_limiter", None)
+    Billing and pacing are not here: middleware only sees an agent's calls, and
+    the planner and the writer call the model directly, so both ride on the
+    model itself."""
     return [
         Errors(),
         Guard(should_cancel=stopped),
-        *([Pacing(limiter)] if limiter is not None else []),
         retrying(settings.retry_max_attempts),
     ]
 

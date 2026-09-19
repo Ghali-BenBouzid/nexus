@@ -64,16 +64,22 @@ def _status_error(status: int, body: str = "") -> httpx.HTTPStatusError:
 # --- pacing -----------------------------------------------------------------
 
 
-async def test_every_call_is_paced_against_the_token_budget() -> None:
+async def test_every_call_is_paced_including_one_no_agent_made() -> None:
+    # Pacing lives in the model, not middleware: the planner and the writer call
+    # the model directly, and a fan-out that paces only its researchers still
+    # bursts past a free tier.
     acquired: list[int] = []
 
     class _Limiter(RateLimiter):
         async def acquire(self, tokens: int) -> None:
             acquired.append(tokens)
 
-    middleware = agent_model.Pacing(_Limiter(rpm=60, tpm=1000))
+    model = agent_model.PacedChatOpenAI(
+        model="m", base_url="http://x", api_key="k", pacing=_Limiter(rpm=60, tpm=1000)
+    )
 
-    await middleware.awrap_model_call(_Request(), _handler(_reply()))
+    with pytest.raises(Exception):  # noqa: B017 -- no server; pacing runs first
+        await model._agenerate([HumanMessage("hello")])
 
     assert acquired and acquired[0] > 0  # an estimate, paid before the call
 

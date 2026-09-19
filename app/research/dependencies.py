@@ -114,12 +114,15 @@ def get_model() -> Any:  # ChatOpenAI; see the note below
             detail=f"Research is not configured (missing {provider} API key).",
         )
     name = settings.llm_model or default_model
-    model = build_model(model=name, base_url=base_url, api_key=api_key)
-    # The limiter is per provider+model and shared by every agent on this model,
-    # so a fan-out paces against itself rather than each researcher getting its
-    # own quota. Carried on the model so callers need not rebuild it.
-    model.rate_limiter = _rate_limiter(provider, name)
-    return model
+    # The limiter is per provider and model, and shared by everything running on
+    # this model, so a fan-out paces against itself rather than each researcher
+    # getting its own quota.
+    return build_model(
+        model=name,
+        base_url=base_url,
+        api_key=api_key,
+        pacing=_rate_limiter(provider, name),
+    )
 
 
 def get_search_backend() -> TavilyBackend:

@@ -43,7 +43,6 @@ from langchain_openai import ChatOpenAI
 from langgraph.types import Command
 
 from app.agents.provider import ProviderCreditsError, ProviderError
-from app.agents.rate_limit import RateLimiter
 from app.agents.retry import is_transient
 from app.agents.schemas import AgentEvent
 
@@ -64,32 +63,39 @@ class StoppedError(Exception):
     """The user stopped the run while an agent was working."""
 
 
+class PacedChatOpenAI(ChatOpenAI):
+    """A chat model that holds itself under the provider's per-minute ceilings.
+
+    Pacing lives in the model, not in middleware, for the same reason billing
+    does: middleware only wraps an agent's calls, and the planner and the writer
+    call the model directly. A fan-out that paces only its researchers still
+    bursts past a free tier.
+
+    ``pacing`` is ours and token-aware; LangChain's own ``rate_limiter`` field
+    counts requests only, which is the wrong ceiling on a free tier where tokens
+    per minute bind first.
+    """
+
+    pacing: Any = None  # a RateLimiter, or None to run unpaced
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        if self.pacing is not None:
+            await self.pacing.acquire(_estimate_call(messages, kwargs.get("tools")))
+        return await super()._agenerate(messages, stop, run_manager, **kwargs)
+
+
 def build_model(
     *, model: str, base_url: str, api_key: str, **kwargs: Any
-) -> ChatOpenAI:
-    """The chat model for one provider. Retries and pacing are middleware, not
-    the client's business, so the client itself stays plain."""
-    return ChatOpenAI(
+) -> PacedChatOpenAI:
+    """The chat model for one provider. Retrying is middleware, with our own
+    predicate, so the client itself does not retry."""
+    return PacedChatOpenAI(
         model=model,
         base_url=base_url,
         api_key=api_key,
         max_retries=0,  # ModelRetryMiddleware owns retrying, with our predicate
         **kwargs,
     )
-
-
-class Pacing(AgentMiddleware):
-    """Holds every call under the provider's per-minute ceilings. Shared limiter,
-    so concurrent researchers pace against each other rather than each other's
-    quota."""
-
-    def __init__(self, limiter: RateLimiter) -> None:
-        super().__init__()
-        self.limiter = limiter
-
-    async def awrap_model_call(self, request: ModelRequest, handler) -> ModelResponse:
-        await self.limiter.acquire(_estimate_tokens(request))
-        return await handler(request)
 
 
 class Usage(AsyncCallbackHandler):
@@ -273,11 +279,12 @@ def _body_of(exc: Exception) -> str:
     return text if isinstance(text, str) else str(exc)
 
 
-def _estimate_tokens(request: ModelRequest) -> int:
+def _estimate_call(messages: list[Any], tools: Any) -> int:
     """Estimate what a call will cost against the tokens-per-minute ceiling: the
-    messages and tool schemas going up, plus a reservation for the reply."""
-    text = json.dumps([str(m.content) for m in request.messages])
-    text += json.dumps([getattr(t, "name", str(t)) for t in (request.tools or [])])
+    messages and tool schemas going up, plus a reservation for the reply.
+    Approximate by design, and paired with a per-model safety margin."""
+    text = json.dumps([str(getattr(m, "content", m)) for m in messages])
+    text += json.dumps(str(tools or ""))
     return len(text) // _CHARS_PER_TOKEN + _OUTPUT_TOKEN_RESERVATION
 
 
