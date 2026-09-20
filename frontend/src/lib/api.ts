@@ -4,7 +4,16 @@
 // while tailing GET /research/query/{id}/events for the real agent feed. The
 // backend persists every emitted AgentEvent, so the feed shows the actual
 // planner/researcher/writer progress (real "researcher k/N"), not a placeholder.
-import type { AgentEvent, Result, Source, Status, TimelineEvent } from "../types";
+import type {
+  AgentEvent,
+  Doc,
+  Output,
+  OutputKind,
+  Result,
+  Source,
+  Status,
+  TimelineEvent,
+} from "../types";
 import { t } from "./i18n";
 import { outcomeFor } from "./outcome";
 import type { ResearchCallbacks, ResearchOutcome } from "./research";
@@ -21,14 +30,16 @@ type QueryDetail = {
   prompt: string;
   title: string | null;
   status: Status;
+  kind?: string;
   report: string | null;
   error: string | null;
-  plan: string[] | null;
   sources: Source[];
   consulted_sources: Source[];
   gaps: string[];
-  // The supervisor's direct answer, when the turn needed no research.
+  // The assistant's answer in the conversation.
   reply?: string | null;
+  // Follow-up questions offered under the answer.
+  suggestions?: string[];
   // How long ago the job last showed signs of life (null before it starts).
   seconds_since_heartbeat?: number | null;
 };
@@ -202,7 +213,7 @@ function hostname(url: unknown): string {
   }
 }
 
-const AGENTS = ["supervisor", "planner", "researcher", "writer"] as const;
+const AGENTS = ["supervisor", "planner", "researcher", "writer", "fact_checker"] as const;
 type Agent = (typeof AGENTS)[number];
 const isAgent = (value: unknown): value is Agent => AGENTS.includes(value as Agent);
 
@@ -227,17 +238,28 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
         total: (d.total as number) ?? 1,
         question: (d.sub_question as string) ?? e.message,
       };
-    case "tool_call":
+    case "document_read":
+      return { kind: "tool", action: "document", text: String(d.document ?? e.message) };
+    case "factcheck_start":
+      return { kind: "started", run: "fact_check", text: String(d.document ?? "") };
+    case "tool_call": {
+      const args = (d.args as Record<string, unknown> | undefined) ?? {};
       if (d.tool === "fetch_page") {
-        const url = (d.args as Record<string, unknown> | undefined)?.url;
-        return { kind: "tool", action: "read", domain: hostname(url), index };
+        return { kind: "tool", action: "read", domain: hostname(args.url), index };
+      }
+      if (d.tool === "read_document" || d.tool === "read_report") {
+        return { kind: "tool", action: "document", text: e.message };
+      }
+      if (d.tool === "deep_research" || d.tool === "fact_check") {
+        return { kind: "started", run: d.tool, text: String(args.title ?? "") };
       }
       return {
         kind: "tool",
         action: "search",
-        text: String((d.args as Record<string, unknown> | undefined)?.query ?? e.message),
+        text: String(args.query ?? args.question ?? e.message),
         index,
       };
+    }
     case "tool_error":
       return { kind: "tool", action: "error", text: e.message, index };
     case "researcher_done":
@@ -266,9 +288,9 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
 }
 
 // --- conversations ----------------------------------------------------------
-// A research turn now belongs to a conversation: the first message creates one,
-// follow-ups append to it. The conversation (server-side) is what makes the chat
-// survive reload and is the foundation the supervisor + plan-confirmation build on.
+// A turn belongs to a conversation: the first message creates one, follow-ups
+// append to it. The conversation is what makes the chat survive a reload, and
+// what a background run points back at when it finishes.
 
 type ConvMessageQuery = {
   status: Status;
@@ -277,10 +299,36 @@ type ConvMessageQuery = {
   reply?: string | null;
   error: string | null;
   stopped?: boolean;
-  plan: string[] | null;
+  suggestions?: string[];
   sources: Source[];
   gaps: string[];
 };
+
+type BackendOutput = {
+  id: number;
+  kind: string;
+  conversation_id: number | null;
+  title: string | null;
+  prompt: string;
+  status: Status;
+  error: string | null;
+  created_at: string;
+  completed_at: string | null;
+};
+
+function toOutput(raw: BackendOutput): Output {
+  return {
+    id: raw.id,
+    kind: (raw.kind as OutputKind) ?? "deep_research",
+    title: raw.title ?? raw.prompt,
+    prompt: raw.prompt,
+    status: raw.status,
+    conversationId: raw.conversation_id,
+    error: raw.error,
+    createdAt: raw.created_at,
+    completedAt: raw.completed_at,
+  };
+}
 type ConvMessage = {
   id: number;
   role: "user" | "assistant";
@@ -289,7 +337,38 @@ type ConvMessage = {
   created_at: string;
   query: ConvMessageQuery | null;
 };
-type ConvDetail = { id: number; title: string | null; created_at: string; messages: ConvMessage[] };
+type BackendDoc = {
+  id: number;
+  filename: string;
+  media_type: string;
+  size_bytes: number;
+  pages: number | null;
+  chars: number;
+  truncated: boolean;
+  ocr: boolean;
+};
+
+function toDoc(raw: BackendDoc): Doc {
+  return {
+    id: raw.id,
+    filename: raw.filename,
+    mediaType: raw.media_type,
+    sizeBytes: raw.size_bytes,
+    pages: raw.pages,
+    chars: raw.chars,
+    truncated: raw.truncated,
+    ocr: raw.ocr,
+  };
+}
+
+type ConvDetail = {
+  id: number;
+  title: string | null;
+  created_at: string;
+  messages: ConvMessage[];
+  documents?: BackendDoc[];
+  artifacts?: BackendOutput[];
+};
 
 function lastAssistant(detail: ConvDetail): ConvMessage | null {
   for (let i = detail.messages.length - 1; i >= 0; i--) {
@@ -341,8 +420,7 @@ export async function runLiveResearch(
   cb.onConversation?.(detail.id);
 
   const assistant = lastAssistant(detail);
-  // The supervisor either started a research run (poll it) or answered directly
-  // from the conversation's reports (show the reply, no polling).
+  // An older turn with no run behind it: show what it said and stop there.
   if (assistant && assistant.query_id == null) {
     return {
       result: { report: "", sources: [], consulted: [], gaps: [] },
@@ -354,8 +432,6 @@ export async function runLiveResearch(
     throw new Error("The message did not produce a response.");
   }
   cb.onQueryId?.(assistant.query_id);
-  // The supervisor named the report when it created the query, so the title is
-  // already on the assistant message: surface it before polling for the result.
   if (assistant.query?.title) cb.onTitle?.(assistant.query.title);
   return pollQuery(assistant.query_id, token, cb);
 }
@@ -395,26 +471,9 @@ async function pollQuery(
     }
     await drainEvents();
 
-    // Human-in-the-loop: the run paused for the user to confirm the plan. End the
-    // poll and surface the plan; confirm/revise resumes a fresh poll.
-    if (detail.status === "awaiting_plan") {
-      return {
-        result: { report: "", sources: [], consulted: [], gaps: [] },
-        outcome: "ok",
-        awaitingPlan: true,
-        plan: detail.plan ?? [],
-      };
-    }
-
     if (detail.status === "complete") {
-      // The supervisor answered directly: a reply, and no report to open.
-      if (detail.reply != null && !detail.report) {
-        return {
-          result: { report: "", sources: [], consulted: [], gaps: [] },
-          outcome: "ok",
-          reply: detail.reply,
-        };
-      }
+      // A turn answers in the conversation; its sources ride along so the answer
+      // can carry clickable citations.
       const result: Result = {
         report: detail.report ?? "",
         sources: detail.sources,
@@ -423,7 +482,9 @@ async function pollQuery(
       };
       return {
         result,
-        outcome: outcomeFor(detail.status, result.report, result.sources.length),
+        outcome: outcomeFor(detail.status, detail.reply ?? "", result.sources.length),
+        reply: detail.reply ?? "",
+        suggestions: detail.suggestions ?? [],
         title: detail.title ?? undefined,
       };
     }
@@ -445,23 +506,10 @@ async function pollQuery(
   };
 }
 
-// Approve the proposed plan (POST /research/query/{id}/confirm): the backend runs
-// the research. Throws on a non-OK response so the caller surfaces the failure
-// instead of polling a query that never started.
-export async function confirmPlan(queryId: number): Promise<void> {
-  await authedPost(`/research/query/${queryId}/confirm`);
-}
-
-// Reject the plan with optional feedback (POST .../revise): the backend re-plans
-// and pauses again at awaiting_plan. Throws on a non-OK response.
-export async function revisePlan(queryId: number, feedback: string): Promise<void> {
-  await authedPost(`/research/query/${queryId}/revise`, { feedback });
-}
-
-// Resume polling an existing query (after confirm/revise) without posting a new
-// message. Reuses the same poll loop, so it handles awaiting_plan again on revise.
-// `sinceEventId` is the last feed event already shown, so the resumed poll appends
-// only new events instead of re-draining the phase-1 planner events.
+// Resume polling an existing query without posting a new message: used when a
+// conversation is reopened while one of its turns is still running.
+// `sinceEventId` is the last feed event already shown, so the resumed poll
+// appends only new events instead of re-draining the ones already on screen.
 export async function resumeRun(
   queryId: number,
   cb: ResearchCallbacks,
@@ -547,15 +595,21 @@ export async function listConversations(): Promise<ConversationSummary[]> {
 export type LoadedTurn = {
   queryId: number | null;
   query: string;
-  title?: string; // the supervisor-given report title
+  title?: string;
   status: Status;
   error: string | null;
   stopped?: boolean; // the user stopped it: not shown as an error
   result: Result;
-  reply?: string; // a supervisor answer instead of a research report
-  plan?: string[]; // proposed sub-questions, when the turn is awaiting_plan
+  reply?: string; // the answer, which is what a turn produces
+  suggestions?: string[];
 };
-export type LoadedConversation = { id: number; title: string | null; turns: LoadedTurn[] };
+export type LoadedConversation = {
+  id: number;
+  title: string | null;
+  turns: LoadedTurn[];
+  documents: Doc[];
+  outputs: Output[];
+};
 
 // Rehydrate a whole conversation thread into turns (used on reload and when
 // opening a past conversation). Each assistant message that carries a research
@@ -572,16 +626,15 @@ export async function loadConversation(id: number): Promise<LoadedConversation |
       prompt = m.content;
       continue;
     }
-    // A supervisor answer: older ones carry no query, newer ones a finished query
-    // holding the reply.
-    if (m.query_id == null || m.query?.reply) {
+    // A turn with no run behind it (an older thread) still said something.
+    if (m.query_id == null) {
       turns.push({
-        queryId: m.query_id,
+        queryId: null,
         query: prompt,
         status: "complete",
         error: null,
         result: { report: "", sources: [], consulted: [], gaps: [] },
-        reply: m.query?.reply ?? m.content,
+        reply: m.content,
       });
       continue;
     }
@@ -593,14 +646,75 @@ export async function loadConversation(id: number): Promise<LoadedConversation |
       status: q?.status ?? "complete",
       error: q?.error ?? null,
       stopped: q?.stopped,
-      plan: q?.plan ?? undefined,
+      reply: q?.reply ?? m.content,
+      suggestions: q?.suggestions ?? [],
       result: {
-        report: q?.report ?? "",
+        report: "",
         sources: q?.sources ?? [],
         consulted: [],
         gaps: q?.gaps ?? [],
       },
     });
   }
-  return { id: detail.id, title: detail.title, turns };
+  return {
+    id: detail.id,
+    title: detail.title,
+    turns,
+    documents: (detail.documents ?? []).map(toDoc),
+    outputs: (detail.artifacts ?? []).map(toOutput),
+  };
+}
+
+// --- outputs (deep research reports, fact checks) ----------------------------
+
+// Every report this account has, newest first. Listed across conversations,
+// because a background run finishes long after the thread that asked for it.
+export async function listOutputs(): Promise<Output[]> {
+  const res = await authedGet(`/research/artifacts`);
+  if (!res || !res.ok) return [];
+  return ((await res.json()) as BackendOutput[]).map(toOutput);
+}
+
+// One output's report and sources, loaded when it is opened.
+export async function openOutput(id: number): Promise<Result | null> {
+  const loaded = await openQuery(id);
+  return loaded ? loaded.result : null;
+}
+
+// --- uploads ------------------------------------------------------------------
+
+export async function listDocuments(conversationId: number): Promise<Doc[]> {
+  const res = await authedGet(`/conversations/${conversationId}/documents`);
+  if (!res || !res.ok) return [];
+  return ((await res.json()) as BackendDoc[]).map(toDoc);
+}
+
+// Upload one file into a conversation. Throws with the server's own reason (too
+// large, unreadable, too many), which is written to be shown as it is.
+export async function uploadDocument(conversationId: number, file: File): Promise<Doc> {
+  const token = await ensureToken();
+  const body = new FormData();
+  body.append("file", file);
+  const res = await fetch(`${BASE}/conversations/${conversationId}/documents`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body,
+  });
+  if (!res.ok) throw new Error(await errorMessage(res, t.uploads.failed));
+  return toDoc((await res.json()) as BackendDoc);
+}
+
+export async function deleteDocument(id: number): Promise<void> {
+  const token = await ensureToken();
+  await fetch(`${BASE}/documents/${id}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${token}` },
+  });
+}
+
+// Start a fact check from the document itself, rather than by asking for one in
+// the conversation. The same sub-agent either way; this one just skips the turn.
+export async function factCheckDocument(id: number): Promise<Output> {
+  const res = await authedPost(`/documents/${id}/fact-check`, { focus: "" });
+  return toOutput((await res.json()) as BackendOutput);
 }

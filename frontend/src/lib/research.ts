@@ -23,8 +23,7 @@ export type ResearchCallbacks = {
   // Live mode only: the conversation this run belongs to (a new one on the first
   // message, the existing one on follow-ups), so the app can persist it.
   onConversation?: (id: number) => void;
-  // Live mode only: the supervisor-given report title, known as soon as the run is
-  // submitted, so the turn and its artifact can show a real name.
+  // Live mode only: the run's title, when it has one.
   onTitle?: (title: string) => void;
   // Live mode only: on every poll, seconds since the backend job last showed signs
   // of life, so the progress bar can warn when a run looks stuck.
@@ -34,13 +33,11 @@ export type ResearchCallbacks = {
 export type ResearchOutcome = {
   result: Result;
   outcome: Outcome;
-  title?: string; // the supervisor-given report title
+  title?: string;
   error?: string;
-  // Set when the supervisor answered from context instead of researching.
+  // What the turn produced: the answer, and the follow-ups offered under it.
   reply?: string;
-  // Set when the run paused for the user to confirm the plan (human in the loop).
-  awaitingPlan?: boolean;
-  plan?: string[];
+  suggestions?: string[];
 };
 
 const EMPTY_RESULT: Result = { report: "", sources: [], consulted: [], gaps: [] };
@@ -88,6 +85,8 @@ async function runSimulated(
     cb.onEvent(e);
   }
   if (cb.isCancelled()) return null;
-  if (outcome === "empty") return { result: EMPTY_RESULT, outcome: "empty" };
-  return { result, outcome: "ok" };
+  if (outcome === "empty") return { result: EMPTY_RESULT, outcome: "empty", reply: "" };
+  // The simulated run answers in the thread like a real one: its canned report
+  // is the answer, and its sources are what the citations point at.
+  return { result, outcome: "ok", reply: result.report };
 }

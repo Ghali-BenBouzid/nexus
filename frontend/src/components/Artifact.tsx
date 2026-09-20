@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
-import type { Result, Turn } from "../types";
+import type { Result, Status } from "../types";
 import { Markdown } from "./Markdown";
 
 const stripScheme = (url: string) => url.replace(/^https?:\/\//, "").replace(/^www\./, "");
@@ -73,19 +73,31 @@ function Sources({
 }
 
 type ArtifactProps = {
-  turn: Turn;
-  onRefresh: (turn: Turn) => void;
-  onBack?: () => void; // return to the artifact list (reader view)
+  title: string;
+  status: Status;
+  error?: string | null;
+  result: Result | null;
+  onRefresh: () => void;
+  onBack?: () => void; // return to the outputs list (reader view)
   onClose?: () => void; // collapse the whole panel
   isMobile?: boolean; // mobile: one X that closes the drawn-up report back to the list
 };
 
-// The output panel: the rendered report and its sources, presented as a single
-// coherent document (the chat thread carries the live agent activity instead).
-export function Artifact({ turn, onRefresh, onBack, onClose, isMobile }: ArtifactProps) {
+// The reader: one report and its sources, presented as a single coherent
+// document. Its own chrome, because a report outlives the turn that asked for
+// it and is read on its own.
+export function Artifact({
+  title,
+  status,
+  error,
+  result,
+  onRefresh,
+  onBack,
+  onClose,
+  isMobile,
+}: ArtifactProps) {
   const [activeCite, setActiveCite] = useState<number | null>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  const result = turn.result;
 
   const onCite = (n: number) => {
     setActiveCite(n);
@@ -96,11 +108,12 @@ export function Artifact({ turn, onRefresh, onBack, onClose, isMobile }: Artifac
   };
 
   if (!result || (!result.report.trim() && result.sources.length === 0)) {
-    const msg = turn.status === "failed"
-      ? t.artifact.emptyFailed
-      : turn.status === "complete"
-        ? t.artifact.emptyNoCite
-        : t.artifact.emptyPending;
+    const msg =
+      status === "failed"
+        ? error || t.artifact.emptyFailed
+        : status === "complete"
+          ? t.artifact.emptyNoCite
+          : t.artifact.emptyPending;
     if (!onBack && !onClose) return <div className="art-empty">{msg}</div>;
     return (
       <div className="artifact">
@@ -132,13 +145,13 @@ export function Artifact({ turn, onRefresh, onBack, onClose, isMobile }: Artifac
           {onBack && !isMobile && (
             <button className="icon-btn" title={t.artifact.back} onClick={onBack}>{I.arrowLeft}</button>
           )}
-          {I.doc}<span>{turn.title ?? t.artifact.report}</span>
+          {I.doc}<span>{title}</span>
         </div>
         <div className="art-head-actions">
           <button className="icon-btn" title={t.artifact.copy} onClick={() => navigator.clipboard?.writeText(result.report)}>
             {I.copy}
           </button>
-          <button className="icon-btn" title={t.artifact.refresh} onClick={() => onRefresh(turn)}>
+          <button className="icon-btn" title={t.artifact.refresh} onClick={onRefresh}>
             {I.refresh}
           </button>
           {!isMobile && onClose && (

@@ -1,7 +1,7 @@
 import { useState, type RefObject } from "react";
 
 import { I } from "../icons";
-import type { Result } from "../types";
+import type { Result, Source } from "../types";
 
 type SourcesPanelProps = {
   result: Result;
@@ -11,6 +11,45 @@ type SourcesPanelProps = {
 };
 
 const stripScheme = (url: string) => url.replace(/^https?:\/\//, "");
+
+// The numbered sources behind a piece of text, shared by the chat answer and the
+// report reader: one look for a citation wherever it appears.
+export function SourceList({
+  sources,
+  activeCite,
+  onPick,
+  listRef,
+}: {
+  sources: Source[];
+  activeCite: number | null;
+  onPick: (n: number) => void;
+  listRef?: RefObject<HTMLDivElement>;
+}) {
+  return (
+    <div className="src-list" ref={listRef}>
+      {sources.map((s, i) => {
+        const n = i + 1;
+        return (
+          <a
+            key={n}
+            className={"src-item" + (activeCite === n ? " active" : "")}
+            data-n={n}
+            href={s.url}
+            target="_blank"
+            rel="noreferrer"
+            onClick={() => onPick(n)}
+          >
+            <span className="sn">{n}</span>
+            <div>
+              <div className="st">{s.title}</div>
+              <div className="su">{stripScheme(s.url)}</div>
+            </div>
+          </a>
+        );
+      })}
+    </div>
+  );
+}
 
 export function SourcesPanel({ result, activeCite, onPick, listRef }: SourcesPanelProps) {
   const [prov, setProv] = useState(false);

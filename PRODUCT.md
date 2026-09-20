@@ -7,13 +7,14 @@ sections are brand (design is part of the showcase). When the two conflict, the
 app surface follows the product register and the hero follows brand.
 
 ## What it is
-An API-first agentic research platform. The UI is a chat workspace where a
-supervisor routes each message: answer directly from the conversation and prior
-reports, compose (merge and expand existing reports), or launch a fresh research
-run. A run is a team of agents (planner → parallel researchers with web-search/fetch
-tools → consolidator → writer) that produces one cited report. Live agent activity
-streams as the assistant's reply, and each finished report opens as an artifact in a
-side panel with numbered, clickable sources.
+An API-first agentic research platform. The UI is a chat workspace where you talk
+to one agent that decides how much work your message deserves: answer now, run a
+search, send a team of researchers after it in parallel, read a file you attached,
+or start a run that takes minutes. Answers land in the conversation with every
+claim cited to a page that was actually read; live agent activity streams above
+the answer as it happens. Two kinds of work produce a document rather than a reply,
+and both run in the background: deep research, and fact-checking an uploaded file.
+Those appear in an Outputs panel, with a notification when one is ready.
 
 Live research is invite-only. Each demo account comes from an invite link, has its
 own dollar budget (shown under the composer), and is billed from what each model
@@ -46,22 +47,21 @@ Mono (JetBrains Mono) for system/agent voice, Hanken Grotesk for headings and bo
 - Clinical enterprise dashboard with no point of view.
 
 ## Strategic design principles
-1. **The agent's work is the product.** Show real progress (planner, researcher k/N,
-   tool calls, writer), never a fake spinner standing in for the truth.
+1. **The agent's work is the product.** Show real progress (which tool, researcher
+   k/N, what it searched), never a fake spinner standing in for the truth.
 2. **Citations are first-class.** Every report claim maps to a numbered source the
    user can click; sources read as part of the document, not a dumped list.
-3. **One run, no dead ends.** Stop, retry, history, honest empty/failed states.
-   The user is never trapped or guessing.
+3. **One run, no dead ends.** Stop, retry, history, honest empty/failed states,
+   and follow-up suggestions under every answer. The user is never trapped or guessing.
 4. **Honest constraints.** Latency is real and the demo budget is finite; the UI
    shows both (the wait, the budget left) rather than hiding them.
 5. **Earned familiarity in the app, point-of-view in the hero.** The chat behaves
    like tools people trust; the landing shows craft.
 
 ## Near-term direction (not yet shipped)
-- **Identity-aware answers.** The supervisor knows what Nexus is and who built it
-  (Ghali Ben Bouzid), and handles identity questions directly or via targeted search.
-- **Robust multi-user runs.** API and worker processes behind a Redis queue, so runs
-  survive deploys, stream live, and scale separately; per-agent model routing
-  chosen from eval results.
+- **Per-agent model routing** chosen from eval results: a cheap model for the
+  supervisor's own turns, a stronger one for a deep run's report.
 - **Language robustness.** Reliably match the user's language on short or ambiguous
   queries (confidence-gated detection with a soft fallback).
+- **A free search backend**, so breadth and prompt-injection resistance can be
+  measured at the scale the eval set deserves without a per-search bill.

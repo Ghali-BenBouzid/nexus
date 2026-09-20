@@ -8,7 +8,7 @@ export type View = "home" | "chat";
 // split workspace (conversation on the left, the focused run's activity on the
 // right, the slot the future parallel-agent graph will live in).
 export type LayoutMode = "thread" | "split";
-export type Status = "pending" | "awaiting_plan" | "running" | "complete" | "failed";
+export type Status = "pending" | "running" | "complete" | "failed";
 export type Outcome = "ok" | "empty" | "failed";
 
 export type Source = { title: string; url: string };
@@ -26,7 +26,11 @@ export type AgentEvent =
   | { kind: "planner"; state: "start" }
   | { kind: "plan"; items: string[] }
   // An agent is waiting on the model (a reasoning model may think for a minute).
-  | { kind: "thinking"; agent: "supervisor" | "planner" | "researcher" | "writer"; index?: number }
+  | {
+      kind: "thinking";
+      agent: "supervisor" | "planner" | "researcher" | "writer" | "fact_checker";
+      index?: number;
+    }
   | { kind: "researcher"; state: "start"; index: number; total: number; question: string }
   | {
       kind: "researcher";
@@ -38,6 +42,10 @@ export type AgentEvent =
   | { kind: "tool"; action: "search"; text: string; index?: number }
   | { kind: "tool"; action: "read"; domain: string; index?: number }
   | { kind: "tool"; action: "error"; text: string; index?: number }
+  // The supervisor read a file attached to the conversation.
+  | { kind: "tool"; action: "document"; text: string }
+  // A run the supervisor started in the background, which finishes on its own.
+  | { kind: "started"; run: "deep_research" | "fact_check"; text: string }
   | { kind: "writer"; state: "start" | "done" };
 
 // An event on a turn's timeline: the event plus an id, the delay (ms) the
@@ -54,11 +62,12 @@ export type Turn = {
   title?: string; // the supervisor-given report/artifact title
   status: Status;
   events: TimelineEvent[];
-  // The supervisor answered from existing reports instead of researching: this is
-  // the chat reply, rendered in place of a report.
+  // The assistant's answer, rendered in the thread. Every turn has one now: a
+  // report is a separate output, not what a turn produces.
   reply?: string;
-  // The proposed sub-questions, shown for confirmation while status=awaiting_plan.
-  plan?: string[];
+  // Follow-up questions offered under the answer, as chips.
+  suggestions?: string[];
+  // The sources the answer cites, and nothing else: a turn produces no report.
   result: Result | null;
   outcome: Outcome;
   error: string | null;
@@ -69,4 +78,34 @@ export type Turn = {
   // last poll (heartbeatSeenAt, performance.now()), so the bar can flag a stuck run.
   heartbeatAge?: number | null;
   heartbeatSeenAt?: number;
+};
+
+// A report the account keeps: a deep research run or a fact check. It is started
+// from a conversation but outlives it, so it is loaded and listed on its own.
+export type OutputKind = "deep_research" | "fact_check";
+
+export type Output = {
+  id: number; // the backend query id
+  kind: OutputKind;
+  title: string;
+  prompt: string;
+  status: Status;
+  conversationId: number | null;
+  error: string | null;
+  createdAt: string;
+  completedAt: string | null;
+  // Filled when the output is opened; null until then.
+  result?: Result | null;
+};
+
+// A file the user attached to the conversation.
+export type Doc = {
+  id: number;
+  filename: string;
+  mediaType: string;
+  sizeBytes: number;
+  pages: number | null;
+  chars: number;
+  truncated: boolean;
+  ocr: boolean;
 };

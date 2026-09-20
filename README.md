@@ -18,38 +18,37 @@ It's also my portfolio project: I use it to show how I build an agent system, in
 
 ## What goes in, what comes out
 
-You type a message in a chat.
-Nexus reads the conversation and does one of three things:
+You type a message in a chat, and Nexus answers it.
 
-- **Answers directly**, when the conversation and the reports already in it cover the question.
-- **Merges earlier reports** into one longer report, with no new searching, when you ask it to combine them.
-- **Researches**: it proposes a plan, waits for you to approve or revise it, then writes a cited report.
+How much work that takes is its own judgement, not a mode you pick.
+A follow-up it can already answer comes back immediately.
+A question that needs one fact gets one search.
+A real question gets a team of researchers working in parallel, and the answer comes back in the conversation with every claim cited to a page that was actually read.
 
-A real example from the local setup:
+Two things it does not answer inline, because they are documents rather than replies:
 
-> **You:** How do heat pumps work in very cold climates?
->
-> **Plan proposed, waiting for approval:**
-> 1. What is the fundamental operating principle of heat pumps and how does it function when extracting heat from cold outdoor air?
-> 2. What technological advancements allow modern heat pumps (such as cold-climate air-source heat pumps) to maintain efficiency and heating capacity in sub-zero temperatures?
-> 3. What are the limitations and performance trade-offs of using heat pumps as the primary heating source in extremely cold climates?
->
-> **After approval:** three researchers searched in parallel and the report came back with 11 cited sources, about 8 seconds later.
+- **Deep research**, when you want a question properly covered. It runs much wider, takes minutes, and writes its own report. It runs in the background and survives a redeploy, so you can close the chat and come back to it.
+- **A fact check** of a file you upload: it pulls out the claims the document rests on, tests each against the web, and writes a report saying which held up.
 
-![The plan waiting for approval](docs/images/plan.png)
+Both land in **Outputs**, and you are told when one is ready wherever you happen to be.
 
 ## How it works
 
 ```mermaid
 flowchart LR
-    M[Message] --> S{Supervisor}
-    S -->|answer| A[Reply]
-    S -->|compose| C[Merge reports] --> W[Write]
-    S -->|research| P[Plan] --> R{You approve?}
-    R -->|revise| P
-    R -->|confirm| X[Researchers, in parallel] --> K[Consolidate] --> W
-    W --> Out[Cited report]
+    M[Message] --> S[Supervisor]
+    S --> A[Cited answer]
+    S -.-> T1[web_search / fetch_page]
+    S -.-> T2[read_document]
+    S -.-> T3[research]
+    T3 --> P[Plan] --> X[Researchers, in parallel] --> S
+    S -.-> T4[deep_research] --> D[Wide run, checkpointed] --> Out[Report in Outputs]
+    S -.-> T5[fact_check] --> F[Claims checked] --> Out
 ```
+
+The dotted arrows are tools.
+The supervisor decides which to use and how many times, and then writes the answer itself.
+Nothing is a route: "does this need research?" is judgement, which a model does well and a classifier does badly.
 
 The browser never waits on the models.
 The API saves your message and puts a job on a queue, a separate worker runs the agents, and the frontend polls for progress and shows each step as it happens.
@@ -60,9 +59,9 @@ What each piece is used for:
 | --- | --- |
 | FastAPI | The API: accounts, conversations, starting and stopping runs, the progress feed |
 | Redis + arq | The job queue between the API and the worker |
-| LangGraph | The agent pipeline as a graph, including the pause for plan approval |
+| LangGraph | The deep research run as a checkpointed graph, so a deploy mid-run costs one step |
 | LangChain | The agents themselves, their tools and their prompts |
-| Postgres (SQLAlchemy, Alembic) | Conversations, runs, progress events, the usage ledger, and paused runs |
+| Postgres (SQLAlchemy, Alembic) | Conversations, runs, progress events, the usage ledger, and deep-run checkpoints |
 | OpenRouter | The language models, through one OpenAI-compatible endpoint |
 | Tavily | Web search and reading pages |
 | DeepEval | Scoring the evaluation runs |
@@ -72,18 +71,19 @@ What each piece is used for:
 
 Each agent is a LangChain agent: a prompt, a set of tools and the loop that runs them.
 
-- The **supervisor** reads the conversation and picks the route.
-- The **planner** splits the question into self-contained sub-questions, as many as the question needs and at most six: a plain fact gets one or two, a three-way comparison gets six.
+- The **supervisor** is the one you talk to. It answers, and when answering well needs work it has not done yet, it does that work first.
+- The **planner** splits a research question into self-contained sub-questions, as many as it genuinely needs: a plain fact gets one or two, a three-way comparison gets six. A deep run has its own planner prompt and goes up to twelve.
 - Each **researcher** searches the web and reads pages in a loop, then submits claims with the sources behind them.
-- The **consolidator** is plain code, not a model: it removes duplicate sources and numbers them.
-- The **writer** turns the claims into a report, and a final check removes any citation number that doesn't match a real source.
+- The **fact checker** reads a document, picks the claims it rests on, and tests them against independent sources.
+- Writing a report is not an agent: by then there is nothing to decide, so it is one model call in the same house style the chat answers in.
 
 ## Decisions and trade-offs
 
 **Citations are assigned by code, not by the model.**
 Left to cite on their own, models sometimes cite a page they never read.
-So the consolidator numbers the sources and the writer can only keep the numbers it was given.
-In exchange, the writer can't add anything the researchers didn't find.
+So a registry numbers each source as a tool returns it, and an agent can only cite a number it was handed; anything else is stripped before you see it.
+One registry per turn means the supervisor's own searches and its researchers' findings share one numbering, so merging findings is a remap rather than a renumber.
+In exchange, nothing in an answer can go beyond what was actually retrieved.
 
 **The agents run on LangChain's loop, with our own concerns as middleware.**
 Writing the tool loop by hand is a day's work; keeping it correct is not, and the framework's loop comes with structured output, tool errors and retries already thought through.
@@ -105,10 +105,24 @@ A research run takes from a few seconds to a few minutes, and it used to run ins
 Now the worker runs it and writes a heartbeat every few seconds, and a scheduled check fails any run whose heartbeat stops.
 It does mean one more service to deploy (Redis) and a second process to keep alive.
 
-**LangGraph with a Postgres checkpointer for the plan approval.**
-Before, approving a plan meant ending one job and starting another one from values saved on the database row.
-Now the graph pauses on the plan, saves its state, and the same run resumes when you answer, even on a different worker.
-Two downsides: the checkpointer keeps its own tables outside my migrations, and it only saves when a run pauses or ends, so if a worker crashes mid-run, that run fails instead of picking back up.
+**No plan approval.**
+Nexus used to propose a plan and wait for you to confirm it.
+It was a form in front of the user before a single search had been made, and it made a simple follow-up as heavy as a full run.
+The supervisor decides what work a message needs and does it; if a question deserves minutes, it says so and starts a deep run in the background instead of asking permission.
+
+**LangGraph only where a run is long enough to be interrupted.**
+A normal research run is one fan-out, which `asyncio` already expresses, so it is plain code.
+Deep research takes minutes, which is long enough that a deploy will land in the middle of one, so it is a graph over a Postgres checkpointer: every node lands in a checkpoint, and a worker that picks the run back up starts from the last step that finished rather than re-planning and re-paying for researchers that already came back.
+The reaper hands a stalled deep run back to a worker; everything else it fails, because restarting those would only re-bill work already paid for.
+The downside is that the checkpointer keeps its own tables outside my migrations.
+
+**One house style, two modes.**
+The chat and every report share one prompt for voice and structure, with a chat mode and a report mode.
+A report and a reply read as the same product rather than as two, and changing how Nexus sounds is one edit.
+
+**A run is a row with a kind.**
+A chat turn, a deep research run and a fact check all need an owner, a status, a heartbeat, a live event feed, a stop button and a bill.
+So they are one table with a `kind` rather than three, and everything built around a run works for all three without being written three times.
 
 **Invite-only accounts with a dollar budget.**
 The demo runs on paid models, so there's no public signup.
@@ -156,11 +170,12 @@ The worker now cancels whatever is running, a model call included, within one he
 They cover questions about the app and about me, current events, facts, comparisons, how-to questions, false premises, unanswerable and multilingual questions, and a stress set with typos, prompt injections and malformed input.
 Each one says what a good response should do.
 
-The harness runs them through the real pipeline and records every stage: the routing decision, the plan, each researcher's searches and claims, the report, the cost and the time.
+The harness runs them through the real turn and records everything it did: which tools the supervisor reached for, the plan, each researcher's searches and claims, the answer, the cost and the time.
+Two seams make the inside of a tool visible without changing what a turn does: a context variable that tags each search with the researcher that made it, and a hook that hands over each research run's result.
 It scores each stage two ways.
 
 **Scoring a run on its own.**
-Deterministic checks (did the run finish, does every citation resolve, did the route match) plus DeepEval metrics judged by a separate model (is the plan relevant, is the report faithful to the findings, does the response do what the question needed).
+Deterministic checks (did the run finish, does every citation resolve, did it research when the question needed research) plus DeepEval metrics judged by a separate model (is the plan relevant, is the report faithful to the findings, does the response do what the question needed).
 This is what the first two runs used, on `google/gemini-3.1-flash-lite` with `openai/gpt-5-mini` as the judge:
 
 | Metric | First baseline (60 questions) | After the schema fix (6 questions) |
@@ -180,7 +195,7 @@ It also showed two problems those averages hide: a current-events report present
 **Comparing two versions head to head.**
 Averages move less than the judge's own noise when a prompt changes by a sentence, so `python -m app.evals compare <run A> <run B>` judges the two answers to the same question against each other with DeepEval's ArenaGEval, which hides which version wrote which.
 Each pair is judged twice and a split counts as a tie, and the report says how often the two judgments agreed, which is the signal for whether the judge is guessing.
-Runs can stop after planning (`collect --until plan`), so a change to routing or planning is measured without paying for researchers or searches.
+Runs can stop the moment a plan exists (`collect --until plan`), so a change to the supervisor's judgement or to planning is measured for the price of two calls, before anything has searched.
 
 That loop is how the prompts got fixed, each change measured against the version before it, on `z-ai/glm-5.3-flash` with `openai/gpt-oss-120b` as the judge:
 
@@ -200,7 +215,7 @@ Scoring the full 150-question set is still the next step.
 ## Tests
 
 - The backend has over 220 tests with pytest, and they run offline: a fake model and a fake search backend script the agents, so the suite is fast and deterministic.
-- They cover the graph (routing, the plan pause, revise and confirm), stopping a run, the job queue, budgets and billing, and the API.
+- They cover the supervisor and its tools, the research fan-out, the deep run resuming from its checkpoint after a worker dies, fact-checking a document, stopping a run, the job queue, budgets and billing, and the API.
 - The frontend has a few Vitest tests for the logic behind the progress bar, credits and turn outcomes.
 - Ruff for linting, and the TypeScript compiler for type checking.
 
@@ -279,10 +294,10 @@ Nexus is set up to run on Railway (API, worker and Redis), Neon (Postgres) and C
 
 ## Where things are
 
-- [`app/agents/orchestrator.py`](app/agents/orchestrator.py): the LangGraph graph
-- [`app/agents/`](app/agents/): the supervisor, planner, researcher, consolidator and writer
+- [`app/agents/supervisor.py`](app/agents/supervisor.py): the agent you talk to, and the tools it reaches for
+- [`app/agents/`](app/agents/): the planner, the researcher, the fact checker, the report writer, and the deep run's graph
 - [`app/prompts/`](app/prompts/): the agents' prompts, as versioned LangChain prompt templates
-- [`app/research/service.py`](app/research/service.py): the jobs that run the graph and save its progress
+- [`app/research/service.py`](app/research/service.py): what every run shares before it does its own work
 - [`app/jobs.py`](app/jobs.py) and [`app/worker.py`](app/worker.py): the queue and the worker
 - [`app/billing/`](app/billing/): budgets and the usage ledger
 - [`app/evals/`](app/evals/): the evaluation harness and the 150 questions
