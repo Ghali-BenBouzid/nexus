@@ -80,4 +80,32 @@ describe("steps", () => {
       ["researcher", "warn", false],
     ]);
   });
+
+  it("keeps a background run as a step of its own, never as work still running", () => {
+    // The turn is over long before the run it started; its progress lives in the
+    // Outputs panel, so the step here only records that it began.
+    const started = [
+      at({ kind: "thinking", agent: "supervisor" }, 1),
+      at({ kind: "started", run: "deep_research", text: "All of X" }, 2),
+    ];
+
+    const list = steps(summarize(started), null);
+
+    expect(list.at(-1)).toEqual({
+      kind: "started",
+      run: { run: "deep_research", text: "All of X" },
+      mark: "ok",
+      cut: false,
+    });
+  });
+
+  it("reads a document as activity, not as a search", () => {
+    const reading = [at({ kind: "tool", action: "document", text: "claims.pdf" }, 1)];
+
+    expect(summarize(reading).latest).toEqual({
+      kind: "document",
+      text: "claims.pdf",
+      at: 1,
+    });
+  });
 });

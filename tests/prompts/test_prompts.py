@@ -75,18 +75,15 @@ def test_the_language_directive_appears_only_when_detected(name: str) -> None:
 
 
 def test_optional_sections_render_only_when_given() -> None:
-    planner = PROMPTS["planner"]
-    first = render(planner, query="Q", cap=3, feedback="", language="", today="T")[
-        1
-    ].content
-    revised = render(
-        planner, query="Q", cap=3, feedback="shorter", language="", today="T"
+    report = PROMPTS["report"]
+    plain = render(report, findings="F", guidance="", today="T", language="")
+    shaped = render(
+        report, findings="F", guidance="make it short", today="T", language=""
     )
-    assert first == "Q"
-    assert revised[1].content == (
-        "Q\n\nYour previous plan was rejected. Revise it based on this feedback "
-        "from the user: shorter"
-    )
+
+    assert plain[1].content == "F"
+    assert "How to shape this report" in (shaped[1].content or "")
+    assert "make it short" in (shaped[1].content or "")
 
 
 def test_the_conversation_arrives_as_real_messages() -> None:

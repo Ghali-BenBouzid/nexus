@@ -3,6 +3,7 @@ from httpx import AsyncClient
 
 from app.core.config import settings
 from app.documents import storage
+from tests.accounts import login_as
 from tests.documents.test_parser import _docx, _pdf
 from tests.research.test_research import _use_fake_pipeline
 
@@ -239,3 +240,73 @@ async def test_uploads_are_refused_when_no_bucket_is_configured(
 
     assert response.status_code == 400
     assert "not configured" in response.json()["detail"]
+
+
+async def test_a_file_can_be_the_first_thing_in_a_chat(
+    client: AsyncClient, auth_headers: dict[str, str], bucket: dict[str, bytes]
+) -> None:
+    # A file belongs to a conversation, so one is created for it; what the user
+    # does is pick the file and then send the message it came with.
+    _use_fake_pipeline(sub_questions=["q1"])
+    created = await client.post(
+        "/conversations", json={"prompt": ""}, headers=auth_headers
+    )
+    assert created.status_code == 201
+    conversation_id = created.json()["id"]
+    assert created.json()["messages"] == []
+
+    uploaded = await client.post(
+        f"/conversations/{conversation_id}/documents",
+        files=_upload("claims.pdf", _pdf(pages=1), "application/pdf"),
+        headers=auth_headers,
+    )
+    document_id = uploaded.json()["id"]
+
+    sent = await client.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"content": "what does this say?", "document_ids": [document_id]},
+        headers=auth_headers,
+    )
+
+    assert sent.status_code == 200
+    user_message = sent.json()["messages"][0]
+    assert user_message["role"] == "user"
+    # The thread shows the file on the message it was sent with.
+    assert [d["filename"] for d in user_message["documents"]] == ["claims.pdf"]
+    assert user_message["documents"][0]["message_id"] == user_message["id"]
+
+
+async def test_a_conversation_with_nothing_in_it_stays_out_of_the_sidebar(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    # Attaching a file creates a conversation before the message that carries it.
+    # If the user never sends, that empty chat is not something to list.
+    await client.post("/conversations", json={"prompt": ""}, headers=auth_headers)
+
+    listed = await client.get("/conversations", headers=auth_headers)
+
+    assert listed.json() == []
+
+
+async def test_a_file_that_is_not_yours_is_not_attached_to_your_message(
+    client: AsyncClient, bucket: dict[str, bytes]
+) -> None:
+    owner = await login_as(client, "doc-owner@test.com")
+    other = await login_as(client, "doc-other@test.com")
+    theirs = await _conversation(client, owner)
+    uploaded = await client.post(
+        f"/conversations/{theirs}/documents",
+        files=_upload("secret.pdf", _pdf(pages=1), "application/pdf"),
+        headers=owner,
+    )
+
+    mine = await _conversation(client, other)
+    sent = await client.post(
+        f"/conversations/{mine}/messages",
+        json={"content": "read it", "document_ids": [uploaded.json()["id"]]},
+        headers=other,
+    )
+
+    assert sent.json()["messages"][0]["documents"] == []
+    still_theirs = await client.get(f"/conversations/{theirs}/documents", headers=owner)
+    assert [d["message_id"] for d in still_theirs.json()] == [None]

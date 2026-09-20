@@ -17,6 +17,7 @@ class SearchHitRecord(BaseModel):
 
 class SearchCall(BaseModel):
     query: str
+    stage: str = ""  # who made it: "supervisor", "research-2", ...
     hits: list[SearchHitRecord] = Field(default_factory=list)
     error: str | None = None
     seconds: float = 0.0
@@ -24,6 +25,7 @@ class SearchCall(BaseModel):
 
 class FetchCall(BaseModel):
     url: str
+    stage: str = ""
     text: str = ""
     error: str | None = None
     seconds: float = 0.0
@@ -90,9 +92,11 @@ class RunTrace(BaseModel):
     # "plan": the run stopped after planning (no research, no report), to test the
     # routing and planning stages without paying for searches.
     until: str | None = None
-    route: str | None = None  # answer | research | compose
-    reply: str | None = None  # the direct answer, on the answer route
-    research_query: str | None = None  # the supervisor's self-contained rewrite
+    # The tools the supervisor called, in order. What used to be "the route": it
+    # no longer picks one of three moves, it uses what the answer needs.
+    tools: list[str] = Field(default_factory=list)
+    reply: str | None = None  # the answer the user reads
+    research_query: str | None = None  # what it asked the researchers, if it did
     supervisor_searches: list[SearchCall] = Field(default_factory=list)
     plan: list[str] = Field(default_factory=list)
     researchers: list[ResearcherTrace] = Field(default_factory=list)
@@ -104,11 +108,18 @@ class RunTrace(BaseModel):
     error: str | None = None
     seconds: float = 0.0
     usage: dict[str, StageUsage] = Field(default_factory=dict)
+    # Researcher lifecycle and failure events, kept verbatim for a post-mortem.
+    lifecycle: list[str] = Field(default_factory=list)
 
     @property
     def response(self) -> str:
-        """What the user finally sees: the report, or the direct answer."""
-        return self.report or self.reply or ""
+        """What the user finally sees: the answer in the conversation, or the
+        report when the run was a deep one."""
+        return self.reply or self.report or ""
+
+    @property
+    def researched(self) -> bool:
+        return "research" in self.tools or "deep_research" in self.tools
 
     @property
     def cost_usd(self) -> float:

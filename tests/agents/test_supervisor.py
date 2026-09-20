@@ -1,155 +1,222 @@
-from app.agents.provider import LLMResponse, ToolCall
+"""The supervisor, with a scripted model: what it reaches for, what it writes,
+and what code refuses to let through.
+
+The supervisor has no route to assert any more, so what these pin is the part
+that is not the model's judgement: a citation it invented never reaches the
+user, the sources it kept are the ones it cited, its follow-up line becomes
+chips rather than text, and a tool it has no business having is not offered.
+"""
+
+import pytest
+
 from app.agents.schemas import Turn
-from app.agents.supervisor import decide
+from app.agents.sources import Sources
+from app.agents.supervisor import Document, Output, respond
 from app.agents.tools import SearchHit
+from tests.agents.fakes import ScriptedModel, call, says
 
 
-class _ScriptedProvider:
-    """Returns scripted responses in order, recording the tool specs it was given
-    so a test can assert which tools the supervisor exposed."""
+class FakeBackend:
+    def __init__(self) -> None:
+        self.searches: list[str] = []
+        self.fetched: list[str] = []
 
-    def __init__(self, responses: list[LLMResponse]) -> None:
-        self.responses = responses
-        self.tool_names: list[list[str]] = []
-
-    async def __aenter__(self) -> "_ScriptedProvider":
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        return None
-
-    async def generate(self, messages, tools=None, tool_choice="auto") -> LLMResponse:
-        self.tool_names.append([t.name for t in (tools or [])])
-        self.seen = [(m.role, m.content) for m in messages]
-        return self.responses.pop(0)
-
-
-class _FakeBackend:
-    async def __aenter__(self) -> "_FakeBackend":
+    async def __aenter__(self) -> "FakeBackend":
         return self
 
     async def __aexit__(self, *exc: object) -> None:
         return None
 
     async def search(self, query: str, max_results: int) -> list[SearchHit]:
-        return [SearchHit(title="A page", url="http://a", content="snippet")]
+        self.searches.append(query)
+        return [SearchHit(title="A", url="http://a", content="alpha")]
 
     async def extract(self, url: str) -> str:
-        return "full page text"
+        self.fetched.append(url)
+        return "page text"
 
 
-def _call(name: str, args: dict) -> LLMResponse:
-    return LLMResponse(tool_calls=[ToolCall(id=name, name=name, args=args)])
-
-
-async def _decide(
-    provider, *, reports=None, message="a message", max_iters=4, history=None
-):
-    return await decide(
+async def _respond(model, message="a message", **kwargs):
+    return await respond(
         message,
-        history or [],
-        provider=provider,
-        backend=_FakeBackend(),
-        reports=reports or [],
-        max_iters=max_iters,
+        kwargs.pop("history", []),
+        model=model,
+        backend=kwargs.pop("backend", FakeBackend()),
+        sources=kwargs.pop("sources", Sources()),
+        **kwargs,
     )
 
 
-async def test_decide_routes_to_research() -> None:
-    provider = _ScriptedProvider(
-        [_call("research", {"query": "what is X", "title": "About X"})]
+def _search(query: str = "q"):
+    return call("web_search", query=query, max_results=5)
+
+
+async def test_it_answers_without_reaching_for_anything() -> None:
+    model = ScriptedModel([says("It is blue.")])
+
+    answer = await _respond(model)
+
+    assert answer.text == "It is blue."
+    assert answer.sources == []
+
+
+async def test_it_searches_first_and_keeps_what_it_cited() -> None:
+    model = ScriptedModel([_search("x"), says("Alpha is a thing.[1]")])
+    backend = FakeBackend()
+
+    answer = await _respond(model, backend=backend)
+
+    assert backend.searches == ["x"]
+    assert answer.text == "Alpha is a thing.[1]"
+    assert [s.url for s in answer.sources] == ["http://a"]
+
+
+async def test_a_citation_it_invented_never_reaches_the_user() -> None:
+    # Nothing was retrieved, so no number can be real.
+    model = ScriptedModel([says("Confidently wrong.[3]")])
+
+    answer = await _respond(model)
+
+    assert answer.text == "Confidently wrong."
+    assert answer.sources == []
+
+
+async def test_an_answer_that_cites_nothing_carries_no_source_list() -> None:
+    # Unlike a report, where the sources are half the point, a chat answer that
+    # cites nothing should not drag a list of pages behind it.
+    model = ScriptedModel([_search(), says("I could not establish that.")])
+
+    answer = await _respond(model)
+
+    assert answer.sources == []
+
+
+async def test_the_follow_up_line_becomes_chips_not_text() -> None:
+    model = ScriptedModel(
+        [says("The answer.\n<suggest>Why? | How many? | Since when?</suggest>")]
     )
-    decision = await _decide(provider, message="tell me about X")
-    assert decision.action == "research"
-    assert decision.query == "what is X"
-    assert decision.title == "About X"  # the supervisor names the report
+
+    answer = await _respond(model)
+
+    assert answer.text == "The answer."
+    assert answer.suggestions == ["Why?", "How many?", "Since when?"]
 
 
-async def test_decide_routes_to_answer() -> None:
-    provider = _ScriptedProvider([_call("answer", {"reply": "It is blue."})])
-    decision = await _decide(provider)
-    assert decision.action == "answer"
-    assert decision.reply == "It is blue."
+async def test_no_follow_up_line_is_fine() -> None:
+    model = ScriptedModel([says("Just the answer.")])
+
+    answer = await _respond(model)
+
+    assert answer.suggestions == []
 
 
-async def test_decide_routes_to_compose() -> None:
-    provider = _ScriptedProvider(
-        [_call("compose_report", {"instructions": "merge", "title": "Combined"})]
+async def test_it_reads_a_document_by_id() -> None:
+    documents = [Document(id=7, filename="paper.pdf", text="the paper says X")]
+    model = ScriptedModel(
+        [call("read_document", document_id=7), says("The paper says X.")]
     )
-    decision = await _decide(
-        provider, reports=[("q1", "report one"), ("q2", "report two")]
+
+    answer = await _respond(model, documents=documents)
+
+    assert answer.text == "The paper says X."
+    # The file's text reached the model as tagged material, not as instructions.
+    assert "<document" in str(model.seen[-1])
+
+
+async def test_a_document_that_is_not_attached_is_refused_not_guessed() -> None:
+    documents = [Document(id=7, filename="paper.pdf", text="x")]
+    model = ScriptedModel(
+        [call("read_document", document_id=99), says("That file is not here.")]
     )
-    assert decision.action == "compose"
-    assert decision.instructions == "merge"
-    assert decision.title == "Combined"
+
+    await _respond(model, documents=documents)
+
+    assert "No document with id 99" in str(model.seen[-1])
 
 
-async def test_decide_reads_reports_then_composes() -> None:
-    # A genuine tool loop: it reads the full reports first, then composes.
-    provider = _ScriptedProvider(
+async def test_tools_it_has_no_use_for_are_not_offered() -> None:
+    # No documents means no read_document and no fact_check; nothing to point at.
+    model = ScriptedModel([says("hi")])
+
+    await _respond(model, start_fact_check=_never)
+
+    offered = set(model.bound_tools[0])
+    assert "read_document" not in offered
+    assert "fact_check" not in offered
+    assert {"web_search", "fetch_page", "research"} <= offered
+
+
+async def test_a_document_brings_its_tools_with_it() -> None:
+    model = ScriptedModel([says("hi")])
+
+    await _respond(
+        model,
+        documents=[Document(id=1, filename="a.pdf", text="x")],
+        outputs=[Output(id=2, title="A report", content="body")],
+        start_fact_check=_never,
+        start_deep_research=_never_deep,
+    )
+
+    offered = set(model.bound_tools[0])
+    assert {"read_document", "fact_check", "read_report", "deep_research"} <= offered
+
+
+async def test_a_background_run_is_started_once_and_not_waited_for() -> None:
+    started: list[tuple[str, str]] = []
+
+    async def start(question: str, title: str) -> str:
+        started.append((question, title))
+        return "Deep research has started."
+
+    model = ScriptedModel(
         [
-            _call("read_reports", {}),
-            _call("compose_report", {"instructions": "combine them"}),
+            call("deep_research", question="all about X", title="About X"),
+            says("I have started a deep run on that."),
         ]
     )
-    decision = await _decide(provider, reports=[("q1", "the full report text")])
-    assert decision.action == "compose"
-    assert decision.instructions == "combine them"
-    # read_reports was offered as a tool on the first call
-    assert "read_reports" in provider.tool_names[0]
+
+    answer = await _respond(model, start_deep_research=start)
+
+    assert started == [("all about X", "About X")]
+    assert answer.text == "I have started a deep run on that."
 
 
-async def test_decide_can_web_search_before_answering() -> None:
-    provider = _ScriptedProvider(
-        [
-            _call("web_search", {"query": "today", "max_results": 3}),
-            _call("answer", {"reply": "Found it."}),
-        ]
-    )
-    decision = await _decide(provider)
-    assert decision.action == "answer"
-    assert decision.reply == "Found it."
+async def test_the_thread_reaches_the_model_as_separate_turns() -> None:
+    history = [Turn(role="user", content="first"), Turn(role="assistant", content="ok")]
+    model = ScriptedModel([says("second")])
+
+    await _respond(model, message="now this", history=history)
+
+    kinds = [m.type for m in model.seen[0]]
+    assert kinds == ["system", "human", "ai", "human"]
 
 
-async def test_decide_answer_without_reply_falls_back_to_research() -> None:
-    # An "answer" with no actual reply is useless: nudge, then exhaust to research.
-    provider = _ScriptedProvider(
-        [
-            _call("answer", {"reply": "   "}),
-            _call("answer", {"reply": ""}),
-        ]
-    )
-    decision = await _decide(provider, message="a message", max_iters=2)
-    assert decision.action == "research"
-    assert decision.query == "a message"  # the raw message is the safe fallback
+async def test_an_empty_answer_is_empty_not_invented() -> None:
+    model = ScriptedModel([says("")])
+
+    answer = await _respond(model)
+
+    assert answer.text == ""
 
 
-async def test_decide_exhausts_to_research() -> None:
-    # If it only ever calls a gather tool, the budget runs out and it researches.
-    provider = _ScriptedProvider([_call("read_reports", {}), _call("read_reports", {})])
-    decision = await _decide(provider, message="keep reading", max_iters=2)
-    assert decision.action == "research"
-    assert decision.query == "keep reading"
+async def _never(document_id: int, focus: str) -> str:
+    raise AssertionError("fact_check should not have been called")
 
 
-async def test_the_thread_reaches_the_model_as_separate_messages() -> None:
-    # It used to arrive as one user message holding the rendered thread, where the
-    # user's words and a report excerpt were indistinguishable.
-    provider = _ScriptedProvider([_call("answer", {"reply": "Blue."})])
+async def _never_deep(question: str, title: str) -> str:
+    raise AssertionError("deep_research should not have been called")
 
-    await _decide(
-        provider,
-        message="what colour?",
-        history=[
-            Turn(role="user", content="research the sky"),
-            Turn(
-                role="assistant", content='<report question="sky">it is blue</report>'
-            ),
-        ],
-    )
 
-    assert provider.seen[1:] == [
-        ("user", "research the sky"),
-        ("assistant", '<report question="sky">it is blue</report>'),
-        ("user", "what colour?"),
-    ]
+@pytest.mark.parametrize(
+    ("written", "expected"),
+    [
+        ("Answer.<suggest>a|b</suggest>", ["a", "b"]),
+        ("Answer.<suggest>a | b | c | d</suggest>", ["a", "b", "c"]),  # capped at 3
+        ("Answer.<suggest></suggest>", []),
+    ],
+)
+async def test_the_suggestion_line_is_parsed_leniently(written, expected) -> None:
+    answer = await _respond(ScriptedModel([says(written)]))
+
+    assert answer.suggestions == expected
+    assert answer.text == "Answer."

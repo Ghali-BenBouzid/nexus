@@ -82,10 +82,26 @@ class Settings(BaseSettings):
     # Whole-job backstop for bugs, above the budgets that normally bound a run
     # (research ~150 s + writer 150 s, plus planning on the one-shot path).
     global_timeout: float = 420.0  # seconds
-    # Supervisor tool-loop budget: how many gather-then-decide rounds it may take
-    # before it must commit. Kept low: nothing else happens until it decides, so a
-    # follow-up stays responsive; it usually decides in one round.
-    supervisor_max_iters: int = 4
+    # Supervisor tool-loop budget: how many rounds of "use a tool, look at what
+    # came back" it may take before it must answer with what it has. Higher than
+    # the old router's, because the supervisor now does the work itself: a
+    # search, a read, a research run and an answer is already four.
+    supervisor_max_iters: int = 8
+
+    # Deep research: the same run told to go wide, for a question the user asked
+    # to have properly covered. It takes minutes, writes its own report, and runs
+    # in the background, so its ceilings are set by what is worth paying for
+    # rather than by how long someone will sit and watch.
+    deep_cap: int = 12  # max sub-questions
+    deep_max_iters: int = 6  # max tool rounds per researcher
+    deep_concurrency: int = 6  # simultaneous researchers
+    deep_research_budget: float = 600.0  # seconds before researchers must submit
+    deep_researcher_timeout: float = 660.0  # hard stop for one researcher
+    deep_timeout: float = 1_500.0  # whole-run backstop
+    # The fact checker's own loop: read, search, read, write. Wider than a
+    # researcher's because it checks several claims inside one loop.
+    factcheck_max_iters: int = 14
+    factcheck_timeout: float = 600.0  # seconds
 
     # Where jobs run (routing a message, planning, research, composing). "redis":
     # the API only enqueues them and the worker process runs them

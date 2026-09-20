@@ -1,7 +1,8 @@
+from typing import Any
+
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.provider import LLMProvider
 from app.agents.tools import SearchBackend
 from app.auth.dependencies import get_current_user
 from app.billing.service import ensure_budget
@@ -18,9 +19,11 @@ from app.db.session import get_db
 from app.documents import repository as documents_repository
 from app.documents.router import summary as document_summary
 from app.models.conversation import Conversation, Message
+from app.models.document import Document
 from app.models.query import Query
 from app.models.user import User
-from app.research.dependencies import get_provider, get_search_backend
+from app.research import repository as research_repository
+from app.research.dependencies import get_model, get_search_backend
 from app.research.repository import stopped_by_user
 from app.research.router import _load_result
 
@@ -38,15 +41,21 @@ def _message_query(query: Query | None) -> MessageQuery | None:
         reply=query.reply,
         error=query.error,
         stopped=stopped_by_user(query),
-        plan=query.plan,
+        suggestions=query.suggestions or [],
         sources=result.sources if result else [],
         gaps=result.gaps if result else [],
     )
 
 
 def _to_responses(
-    messages: list[Message], queries: dict[int, Query]
+    messages: list[Message],
+    queries: dict[int, Query],
+    documents: list[Document],
 ) -> list[MessageResponse]:
+    by_message: dict[int, list[Document]] = {}
+    for document in documents:
+        if document.message_id is not None:
+            by_message.setdefault(document.message_id, []).append(document)
     return [
         MessageResponse(
             id=m.id,
@@ -54,6 +63,7 @@ def _to_responses(
             content=m.content,
             query_id=m.query_id,
             created_at=m.created_at,
+            documents=[document_summary(d) for d in by_message.get(m.id, [])],
             query=_message_query(queries.get(m.query_id)) if m.query_id else None,
         )
         for m in messages
@@ -65,12 +75,16 @@ async def _detail(db: AsyncSession, conversation: Conversation) -> ConversationD
     query_ids = [m.query_id for m in messages if m.query_id is not None]
     queries = await repository.queries_by_id(db, query_ids)
     documents = await documents_repository.list_for_conversation(db, conversation.id)
+    artifacts = await research_repository.list_conversation_artifacts(
+        db, conversation.id
+    )
     return ConversationDetail(
         id=conversation.id,
         title=conversation.title,
         created_at=conversation.created_at,
-        messages=_to_responses(messages, queries),
+        messages=_to_responses(messages, queries, documents),
         documents=[document_summary(d) for d in documents],
+        artifacts=artifacts,
     )
 
 
@@ -80,20 +94,27 @@ async def create(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    provider: LLMProvider = Depends(get_provider),
+    # Any, not BaseChatModel: it is a pydantic model, and FastAPI would read
+    # the annotation as a request body rather than a dependency.
+    model: Any = Depends(get_model),
     backend: SearchBackend = Depends(get_search_backend),
 ):
-    # Every message costs a routing call, so the budget is checked up front.
+    # Every message costs a call, so the budget is checked up front.
     await ensure_budget(db, current_user)
     conversation = await repository.create_conversation(db, current_user.id)
-    await service.submit_message(
-        db,
-        conversation,
-        payload.prompt,
-        provider=provider,
-        backend=backend,
-        background_tasks=background_tasks,
-    )
+    # An empty prompt creates the conversation and nothing else: what a file
+    # attached before the first message needs, since it has to be uploaded into
+    # a conversation before the message that carries it can be sent.
+    if payload.prompt.strip():
+        await service.submit_message(
+            db,
+            conversation,
+            payload.prompt,
+            model=model,
+            backend=backend,
+            background_tasks=background_tasks,
+            document_ids=payload.document_ids,
+        )
     return await _detail(db, conversation)
 
 
@@ -126,7 +147,9 @@ async def add_message(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    provider: LLMProvider = Depends(get_provider),
+    # Any, not BaseChatModel: it is a pydantic model, and FastAPI would read
+    # the annotation as a request body rather than a dependency.
+    model: Any = Depends(get_model),
     backend: SearchBackend = Depends(get_search_backend),
 ):
     conversation = await repository.get_conversation(
@@ -139,8 +162,9 @@ async def add_message(
         db,
         conversation,
         payload.content,
-        provider=provider,
+        model=model,
         backend=backend,
         background_tasks=background_tasks,
+        document_ids=payload.document_ids,
     )
     return await _detail(db, conversation)

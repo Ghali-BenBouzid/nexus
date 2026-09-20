@@ -24,11 +24,18 @@ from langchain_core.prompts import ChatPromptTemplate
 
 from app.agents.provider import Message
 from app.observability import record_metadata
-from app.prompts import planner, researcher, supervisor, writer
+from app.prompts import deep, factcheck, planner, report, researcher, supervisor
 
 PROMPTS: dict[str, ChatPromptTemplate] = {
     p.name: p
-    for p in (supervisor.PROMPT, planner.PROMPT, researcher.PROMPT, writer.PROMPT)
+    for p in (
+        supervisor.PROMPT,
+        planner.PROMPT,
+        deep.PROMPT,
+        researcher.PROMPT,
+        report.PROMPT,
+        factcheck.PROMPT,
+    )
 }
 LOCK = Path(__file__).with_name("versions.lock")
 

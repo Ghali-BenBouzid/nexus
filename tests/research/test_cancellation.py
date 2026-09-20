@@ -6,7 +6,7 @@ import app.research.service as research_service
 from app.db import session as db_session
 from app.models.query import Query, QueryStatus
 from app.research import repository as research_repository
-from tests.research.test_research import FakeBackend, RoleProvider, _use_fake_pipeline
+from tests.research.test_research import FakeBackend, RoleModel
 
 
 async def _make_pending_query(
@@ -47,38 +47,44 @@ async def _eventually(check, timeout: float = 5.0) -> bool:
     return True
 
 
-class _StopWhile(RoleProvider):
-    """Like RoleProvider, but the user stops the run while the agent whose system
+class _StopWhile(RoleModel):
+    """Like RoleModel, but the user stops the run while the agent whose system
     prompt mentions ``agent`` is calling the model."""
 
-    def __init__(self, sub_questions: list[str], query_id: int, agent: str) -> None:
-        super().__init__(sub_questions)
+    query_id: int = 0
+    agent: str = ""
+
+    def __init__(self, sub_questions, query_id: int, agent: str, **kwargs) -> None:
+        super().__init__(sub_questions, **kwargs)
         self.query_id = query_id
         self.agent = agent
 
-    async def generate(self, messages, tools=None, tool_choice="auto"):
-        if self.agent in (messages[0].content or ""):
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        if self.agent in str(messages[0].content or ""):
             await _stop(self.query_id)
-        return await super().generate(messages, tools, tool_choice)
+        return self._generate(messages, stop, run_manager, **kwargs)
 
 
-async def test_a_stop_during_planning_wins_over_the_plan(
+async def test_a_stop_during_planning_wins_over_the_run(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    # The proposed plan must not re-surface for confirmation after a stop.
-    qid, _ = await _make_pending_query(client, auth_headers)
+    # The job may not notice the stop until its next heartbeat, so what has to
+    # hold is that the run cannot complete over it: a stopped query stays stopped
+    # however far the agents got before they saw it.
+    qid, user_id = await _make_pending_query(client, auth_headers)
 
-    await research_service.run_graph(
+    await research_service.run_research_job(
         qid,
-        {"message": "a question", "history": [], "prior": []},
-        provider=_StopWhile(["q1"], qid, "research planner"),
+        "a question",
+        user_id=user_id,
+        model=_StopWhile(["q1"], qid, "research planner"),
         backend=FakeBackend(),
     )
 
     query = await _read(qid)
     assert query.status == QueryStatus.failed
     assert query.error == "Research was stopped."
-    assert query.plan is None
+    assert query.report is None
 
 
 async def test_a_stop_during_the_write_keeps_the_run_stopped(
@@ -92,7 +98,7 @@ async def test_a_stop_during_the_write_keeps_the_run_stopped(
         qid,
         "a question",
         user_id=user_id,
-        provider=_StopWhile(["q1"], qid, "research writer"),
+        model=_StopWhile(["q1"], qid, "writing the report"),
         backend=FakeBackend(),
     )
 
@@ -105,11 +111,11 @@ class _SlowWriter(_StopWhile):
     """The user stops the run while the writer's model call is still going, as
     with a reasoning model that thinks for minutes."""
 
-    async def generate(self, messages, tools=None, tool_choice="auto"):
-        if "research writer" in (messages[0].content or ""):
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        if self.agent in str(messages[0].content or ""):
             await _stop(self.query_id)
             await asyncio.sleep(60)
-        return await super().generate(messages, tools, tool_choice)
+        return self._generate(messages, stop, run_manager, **kwargs)
 
 
 async def test_a_stop_cancels_the_model_call_in_flight(
@@ -125,7 +131,7 @@ async def test_a_stop_cancels_the_model_call_in_flight(
             qid,
             "a question",
             user_id=user_id,
-            provider=_SlowWriter(["q1"], qid, "research writer"),
+            model=_SlowWriter(["q1"], qid, "writing the report"),
             backend=FakeBackend(),
         ),
         timeout=5,
@@ -150,33 +156,16 @@ async def test_a_job_stopped_while_queued_does_nothing(
         qid,
         "a question",
         user_id=user_id,
-        provider=RoleProvider(["q1"]),
+        model=RoleModel(["q1"]),
         backend=FakeBackend(),
     )
 
     query = await _read(qid)
     assert query.status == QueryStatus.failed
-    assert query.plan is None
-
-
-async def test_a_review_with_no_paused_run_fails_the_query(
-    client: AsyncClient, auth_headers: dict[str, str]
-) -> None:
-    # A plan proposed before the graph (or whose checkpoint is gone) has nothing
-    # to resume: the user is told to ask again instead of waiting forever.
-    qid, user_id = await _make_pending_query(client, auth_headers)
-
-    await research_service.review_plan_job(
-        qid,
-        user_id=user_id,
-        approved=True,
-        provider=RoleProvider(["q1"]),
-        backend=FakeBackend(),
-    )
-
-    query = await _read(qid)
-    assert query.status == QueryStatus.failed
-    assert query.error == research_service.PLAN_EXPIRED
+    assert query.report is None
+    async with db_session.SessionLocal() as db:
+        events = await research_repository.list_events(db, qid, after_id=0)
+    assert events == []  # nothing ran at all
 
 
 async def test_a_running_job_sees_a_stop_on_its_next_heartbeat(
@@ -192,36 +181,3 @@ async def test_a_running_job_sees_a_stop_on_its_next_heartbeat(
         assert not live.stopped
         await _stop(qid)
         assert await _eventually(lambda: live.stopped)
-
-
-async def test_cancel_resolves_an_awaiting_plan_query(
-    client: AsyncClient, auth_headers: dict[str, str]
-) -> None:
-    # Stopping a turn paused for plan confirmation must reconcile the backend, not
-    # leave it awaiting_plan (which a reload would rehydrate as still live).
-    _use_fake_pipeline(sub_questions=["q1"])
-    created = await client.post(
-        "/conversations", headers=auth_headers, json={"prompt": "topic"}
-    )
-    query_id = created.json()["messages"][1]["query_id"]
-    detail = await client.get(f"/research/query/{query_id}", headers=auth_headers)
-    assert detail.json()["status"] == "awaiting_plan"
-
-    cancel = await client.post(
-        f"/research/query/{query_id}/cancel", headers=auth_headers
-    )
-    assert cancel.status_code == 204
-
-    after = await client.get(f"/research/query/{query_id}", headers=auth_headers)
-    assert after.json()["status"] == "failed"
-    # a reload must show it as stopped, not as a run that broke
-    assert after.json()["stopped"] is True
-    conversation = await client.get(
-        f"/conversations/{created.json()['id']}", headers=auth_headers
-    )
-    assert conversation.json()["messages"][1]["query"]["stopped"] is True
-    # confirm is now rejected (no plan awaiting)
-    confirm = await client.post(
-        f"/research/query/{query_id}/confirm", headers=auth_headers
-    )
-    assert confirm.status_code == 409

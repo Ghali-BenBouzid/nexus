@@ -3,8 +3,8 @@ import { useEffect, useRef, useState } from "react";
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import { useIsMobile } from "../lib/useIsMobile";
-import type { LayoutMode, Theme, Turn } from "../types";
-import { ArtifactPanel, isArtifactTurn } from "./ArtifactPanel";
+import type { Doc, LayoutMode, Output, Result, Theme, Turn } from "../types";
+import { OutputsPanel } from "./OutputsPanel";
 import { ChatHistory } from "./ChatHistory";
 import { NexusLockup } from "./NexusLogo";
 import { PromptBar } from "./PromptBar";
@@ -20,10 +20,21 @@ type ConversationProps = {
   onSubmit: (prompt: string) => void;
   onStop: () => void;
   onExit: () => void;
-  onRefresh: (turn: Turn) => void;
-  onConfirmPlan: (turn: Turn) => void;
-  onRevisePlan: (turn: Turn, feedback: string) => void;
-  onDiscardPlan: (turn: Turn) => void;
+  // The right-hand panel: what this account has produced, and what it attached.
+  outputs: Output[];
+  documents: Doc[];
+  openOutputId: number | null;
+  openOutputResult: Result | null;
+  onOpenOutput: (id: number | null) => void;
+  onRefreshOutput: (id: number) => void;
+  onUpload: (file: File) => void;
+  // Files picked in the composer, sent with the next message.
+  staged: File[];
+  onAttach: (files: File[]) => void;
+  onUnstage: (index: number) => void;
+  onRemoveDocument: (doc: Doc) => void;
+  onFactCheck: (doc: Doc) => void;
+  uploadError?: string | null;
   running: boolean;
   onNewChat: () => void;
   // One line under the composer: the demo credits left, or why an invite failed.
@@ -47,10 +58,19 @@ export function Conversation({
   onSubmit,
   onStop,
   onExit,
-  onRefresh,
-  onConfirmPlan,
-  onRevisePlan,
-  onDiscardPlan,
+  outputs,
+  documents,
+  openOutputId,
+  openOutputResult,
+  onOpenOutput,
+  onRefreshOutput,
+  onUpload,
+  staged,
+  onAttach,
+  onUnstage,
+  onRemoveDocument,
+  onFactCheck,
+  uploadError,
   running,
   onNewChat,
   accessNote,
@@ -140,31 +160,24 @@ export function Conversation({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Opening a report reveals the side panel (switching to split) and focuses it.
-  const openReport = (id: number) => {
-    if (layout !== "split") onLayout("split");
-    onFocus(id);
-  };
-
-  // Mobile-only: the top-right corner button toggles the Artifacts list (a top
+  // Mobile-only: the top-right corner button toggles the Outputs list (a top
   // sheet). It is "open" when the panel is split and no report is selected.
-  const artifactsListOpen = layout === "split" && focusedId === null;
-  const toggleArtifacts = () => {
-    if (artifactsListOpen) onLayout("thread");
+  const outputsListOpen = layout === "split" && openOutputId === null;
+  const toggleOutputs = () => {
+    if (outputsListOpen) onLayout("thread");
     else {
-      onFocus(null); // land on the list, never a stale preview
+      onOpenOutput(null); // land on the list, never a stale preview
       onLayout("split");
     }
   };
-  // A report is drawn up as a bottom sheet on mobile whenever one is focused.
-  const reportUp = focusedId != null;
+  // A report is drawn up as a bottom sheet on mobile whenever one is open.
+  const reportUp = openOutputId != null;
 
-  // The panel has two states with two widths: the slim, fixed Artifacts list, and
-  // the wide, resizable report Preview. `previewing` is true once a real artifact
-  // is selected (a running/empty turn keeps the slim list). The slim width is the
-  // resize floor, so the list is exactly as narrow as a preview is allowed to get.
+  // The panel has two states with two widths: the slim, fixed Outputs list, and
+  // the wide, resizable report reader. The slim width is the resize floor, so the
+  // list is exactly as narrow as a report is allowed to get.
   const SLIM_WIDTH = 320;
-  const previewing = focusedId != null && turns.some((t) => t.id === focusedId && isArtifactTurn(t));
+  const previewing = openOutputId != null;
 
   // Split-screen resize: drag the divider to set the report preview's width.
   // Default a little under half the screen for comfortable reading.
@@ -202,11 +215,8 @@ export function Conversation({
             inSplit={layout === "split"}
             focused={t.id === focusedId}
             onSelect={() => onFocus(t.id)}
-            onOpenReport={() => openReport(t.id)}
             onRerun={submit}
-            onConfirmPlan={onConfirmPlan}
-            onRevisePlan={onRevisePlan}
-            onDiscardPlan={onDiscardPlan}
+            onAsk={submit}
           />
         ))}
       </div>
@@ -235,8 +245,8 @@ export function Conversation({
           </div>
           {!reportUp && (
             <button
-              className={"chat-corner chat-corner-right" + (artifactsListOpen ? " active" : "")}
-              onClick={toggleArtifacts}
+              className={"chat-corner chat-corner-right" + (outputsListOpen ? " active" : "")}
+              onClick={toggleOutputs}
               aria-label={t.chat.showArtifacts}
               title={t.chat.showArtifacts}
             >
@@ -250,7 +260,7 @@ export function Conversation({
       {/* Tap the thread to close the artifacts top sheet (matches the Recent
           drawer's tap-outside-to-close). Without it a tap falls through to the
           thread, focuses a turn, hides the toggle, and strands the list open. */}
-      {isMobile && artifactsListOpen && (
+      {isMobile && outputsListOpen && (
         <div className="artifact-list-scrim" onClick={() => onLayout("thread")} aria-hidden="true" />
       )}
 
@@ -287,6 +297,10 @@ export function Conversation({
                 onSubmit={submit}
                 onStop={onStop}
                 running={running}
+                staged={staged}
+                onAttach={onAttach}
+                onUnstage={onUnstage}
+                attachError={uploadError}
                 autoFocus
                 placeholder={running ? t.chat.runningPlaceholder : t.chat.idlePlaceholder}
               />
@@ -301,13 +315,19 @@ export function Conversation({
             {previewing && (
               <div className="resizer" role="separator" aria-orientation="vertical" onMouseDown={startResize} />
             )}
-            <ArtifactPanel
-              turns={turns}
+            <OutputsPanel
+              outputs={outputs}
+              documents={documents}
               width={previewing ? artifactWidth : SLIM_WIDTH}
-              selectedId={focusedId}
-              onSelect={onFocus}
+              openId={openOutputId}
+              openResult={openOutputResult}
+              onOpen={onOpenOutput}
               onClose={() => onLayout("thread")}
-              onRefresh={onRefresh}
+              onRefresh={onRefreshOutput}
+              onUpload={onUpload}
+              onRemove={onRemoveDocument}
+              onFactCheck={onFactCheck}
+              uploadError={uploadError}
               isMobile={isMobile}
             />
           </>
@@ -316,7 +336,7 @@ export function Conversation({
             <button
               className="artifact-fab"
               onClick={() => {
-                onFocus(null); // always land on the Artifacts list, never a stale preview
+                onOpenOutput(null); // land on the Outputs list, never a stale report
                 onLayout("split");
               }}
               aria-label={t.chat.showArtifacts}

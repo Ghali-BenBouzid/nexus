@@ -62,7 +62,13 @@ class PairResult(BaseModel):
     # Whether the judgments picked the same run. Often false means the pairs are
     # close, or the judge is swayed by the order it saw them in.
     agreed: bool | None = None
+    # What each run reached for ("research", "answer"): a difference here often
+    # explains a difference in the answers.
     routes: tuple[str | None, str | None] | None = None  # A's, then B's
+
+
+def _used(trace: RunTrace) -> str:
+    return "research" if trace.researched else "answer"
 
 
 def _output(trace: RunTrace, stage: Stage) -> str:
@@ -93,7 +99,7 @@ async def compare_pair(
         golden_id=golden.id,
         category=golden.category,
         outcome="tie",
-        routes=(a.route, b.route),
+        routes=(_used(a), _used(b)),
     )
     out_a, out_b = _output(a, stage), _output(b, stage)
     stopped_early = any(t.until == "plan" and t.plan for t in (a, b))

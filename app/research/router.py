@@ -1,27 +1,26 @@
 import logging
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import jobs
-from app.agents.provider import LLMProvider
 from app.agents.schemas import ResearchResult
 from app.agents.tools import SearchBackend
 from app.auth.dependencies import get_current_user
 from app.billing.service import ensure_budget
 from app.db.session import get_db
-from app.models.query import QueryStatus
 from app.models.user import User
 from app.research import repository, service
-from app.research.dependencies import get_provider, get_search_backend
+from app.research.dependencies import get_model, get_search_backend
 from app.research.schemas import (
+    ArtifactSummary,
     QueryCreate,
     QueryDetail,
     QueryEventResponse,
     QueryResponse,
-    ReviseRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -55,7 +54,9 @@ async def create_query(
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    provider: LLMProvider = Depends(get_provider),
+    # Any, not BaseChatModel: it is a pydantic model, and FastAPI would read
+    # the annotation as a request body rather than a dependency.
+    model: Any = Depends(get_model),
     backend: SearchBackend = Depends(get_search_backend),
 ):
     await ensure_budget(db, current_user)
@@ -67,7 +68,7 @@ async def create_query(
     await jobs.submit(
         background_tasks,
         service.run_research_job,
-        provider=provider,
+        model=model,
         backend=backend,
         query_id=query.id,
         prompt=query.prompt,
@@ -82,6 +83,16 @@ async def list_queries(
     current_user: User = Depends(get_current_user),
 ):
     return await repository.list_queries(db=db, user_id=current_user.id)
+
+
+@router.get("/artifacts", response_model=list[ArtifactSummary])
+async def list_artifacts(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Every report this account has: deep research runs and fact checks, newest
+    first. Declared before /query/{id} so "artifacts" is never read as an id."""
+    return await repository.list_artifacts(db=db, user_id=current_user.id)
 
 
 @router.get("/query/{query_id}/events", response_model=list[QueryEventResponse])
@@ -156,7 +167,8 @@ async def get_query(
         reply=query.reply,
         error=query.error,
         stopped=repository.stopped_by_user(query),
-        plan=query.plan,
+        kind=query.kind,
+        suggestions=query.suggestions or [],
         sources=result.sources if result else [],
         consulted_sources=consulted,
         gaps=result.gaps if result else [],
@@ -164,70 +176,4 @@ async def get_query(
         completed_at=query.completed_at,
         # Computed here, not from a timestamp, so the client's clock never matters.
         seconds_since_heartbeat=_seconds_since(query.heartbeat_at),
-    )
-
-
-@router.post("/query/{query_id}/confirm", status_code=204)
-async def confirm_plan(
-    query_id: int,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    provider: LLMProvider = Depends(get_provider),
-    backend: SearchBackend = Depends(get_search_backend),
-):
-    """Approve the proposed plan and run the research (phase 2). Only valid while
-    the query is awaiting_plan; same ownership 404 as the detail endpoint."""
-    query = await repository.get_query(
-        db=db, query_id=query_id, user_id=current_user.id
-    )
-    if query is None:
-        raise HTTPException(status_code=404, detail="Query not found")
-    if query.status != QueryStatus.awaiting_plan or not query.plan:
-        raise HTTPException(status_code=409, detail="No plan is awaiting confirmation.")
-    await ensure_budget(db, current_user)
-    # Pending until a job takes it (then running, with a heartbeat). Anything but
-    # awaiting_plan also turns a second confirm into a 409.
-    await repository.set_status(db, query_id, QueryStatus.pending)
-    await jobs.submit(
-        background_tasks,
-        service.review_plan_job,
-        provider=provider,
-        backend=backend,
-        query_id=query_id,
-        user_id=current_user.id,
-        approved=True,
-    )
-
-
-@router.post("/query/{query_id}/revise", status_code=204)
-async def revise_plan(
-    query_id: int,
-    payload: ReviseRequest,
-    background_tasks: BackgroundTasks,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-    provider: LLMProvider = Depends(get_provider),
-    backend: SearchBackend = Depends(get_search_backend),
-):
-    """Reject the plan (optionally with feedback) and re-plan. Loops back to
-    awaiting_plan. Only valid while the query is awaiting_plan."""
-    query = await repository.get_query(
-        db=db, query_id=query_id, user_id=current_user.id
-    )
-    if query is None:
-        raise HTTPException(status_code=404, detail="Query not found")
-    if query.status != QueryStatus.awaiting_plan:
-        raise HTTPException(status_code=409, detail="No plan is awaiting revision.")
-    await ensure_budget(db, current_user)
-    await repository.set_status(db, query_id, QueryStatus.pending)
-    await jobs.submit(
-        background_tasks,
-        service.review_plan_job,
-        provider=provider,
-        backend=backend,
-        query_id=query_id,
-        user_id=current_user.id,
-        approved=False,
-        feedback=payload.feedback,
     )

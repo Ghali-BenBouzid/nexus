@@ -19,15 +19,17 @@ const since = (at: number | null, now: number) => (at == null ? null : (now - at
 function activityText(a: Activity, now: number): string {
   if (a.kind === "search") return t.progress.searching(a.text);
   if (a.kind === "read") return t.progress.readingPage(a.domain);
+  if (a.kind === "document") return t.progress.readingDocument(a.text);
   const s = since(a.at, now);
   return s == null ? t.progress.thinking : `${t.progress.thinking} ${clock(s)}`;
 }
 
 // The bar's one line: the stage the run is in.
 function headline(p: Progress, turn: Turn): string {
-  if (turn.status === "awaiting_plan") return t.progress.planReady(turn.plan?.length ?? p.planSize ?? 0);
   if (turn.status === "complete") {
-    return p.researchers.length > 0 ? t.progress.researched(p.researchers.length) : t.progress.ready;
+    return p.researchers.length > 0
+      ? t.progress.researched(p.researchers.length)
+      : t.progress.answered;
   }
   if (turn.stopped) return t.progress.stopped;
   if (turn.status === "failed") return t.progress.failed;
@@ -40,8 +42,10 @@ function headline(p: Progress, turn: Turn): string {
       return p.active > 0 ? t.progress.researching(p.active, p.total) : t.progress.researchDone;
     case "writing":
       return t.progress.writing;
-    case "done":
-      return t.progress.ready;
+    case "answering":
+      return t.progress.answering;
+    default:
+      return t.progress.answered;
   }
 }
 
@@ -97,6 +101,14 @@ function StepItem({ step, p, now, stopped }: { step: StepRow; p: Progress; now: 
           {step.row.question}
         </Step>
       );
+    case "started":
+      return (
+        <Step mark={step.mark} state={t.progress.inOutputs}>
+          {step.run.run === "deep_research"
+            ? t.progress.deepStarted(step.run.text)
+            : t.progress.factCheckStarted(step.run.text)}
+        </Step>
+      );
     case "write":
       return (
         <Step mark={step.mark} state={cut ?? (step.mark === "run" ? detail(p, now) : null)}>
@@ -121,13 +133,11 @@ export function ProgressBar({ turn, now }: { turn: Turn; now: number }) {
 
   const icon = running
     ? <span className="spin" />
-    : turn.status === "awaiting_plan"
-      ? I.plan // paused for the user, not an error
-      : turn.status === "complete"
-        ? I.check
-        : turn.stopped
-          ? I.stop
-          : I.warn;
+    : turn.status === "complete"
+      ? I.check
+      : turn.stopped
+        ? I.stop
+        : I.warn;
   const ended = running ? null : turn.stopped ? "stopped" : "failed";
 
   return (
@@ -147,7 +157,13 @@ export function ProgressBar({ turn, now }: { turn: Turn; now: number }) {
         <ol className="pb-steps">
           {steps(p, ended).map((step) => (
             <StepItem
-              key={step.kind === "researcher" ? `r${step.row.index}` : step.kind}
+              key={
+                step.kind === "researcher"
+                  ? `r${step.row.index}`
+                  : step.kind === "started"
+                    ? `s${step.run.run}${step.run.text}`
+                    : step.kind
+              }
               step={step}
               p={p}
               now={now}

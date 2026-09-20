@@ -6,17 +6,24 @@ from app.agents.schemas import Source
 from app.documents.schemas import DocumentSummary
 from app.models.conversation import MessageRole
 from app.models.query import QueryStatus
+from app.research.schemas import ArtifactSummary
 from app.schemas.base import BaseSchema
 
 
 class ConversationCreate(BaseModel):
     # The first user message; creating a conversation and posting its first
-    # message is one call so a new chat is a single round-trip.
-    prompt: str
+    # message is one call, so a new chat is a single round-trip. Empty creates
+    # the conversation and nothing else, which is what a file attached before
+    # the first message needs: a file belongs to a conversation, so the
+    # conversation has to exist before the message that carries it.
+    prompt: str = ""
+    document_ids: list[int] = []
 
 
 class MessageCreate(BaseModel):
     content: str
+    # Files uploaded into this conversation and sent with this message.
+    document_ids: list[int] = []
 
 
 class ConversationSummary(BaseSchema):
@@ -32,12 +39,12 @@ class MessageQuery(BaseModel):
     """The research run a message carries, rendered for the thread view."""
 
     status: QueryStatus
-    title: str | None = None  # the supervisor-given report title
+    title: str | None = None  # the artifact's title, on a run that makes one
     report: str | None
-    reply: str | None = None  # the supervisor's direct answer, on an answer turn
+    reply: str | None = None  # the supervisor's answer, on a chat turn
     error: str | None
     stopped: bool = False  # failed because the user stopped it, not broken
-    plan: list[str] | None = None  # proposed sub-questions while awaiting_plan
+    suggestions: list[str] = []  # follow-ups offered under the answer
     sources: list[Source]
     gaps: list[str]
 
@@ -48,16 +55,19 @@ class MessageResponse(BaseModel):
     content: str
     query_id: int | None
     created_at: datetime
+    # The files sent with this message, shown on the bubble that carries them.
+    documents: list[DocumentSummary] = []
     # Present on an assistant message that carries a research run.
     query: MessageQuery | None = None
 
 
 class ConversationDetail(BaseSchema):
-    """The full thread: ordered messages, each with its report when it has one,
-    and the documents uploaded into it."""
+    """The full thread: its messages, the documents uploaded into it, and the
+    reports it has produced (which finish long after the turn that asked)."""
 
     id: int
     title: str | None
     created_at: datetime
     messages: list[MessageResponse]
     documents: list[DocumentSummary] = []
+    artifacts: list[ArtifactSummary] = []

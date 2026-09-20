@@ -39,7 +39,7 @@ from app.evals.judge_model import JudgeModel
 from app.evals.scoring import score_run
 from app.evals.summary import summarize
 from app.evals.trace import RunTrace
-from app.research.dependencies import get_provider, get_search_backend
+from app.research.dependencies import get_model, get_search_backend
 
 RUNS_ROOT = Path("evals_runs")
 logger = logging.getLogger("app.evals")
@@ -76,7 +76,7 @@ async def _collect(
     concurrency: int,
     until: Literal["plan"] | None = None,
 ) -> None:
-    provider = get_provider()
+    model = get_model()
     backend: TavilyBackend = get_search_backend()
     run_dir.mkdir(parents=True, exist_ok=True)
     meta = {
@@ -84,7 +84,7 @@ async def _collect(
         "started": datetime.now().isoformat(timespec="seconds"),
         "git": _git_commit(),
         "provider": settings.llm_provider,
-        "model": getattr(provider, "model", "unknown"),
+        "model": getattr(model, "model_name", "unknown"),
         "until": until,
         "prompts": prompts.versions(),  # what a score change between runs came from
         "settings": {
@@ -107,9 +107,7 @@ async def _collect(
     async def one(golden: Golden) -> None:
         nonlocal done
         async with limit:
-            trace = await collect_one(
-                golden, provider=provider, backend=backend, until=until
-            )
+            trace = await collect_one(golden, model=model, backend=backend, until=until)
         # Appended as each finishes, so an interrupted run keeps what it collected.
         with traces_path.open("a", encoding="utf-8") as out:
             out.write(trace.model_dump_json() + "\n")
@@ -120,14 +118,15 @@ async def _collect(
             if trace.researchers
             else ""
         )
-        status = f"FAILED ({trace.error})" if trace.error else trace.route
+        used = ", ".join(trace.tools) or "answered directly"
+        status = f"FAILED ({trace.error})" if trace.error else used
         print(
             f"[{done}/{len(goldens)}] {golden.id}: {status}{research}, "
             f"{trace.seconds:.0f}s, ${trace.cost_usd:.4f}",
             flush=True,
         )
 
-    async with provider, backend:
+    async with backend:
         await asyncio.gather(*(one(g) for g in goldens))
 
 

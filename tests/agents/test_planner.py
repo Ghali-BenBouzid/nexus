@@ -1,74 +1,55 @@
+"""The planner, with a scripted model: it fixes its own plan when it can, and
+only a plan that never arrived is a failure.
+"""
+
 import pytest
 
 from app.agents.planner import PlannerError, plan
-from app.agents.provider import FakeLLMProvider, LLMResponse, ToolCall
+from tests.agents.fakes import ScriptedModel, call, says
+
+SUBMIT = "SubmitPlanArgs"  # the schema's name, as the model sees the tool
 
 
-def _plan_response(*sub_questions: str) -> LLMResponse:
-    return LLMResponse(
-        tool_calls=[
-            ToolCall(
-                id="c",
-                name="submit_plan",
-                args={"sub_questions": list(sub_questions)},
-            )
-        ]
-    )
+def _plan(*questions: str):
+    return call(SUBMIT, sub_questions=list(questions))
 
 
-async def test_plan_returns_sub_questions_under_cap() -> None:
-    provider = FakeLLMProvider(responses=[_plan_response("q1", "q2", "q3")])
+async def test_a_plan_under_the_cap_is_taken_as_it_is() -> None:
+    model = ScriptedModel([_plan("q1", "q2")])
 
-    result = await plan("big question", provider=provider, cap=5, retry_cap=2)
-
-    assert result == ["q1", "q2", "q3"]
-    # forced the specific tool
-    assert provider.calls[-1][2] == "submit_plan"
+    assert await plan("p", model=model, cap=3, retry_cap=2) == ["q1", "q2"]
 
 
-async def test_plan_strips_blank_sub_questions() -> None:
-    provider = FakeLLMProvider(responses=[_plan_response("q1", "  ", "q2")])
-    result = await plan("q", provider=provider, cap=5, retry_cap=2)
-    assert result == ["q1", "q2"]
+async def test_blank_sub_questions_are_dropped() -> None:
+    model = ScriptedModel([_plan("q1", "  ", "")])
+
+    assert await plan("p", model=model, cap=3, retry_cap=2) == ["q1"]
 
 
-async def test_plan_feedback_loop_consolidates_over_cap() -> None:
-    provider = FakeLLMProvider(
-        responses=[
-            _plan_response("q1", "q2", "q3", "q4", "q5", "q6"),  # over cap
-            _plan_response("q1", "q2", "q3"),  # consolidated
-        ]
-    )
+async def test_an_over_cap_plan_is_sent_back_to_be_consolidated() -> None:
+    model = ScriptedModel([_plan("a", "b", "c", "d"), _plan("a+b", "c+d")])
 
-    result = await plan("q", provider=provider, cap=5, retry_cap=2)
-
-    assert result == ["q1", "q2", "q3"]
-    assert len(provider.calls) == 2  # one retry
+    assert await plan("p", model=model, cap=2, retry_cap=2) == ["a+b", "c+d"]
+    # the second attempt was told why the first was refused
+    told = model.seen[-1][-1].content
+    assert "exceeds the limit of 2" in told
 
 
-async def test_plan_clamps_when_still_over_after_retries() -> None:
-    over = _plan_response("q1", "q2", "q3", "q4", "q5", "q6")
-    provider = FakeLLMProvider(responses=[over, over])  # never consolidates
+async def test_a_plan_still_over_the_cap_is_clamped_rather_than_lost() -> None:
+    model = ScriptedModel([_plan("a", "b", "c"), _plan("a", "b", "c")])
 
-    result = await plan("q", provider=provider, cap=3, retry_cap=1)
-
-    assert result == ["q1", "q2", "q3"]  # clamped to cap
+    assert await plan("p", model=model, cap=2, retry_cap=1) == ["a", "b"]
 
 
-async def test_plan_raises_on_empty_after_retries() -> None:
-    # empty every time -> fed back, retried, then PlannerError once budget is spent
-    provider = FakeLLMProvider(
-        responses=[_plan_response(), _plan_response(), _plan_response()]
-    )
+async def test_an_empty_plan_is_retried_then_accepted() -> None:
+    model = ScriptedModel([_plan(), _plan("q1")])
+
+    assert await plan("p", model=model, cap=3, retry_cap=2) == ["q1"]
+
+
+async def test_a_plan_that_never_arrives_is_a_failure() -> None:
+    # Nothing usable after the retries: the run cannot continue on no plan.
+    model = ScriptedModel([says("I would rather chat"), says("still chatting")])
+
     with pytest.raises(PlannerError):
-        await plan("q", provider=provider, cap=5, retry_cap=2)
-
-
-async def test_plan_recovers_from_empty_then_valid() -> None:
-    # first call fumbles (empty); feedback lets the model recover on the retry
-    provider = FakeLLMProvider(responses=[_plan_response(), _plan_response("q1", "q2")])
-
-    result = await plan("q", provider=provider, cap=5, retry_cap=2)
-
-    assert result == ["q1", "q2"]
-    assert len(provider.calls) == 2
+        await plan("p", model=model, cap=3, retry_cap=1)

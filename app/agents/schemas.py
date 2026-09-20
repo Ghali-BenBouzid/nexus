@@ -8,64 +8,51 @@ class Source(BaseModel):
     url: str
 
 
-class FindingClaim(BaseModel):
-    """One statement in a researcher's answer and the sources backing that
-    statement. Source attribution is per claim, not per whole answer, so a
-    citation maps to the specific sentence it supports."""
+class Claim(BaseModel):
+    """One statement and the 1-based numbers of the sources backing it.
+
+    The numbers index whichever source list the claim travels with: its own
+    ``Finding.sources`` inside a researcher, and ``ResearchResult.sources`` once
+    the findings have been merged. Code assigns them in both cases, so a claim
+    can only cite something that was really retrieved, and attribution is per
+    claim rather than per answer.
+    """
 
     text: str
-    sources: list[Source] = []  # the sources backing this claim -> drive [n]
+    source_ids: list[int] = []
 
 
 class Finding(BaseModel):
+    """What one researcher came back with. It carries its own sources so it is
+    plain, self-contained data: it survives a checkpoint and can be merged into
+    any run's numbering later."""
+
     sub_question: str
-    claims: list[FindingClaim] = []
-    consulted_sources: list[Source] = []  # everything fetched -> provenance/audit
+    claims: list[Claim] = []
+    sources: list[Source] = []  # claim.source_ids are 1-based into this list
     found_info: bool = True
 
     @property
     def answer(self) -> str:
-        """The full answer text, claims joined back into prose."""
         return " ".join(claim.text for claim in self.claims)
-
-    @property
-    def cited_sources(self) -> list[Source]:
-        """Every source any claim cites, deduped by url (the answer-level view)."""
-        seen: set[str] = set()
-        out: list[Source] = []
-        for claim in self.claims:
-            for source in claim.sources:
-                if source.url not in seen:
-                    seen.add(source.url)
-                    out.append(source)
-        return out
 
 
 class Turn(BaseModel):
     """One earlier message of the conversation, as the agents see it: the user's
-    own words, or what the assistant replied. A turn that produced a report
-    carries it shortened inside a <report> tag, so an agent can tell retrieved
-    material from the user's instructions."""
+    own words, or what the assistant replied."""
 
     role: Literal["user", "assistant"]
     content: str
 
 
 class AgentEvent(BaseModel):
-    """A minimal progress event emitted while agents work. Stable ``type`` +
-    human ``message`` for a basic feed now; open ``data`` for later."""
+    """A progress event emitted while agents work. Stable ``type`` + human
+    ``message``; ``data`` carries who emitted it, so the live feed can nest a
+    sub-agent's steps under the tool call that started it."""
 
     type: str
     message: str
     data: dict[str, Any] | None = None
-
-
-class Claim(BaseModel):
-    """One statement in a point's answer and the global source numbers backing
-    it (the consolidated, renumbered counterpart of a FindingClaim)."""
-
-    text: str
-    source_ids: list[int] = []  # 1-based citation numbers into ResearchResult.sources
 
 
 class ResearchPoint(BaseModel):
@@ -88,18 +75,18 @@ class ResearchPoint(BaseModel):
 
 
 class ResearchResult(BaseModel):
-    """The deterministic, style-agnostic artifact the consolidator produces: one
-    global, deduped, numbered source list and the per-point citation mapping."""
+    """What a research run produced: the answered points, the numbered source
+    list their citations index into, and what could not be answered."""
 
     points: list[ResearchPoint]
-    sources: list[Source]  # global, deduped; citation n -> sources[n - 1]
-    gaps: list[str]
-    # provenance/audit: every source any researcher looked at (deduped by url),
-    # cited or not. Superset of ``sources``; hidden by default in the UI.
+    sources: list[Source]  # citation n -> sources[n - 1]
+    gaps: list[str] = []
+    # Provenance/audit: every source any agent looked at, cited or not. A
+    # superset of ``sources`` once the writer has pruned to what it cited.
     consulted_sources: list[Source] = []
 
 
 class Report(BaseModel):
     content: str
     sources: list[Source]
-    failed_subquestions: list[str]
+    failed_subquestions: list[str] = []

@@ -19,7 +19,10 @@ class Golden(BaseModel):
     input: str
     # The language name the reply must be in, as app.agents.language names them.
     language: str = "English"
-    # answer = reply directly, research = run the pipeline, any = either is fine.
+    # What the supervisor should do with the message: "answer" straight from
+    # what it knows, "research" (or deep research) first, "any" when either is
+    # defensible. Not a route any more, since there is no router: an expectation
+    # about the judgement, read off the tools it reached for.
     expected_route: Literal["answer", "research", "any"] = "research"
     time_sensitive: bool = False
     expected_behavior: str

@@ -8,7 +8,8 @@ import type { TimelineEvent } from "../types";
 export type Activity =
   | { kind: "thinking"; at: number | null }
   | { kind: "search"; text: string; at: number | null }
-  | { kind: "read"; domain: string; at: number | null };
+  | { kind: "read"; domain: string; at: number | null }
+  | { kind: "document"; text: string; at: number | null };
 
 export type ResearcherOutcome = "running" | "found" | "empty" | "failed";
 
@@ -19,7 +20,16 @@ export type ResearcherRow = {
   activity: Activity | null; // only while running
 };
 
-export type Stage = "starting" | "planning" | "researching" | "writing" | "done";
+export type Stage =
+  | "starting"
+  | "planning"
+  | "researching"
+  | "writing"
+  | "answering"
+  | "done";
+
+// A run the turn started in the background, which finishes on its own.
+export type StartedRun = { run: "deep_research" | "fact_check"; text: string };
 
 export type Progress = {
   stage: Stage;
@@ -31,6 +41,8 @@ export type Progress = {
   thinking: boolean;
   latest: Activity | null; // the most recent researcher activity
   lastAt: number | null; // when the latest event arrived
+  // Background runs this turn kicked off; their own progress lives in Outputs.
+  started: StartedRun[];
 };
 
 export function summarize(events: TimelineEvent[]): Progress {
@@ -40,6 +52,7 @@ export function summarize(events: TimelineEvent[]): Progress {
   let thinking = false;
   let latest: Activity | null = null;
   let lastAt: number | null = null;
+  const started: StartedRun[] = [];
   const rows = new Map<number, ResearcherRow>();
 
   const row = (index: number, question = ""): ResearcherRow => {
@@ -75,6 +88,7 @@ export function summarize(events: TimelineEvent[]): Progress {
         }
         if (e.agent === "planner") stage = "planning";
         if (e.agent === "writer") stage = "writing";
+        if (e.agent === "supervisor" && stage !== "starting") stage = "answering";
         thinking = true;
         break;
       case "researcher":
@@ -91,6 +105,10 @@ export function summarize(events: TimelineEvent[]): Progress {
       case "tool":
         if (e.action === "search") act(e.index, { kind: "search", text: e.text, at });
         else if (e.action === "read") act(e.index, { kind: "read", domain: e.domain, at });
+        else if (e.action === "document") act(undefined, { kind: "document", text: e.text, at });
+        break;
+      case "started":
+        started.push({ run: e.run, text: e.text });
         break;
       case "writer":
         stage = e.state === "done" ? "done" : "writing";
@@ -100,7 +118,7 @@ export function summarize(events: TimelineEvent[]): Progress {
 
   const researchers = [...rows.values()].sort((a, b) => a.index - b.index);
   const active = researchers.filter((r) => r.outcome === "running").length;
-  return { stage, planSize, researchers, total, active, thinking, latest, lastAt };
+  return { stage, planSize, researchers, total, active, thinking, latest, lastAt, started };
 }
 
 // How a run that is no longer live ended; null while it runs.
@@ -114,6 +132,7 @@ export type Step =
   | { kind: "understanding"; mark: Mark; cut: boolean }
   | { kind: "plan"; mark: Mark; cut: boolean; size: number | null }
   | { kind: "researcher"; mark: Mark; cut: boolean; row: ResearcherRow }
+  | { kind: "started"; mark: Mark; cut: boolean; run: StartedRun }
   | { kind: "write"; mark: Mark; cut: boolean };
 
 // The main steps of a run, for the expanded bar. Only a live run has a running
@@ -133,6 +152,11 @@ export function steps(p: Progress, ended: Ended): Step[] {
   for (const row of p.researchers) {
     const mark = row.outcome === "running" ? "run" : row.outcome === "found" ? "ok" : "warn";
     list.push({ kind: "researcher", row, ...settle(mark) });
+  }
+  for (const run of p.started) {
+    // It is off on its own by the time the turn ends, so it is never "running"
+    // here: the Outputs panel is where its progress lives.
+    list.push({ kind: "started", run, ...settle("ok") });
   }
   if (p.stage === "writing" || p.stage === "done") {
     list.push({ kind: "write", ...settle(p.stage === "done" ? "ok" : "run") });

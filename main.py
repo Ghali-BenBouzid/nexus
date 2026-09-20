@@ -11,8 +11,8 @@ from app.core.config import settings
 from app.db import session as db_session
 from app.documents.router import router as documents_router
 from app.observability import configure_tracing
+from app.research import deep as research_deep
 from app.research import repository
-from app.research import service as research_service
 from app.research.router import router as research_router
 
 logger = logging.getLogger(__name__)
@@ -35,12 +35,12 @@ async def lifespan(app: FastAPI):
                 logger.warning("failed %d query(ies) interrupted by a restart", reaped)
         except Exception:
             logger.exception("startup reaping of interrupted queries failed")
-        # Only a process that runs jobs needs the graph and its checkpointer.
-        await research_service.open_graph()
+        # Only a process that runs jobs needs the deep graph's checkpointer.
+        await research_deep.open_graph()
     await jobs.open_queue()
     yield
     await jobs.close_queue()
-    await research_service.close_graph()
+    await research_deep.close_graph()
 
 
 app = FastAPI(lifespan=lifespan)

@@ -290,35 +290,39 @@ def judged_cases(
                 )
             )
 
-    if trace.report:
+    # Depth, completeness and faithfulness are judged against what the research
+    # found, so they only mean anything on a turn that researched. A chat answer
+    # with nothing behind it is judged on relevance and on the golden's own
+    # expectation, and nothing else.
+    if trace.response.strip() and trace.consolidated:
         question = trace.research_query or golden.input
-        if trace.consolidated:
-            cases.append(
-                JudgedCase(
-                    "report_faithfulness",
-                    "report",
-                    _faithfulness,
-                    LLMTestCase(
-                        input=question,
-                        actual_output=trace.report,
-                        retrieval_context=trace.consolidated,
-                    ),
-                )
-            )
-        findings_case = LLMTestCase(
-            input=question,
-            actual_output=trace.report,
-            retrieval_context=trace.consolidated or ["(no findings)"],
-        )
-        report_case = LLMTestCase(input=question, actual_output=trace.report)
+        answer = trace.response
         cases.append(
             JudgedCase(
-                "report_completeness", "report", REPORT_COMPLETENESS, findings_case
+                "report_faithfulness",
+                "response",
+                _faithfulness,
+                LLMTestCase(
+                    input=question,
+                    actual_output=answer,
+                    retrieval_context=trace.consolidated,
+                ),
             )
         )
-        cases.append(JudgedCase("report_depth", "report", REPORT_DEPTH, report_case))
+        findings_case = LLMTestCase(
+            input=question,
+            actual_output=answer,
+            retrieval_context=trace.consolidated,
+        )
+        report_case = LLMTestCase(input=question, actual_output=answer)
         cases.append(
-            JudgedCase("report_concision", "report", REPORT_CONCISION, report_case)
+            JudgedCase(
+                "report_completeness", "response", REPORT_COMPLETENESS, findings_case
+            )
+        )
+        cases.append(JudgedCase("report_depth", "response", REPORT_DEPTH, report_case))
+        cases.append(
+            JudgedCase("report_concision", "response", REPORT_CONCISION, report_case)
         )
         if trace.gaps:
             gaps_context = [
@@ -328,11 +332,11 @@ def judged_cases(
             cases.append(
                 JudgedCase(
                     "gap_honesty",
-                    "report",
+                    "response",
                     GAP_HONESTY,
                     LLMTestCase(
                         input=question,
-                        actual_output=trace.report,
+                        actual_output=answer,
                         retrieval_context=gaps_context,
                     ),
                 )

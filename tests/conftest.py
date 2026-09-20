@@ -14,7 +14,7 @@ from app.core.config import settings
 from app.db import session as db_session
 from app.db.base import Base
 from app.db.session import get_db
-from app.research import service as research_service
+from app.research import deep as research_deep
 from main import app
 from tests.accounts import login_as
 
@@ -51,7 +51,7 @@ async def client(tmp_path) -> AsyncGenerator[AsyncClient]:
     # request's (fake) provider and backend.
     original_queue = settings.job_queue
     settings.job_queue = "inline"
-    await research_service.open_graph(in_memory=True)
+    await research_deep.open_graph(in_memory=True)
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)  # creating tables
@@ -65,7 +65,7 @@ async def client(tmp_path) -> AsyncGenerator[AsyncClient]:
     await engine.dispose()
     db_session.SessionLocal = original_session_local
     settings.job_queue = original_queue
-    await research_service.close_graph()
+    await research_deep.close_graph()
     app.dependency_overrides.clear()
 
 

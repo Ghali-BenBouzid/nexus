@@ -1,37 +1,67 @@
+"""The schemas the agents' tools go to the model as.
+
+Gemini behind OpenRouter does not follow ``$ref``. Handed submit_finding's raw
+pydantic schema, it sent every claim as a plain string, each researcher's finding
+was rejected, and every report said nothing was found. LangChain's converter
+inlines definitions, and this pins that it keeps doing so.
+"""
+
 import json
 
 import pytest
+from langchain_core.utils.function_calling import convert_to_openai_tool
 
-from app.agents.supervisor import Answer, ComposeReport, ReadReports, Research
-from app.agents.tools import FetchPage, SubmitFinding, SubmitPlan, WebSearch
+from app.agents.supervisor import (
+    DeepResearchArgs,
+    FactCheckArgs,
+    ReadDocumentArgs,
+    ReadReportArgs,
+    ResearchArgs,
+)
+from app.agents.tools import (
+    FetchPageArgs,
+    SubmitFindingArgs,
+    SubmitPlanArgs,
+    WebSearchArgs,
+)
 
-# Every tool the agents can call. Their parameters go to the model verbatim.
-TOOLS = [
-    SubmitPlan(),
-    SubmitFinding(),
-    WebSearch(backend=None),
-    FetchPage(backend=None),
-    ReadReports([]),
-    Answer(),
-    ComposeReport(),
-    Research(),
+SCHEMAS = [
+    SubmitPlanArgs,
+    SubmitFindingArgs,
+    WebSearchArgs,
+    FetchPageArgs,
+    ResearchArgs,
+    DeepResearchArgs,
+    ReadDocumentArgs,
+    ReadReportArgs,
+    FactCheckArgs,
 ]
 
 
-@pytest.mark.parametrize("tool", TOOLS, ids=lambda tool: tool.name)
-def test_tool_parameters_carry_no_references(tool) -> None:
-    # Gemini behind OpenRouter does not follow $ref. Handed submit_finding's raw
-    # pydantic schema, it sent every claim as a plain string, each researcher's
-    # finding was rejected, and every report said nothing was found.
-    schema = json.dumps(tool.parameters)
+@pytest.mark.parametrize("schema", SCHEMAS, ids=lambda schema: schema.__name__)
+def test_a_tool_schema_carries_no_references(schema) -> None:
+    converted = json.dumps(convert_to_openai_tool(schema))
 
-    assert "$ref" not in schema
-    assert "$defs" not in schema
+    assert "$ref" not in converted
+    assert "$defs" not in converted
 
 
 def test_submit_finding_spells_out_the_claim_shape() -> None:
-    claim = SubmitFinding().parameters["properties"]["claims"]["items"]
+    converted = convert_to_openai_tool(SubmitFindingArgs)
+    claim = converted["function"]["parameters"]["properties"]["claims"]["items"]
 
     assert claim["type"] == "object"
     assert set(claim["properties"]) == {"text", "cited_source_ids"}
     assert claim["required"] == ["text"]
+
+
+def test_every_field_the_agents_depend_on_is_described() -> None:
+    # A field with no description is a field the model guesses at.
+    for schema in SCHEMAS:
+        properties = convert_to_openai_tool(schema)["function"]["parameters"][
+            "properties"
+        ]
+        undescribed = [
+            name for name, f in properties.items() if not f.get("description")
+        ]
+        assert not undescribed, f"{schema.__name__}: {undescribed}"

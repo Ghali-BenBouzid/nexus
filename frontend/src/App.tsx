@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 import { Conversation } from "./components/Conversation";
+import { I } from "./icons";
 import { DemoDialog } from "./components/DemoDialog";
 import { Hero } from "./components/Hero";
 import { History } from "./components/History";
@@ -9,13 +10,17 @@ import { Nav } from "./components/Nav";
 import { About, Footer, HowItWorks } from "./components/Sections";
 import {
   cancelQuery,
-  confirmPlan as confirmPlanApi,
+  createConversation,
+  deleteDocument,
+  factCheckDocument,
   getAccount,
+  listDocuments,
+  listOutputs,
   loadConversation,
-  openQuery,
+  openOutput,
   redeemInvite,
   resumeRun,
-  revisePlan as revisePlanApi,
+  uploadDocument,
   type Account,
   type LoadedTurn,
 } from "./lib/api";
@@ -34,7 +39,28 @@ import {
 } from "./lib/design";
 import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
 import { isLive, LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
-import type { LayoutMode, Theme, Turn, View } from "./types";
+import type { Doc, LayoutMode, Output, Result, Theme, Turn, View } from "./types";
+
+// Which outputs this browser has already announced. A per-viewer convenience,
+// so it lives in localStorage and a failure to read it is not worth a thought.
+const ANNOUNCED_KEY = "nexus-announced";
+
+function storedAnnounced(): number[] {
+  try {
+    const raw = localStorage.getItem(ANNOUNCED_KEY);
+    return raw ? (JSON.parse(raw) as number[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function rememberAnnounced(ids: Set<number>): void {
+  try {
+    localStorage.setItem(ANNOUNCED_KEY, JSON.stringify([...ids].slice(-50)));
+  } catch {
+    /* ignore */
+  }
+}
 
 export default function App() {
   const [theme, setTheme] = useState<Theme>(
@@ -92,6 +118,21 @@ export default function App() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [demoOpen, setDemoOpen] = useState(false);
 
+  // The right-hand panel. Outputs are account-wide, because a background run
+  // outlives the conversation that started it; documents belong to the open one.
+  const [outputs, setOutputs] = useState<Output[]>([]);
+  const [documents, setDocuments] = useState<Doc[]>([]);
+  const [openOutputId, setOpenOutputId] = useState<number | null>(null);
+  const [openOutputResult, setOpenOutputResult] = useState<Result | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  // Files picked in the composer but not sent yet. They are uploaded when the
+  // message goes, so a file can be the first thing in a chat.
+  const [staged, setStaged] = useState<File[]>([]);
+  // Which finished outputs the user has already been told about, so a report is
+  // announced once per browser and not again on every reload.
+  const announced = useRef<Set<number>>(new Set(storedAnnounced()));
+  const [ready, setReady] = useState<Output | null>(null);
+
   const turnSeq = useRef(0);
   const cancelled = useRef<Set<number>>(new Set());
   const fluidRef = useRef<FluidHandle | null>(null);
@@ -105,13 +146,14 @@ export default function App() {
       id: ++turnSeq.current,
       queryId: lt.queryId ?? undefined,
       query: lt.query,
+      attachments: lt.attachments,
       title: lt.title,
       status: lt.status,
       events: [],
       reply: lt.reply,
-      plan: lt.plan,
-      result: lt.reply ? null : lt.result, // an answer turn carries no report
-      outcome: outcomeFor(lt.status, lt.result.report, lt.result.sources.length, lt.reply),
+      suggestions: lt.suggestions,
+      result: lt.result,
+      outcome: outcomeFor(lt.status, lt.reply ?? "", lt.result.sources.length),
       error: lt.error,
       stopped: lt.stopped,
       startedAt: performance.now(),
@@ -225,6 +267,31 @@ export default function App() {
     });
   }, [live, anyRunning]);
 
+  // Outputs are polled while any of them is still working: a deep run or a fact
+  // check finishes on its own, often after the user has moved to another chat.
+  const anyOutputRunning = outputs.some(
+    (o) => o.status === "running" || o.status === "pending",
+  );
+  useEffect(() => {
+    if (!live) return;
+    refreshOutputs();
+    if (!anyOutputRunning) return;
+    const id = setInterval(refreshOutputs, 5000);
+    return () => clearInterval(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [live, anyOutputRunning, view]);
+
+  // Tell the user once when a report they are no longer watching is ready.
+  useEffect(() => {
+    const finished = outputs.find(
+      (o) => o.status === "complete" && !announced.current.has(o.id),
+    );
+    if (!finished) return;
+    announced.current.add(finished.id);
+    rememberAnnounced(announced.current);
+    setReady(finished);
+  }, [outputs]);
+
   // Nav shadow on scroll + hero-focal fluid fade: the blob is full behind the
   // hero and fades out over the first ~70vh as the sections rise. On chat stages
   // the body pins --fluid-op low (CSS), which wins over this since it's closer.
@@ -312,6 +379,9 @@ export default function App() {
     onQueryId: (qid) => patchTurn(id, (t) => ({ ...t, queryId: qid })),
     onConversation: (cid) => {
       setActiveConversation(cid);
+      // A fresh chat has no files yet; a follow-up in an existing one may, and
+      // the panel is the only place they show.
+      listDocuments(cid).then(setDocuments).catch(() => {});
       // The fresh /chat now has a real id: rewrite the URL in place (no extra
       // history entry) so a reload or back/forward resolves to this conversation.
       navigate(`/chat/${cid}`, { replace: true });
@@ -326,16 +396,10 @@ export default function App() {
       patchTurn(id, (t) => ({ ...t, endedAt: performance.now() }));
       return;
     }
-    if (res.awaitingPlan) {
-      patchTurn(id, (t) => ({ ...t, status: "awaiting_plan", plan: res.plan, endedAt: performance.now() }));
-      return;
-    }
-    if (res.reply != null) {
-      patchTurn(id, (t) => ({ ...t, reply: res.reply, result: null, outcome: "ok", status: "complete", endedAt: performance.now() }));
-      return;
-    }
     patchTurn(id, (t) => ({
       ...t,
+      reply: res.reply ?? t.reply,
+      suggestions: res.suggestions ?? t.suggestions,
       result: res.result,
       outcome: res.outcome,
       title: res.title ?? t.title,
@@ -343,13 +407,9 @@ export default function App() {
       status: res.outcome === "failed" ? "failed" : "complete",
       endedAt: performance.now(),
     }));
-    // Desktop reveals the finished report in the side panel. On mobile that would
-    // draw a full sheet over the thread, so the thread stays put and the user
-    // opens the report from its "Report ready" button.
-    if (res.outcome === "ok" && res.result && !window.matchMedia("(max-width: 920px)").matches) {
-      setLayout("split");
-      setFocusedId(id);
-    }
+    // A finished turn may have started a background run, so refresh what the
+    // Outputs panel shows rather than waiting for the next poll.
+    refreshOutputs();
   };
 
   const failTurn = (id: number, err: unknown) => {
@@ -387,16 +447,6 @@ export default function App() {
     // One run at a time: ignore a follow-up while another is in flight. A fresh
     // hero submission replaces the workspace, so it is never blocked this way.
     if (!fresh && turns.some((t) => t.status === "running" || t.status === "pending")) return;
-    // A new question supersedes any plan still waiting for confirmation: cancel it
-    // on the backend and mark it stopped, rather than orphaning the paused query.
-    if (!fresh) {
-      turns.forEach((tn) => {
-        if (tn.status === "awaiting_plan") {
-          if (tn.queryId != null) cancelQuery(tn.queryId);
-          patchTurn(tn.id, (t) => ({ ...t, status: "failed", stopped: true, plan: undefined, endedAt: performance.now() }));
-        }
-      });
-    }
     const id = ++turnSeq.current;
     const turn: Turn = {
       id,
@@ -420,10 +470,28 @@ export default function App() {
     } else {
       setTurns((prev) => [...prev, turn]);
     }
-    const conversationId = fresh ? null : activeConversationId;
+    let conversationId = fresh ? null : activeConversationId;
 
     try {
-      const res = await runResearch(prompt, callbacksFor(id), conversationId);
+      // The staged files go up first: a file belongs to a conversation, so if
+      // this is the first message, the conversation is created for them and the
+      // message follows, carrying their ids.
+      let attached: Doc[] = [];
+      if (staged.length && isLive()) {
+        if (conversationId == null) {
+          conversationId = await createConversation();
+          setActiveConversation(conversationId);
+          navigate(`/chat/${conversationId}`, { replace: true });
+        }
+        attached = await uploadStaged(conversationId);
+        patchTurn(id, (t) => ({ ...t, attachments: attached }));
+      }
+      const res = await runResearch(
+        prompt,
+        callbacksFor(id),
+        conversationId,
+        attached.map((doc) => doc.id),
+      );
       if (cancelled.current.has(id)) return;
       applyOutcome(id, res);
     } catch (err) {
@@ -431,48 +499,22 @@ export default function App() {
     }
   }
 
-  // Approve the proposed plan: run the research, then resume polling to completion.
-  async function confirmPlan(turn: Turn) {
-    if (turn.queryId == null) return;
-    const id = turn.id;
-    // Resume the feed after the events already shown, so the phase-1 planner events
-    // are not re-drained and duplicated when the research run streams in.
-    const sinceEventId = turn.events.reduce((m, e) => Math.max(m, e.id), 0);
-    patchTurn(id, (t) => ({ ...t, status: "running", plan: undefined, startedAt: performance.now(), endedAt: null }));
-    setNow(performance.now());
-    try {
-      await confirmPlanApi(turn.queryId);
-      const res = await resumeRun(turn.queryId, callbacksFor(id), sinceEventId);
-      if (cancelled.current.has(id)) return;
-      applyOutcome(id, res);
-    } catch (err) {
-      if (!cancelled.current.has(id)) failTurn(id, err);
+  // Upload everything staged in the composer, keeping what fails visible rather
+  // than dropping it silently. Returns what actually landed.
+  async function uploadStaged(conversationId: number): Promise<Doc[]> {
+    const files = staged;
+    setStaged([]);
+    setUploadError(null);
+    const uploaded: Doc[] = [];
+    for (const file of files) {
+      try {
+        uploaded.push(await uploadDocument(conversationId, file));
+      } catch (err) {
+        setUploadError(err instanceof Error ? err.message : t.uploads.failed);
+      }
     }
-  }
-
-  // Reject the plan with optional feedback: re-plan, then resume (pauses again).
-  async function revisePlan(turn: Turn, feedback: string) {
-    if (turn.queryId == null) return;
-    const id = turn.id;
-    const sinceEventId = turn.events.reduce((m, e) => Math.max(m, e.id), 0);
-    patchTurn(id, (t) => ({ ...t, status: "running", plan: undefined, startedAt: performance.now(), endedAt: null }));
-    setNow(performance.now());
-    try {
-      await revisePlanApi(turn.queryId, feedback);
-      const res = await resumeRun(turn.queryId, callbacksFor(id), sinceEventId);
-      if (cancelled.current.has(id)) return;
-      applyOutcome(id, res);
-    } catch (err) {
-      if (!cancelled.current.has(id)) failTurn(id, err);
-    }
-  }
-
-  // Discard a plan awaiting confirmation: stop it server-side and mark the turn
-  // stopped, so it does not linger as a paused query (and is not rehydrated as
-  // still awaiting confirmation on reload).
-  function discardPlan(turn: Turn) {
-    if (turn.queryId != null) cancelQuery(turn.queryId);
-    patchTurn(turn.id, (t) => ({ ...t, status: "failed", stopped: true, plan: undefined, endedAt: performance.now() }));
+    if (uploaded.length) setDocuments((docs) => [...docs, ...uploaded]);
+    return uploaded;
   }
 
   function stopResearch() {
@@ -490,29 +532,62 @@ export default function App() {
     );
   }
 
-  // Refresh the open report: re-fetch this turn's stored query from the backend
-  // and sync the artifact to it. This is NOT a re-run; it just pulls the latest
-  // persisted report/sources for the same query (no-op without a backend id).
-  async function refreshArtifact(turn: Turn) {
-    if (turn.queryId == null) return;
-    const data = await openQuery(turn.queryId);
-    if (!data) return;
-    const outcome = outcomeFor(data.status, data.result.report, data.result.sources.length);
-    setTurns((prev) =>
-      prev.map((t) =>
-        t.id === turn.id
-          ? {
-              ...t,
-              status: data.status,
-              result: data.result,
-              events: data.events,
-              outcome,
-              title: data.title ?? t.title,
-              error: data.error,
-            }
-          : t,
-      ),
-    );
+  // --- outputs and uploads ---------------------------------------------------
+
+  // The reports this account has, refreshed whenever one might have changed: a
+  // background run finishes on its own, minutes after the turn that started it.
+  const refreshOutputs = () => {
+    if (!isLive()) return;
+    listOutputs().then(setOutputs).catch(() => {});
+  };
+
+  // Open one report in the panel, loading its body on demand.
+  async function showOutput(id: number | null) {
+    setOpenOutputId(id);
+    setOpenOutputResult(null);
+    if (id == null) return;
+    setLayout("split");
+    const result = await openOutput(id);
+    setOpenOutputResult(result);
+  }
+
+  async function refreshOutput(id: number) {
+    setOpenOutputResult(await openOutput(id));
+    refreshOutputs();
+  }
+
+  // Attaching from the Outputs panel, for a file the user wants in the
+  // conversation without asking anything about it yet. Before the first message
+  // there is no conversation to put it in, so it is staged like a composer pick.
+  async function addDocument(file: File) {
+    if (activeConversationId == null) {
+      setStaged((files) => [...files, file]);
+      return;
+    }
+    setUploadError(null);
+    try {
+      const doc = await uploadDocument(activeConversationId, file);
+      setDocuments((docs) => [...docs, doc]);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : t.uploads.failed);
+    }
+  }
+
+  async function removeDocument(doc: Doc) {
+    setDocuments((docs) => docs.filter((d) => d.id !== doc.id));
+    await deleteDocument(doc.id);
+  }
+
+  // Fact-check a document from the panel: the same sub-agent the supervisor
+  // calls, started from the file itself. It lands in Outputs like any other run.
+  async function factCheck(doc: Doc) {
+    try {
+      const output = await factCheckDocument(doc.id);
+      setOutputs((current) => [output, ...current]);
+      setLayout("split");
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : t.uploads.failed);
+    }
   }
 
   const chooseLayout = (m: LayoutMode) => setLayout(m);
@@ -542,7 +617,12 @@ export default function App() {
     const loaded = conv.turns.map(turnFromLoaded);
     setTurns(loaded);
     setActiveConversation(conv.id);
+    setDocuments(conv.documents);
+    setStaged([]);
+    setUploadError(null);
+    refreshOutputs();
     setFocusedId(null);
+    setOpenOutputId(null);
     setView("chat");
     setLayout("thread");
     resumeInFlight(loaded);
@@ -551,7 +631,11 @@ export default function App() {
   function newChat() {
     turns.forEach((t) => cancelled.current.add(t.id));
     setTurns([]);
+    setDocuments([]); // documents belong to a conversation, not to the account
+    setStaged([]);
+    setUploadError(null);
     setFocusedId(null);
+    setOpenOutputId(null);
     setLayout("thread");
     setActiveConversation(null); // a fresh chat starts a new conversation
     navigate("/chat"); // becomes /chat/:id once the backend assigns one
@@ -603,7 +687,14 @@ export default function App() {
 
       {view === "home" && (
         <Fragment>
-          <Hero onSubmit={heroSubmit} note={accessNote} />
+          <Hero
+            onSubmit={heroSubmit}
+            note={accessNote}
+            staged={live ? staged : undefined}
+            onAttach={(files) => setStaged((current) => [...current, ...files])}
+            onUnstage={(index) => setStaged((current) => current.filter((_, i) => i !== index))}
+            attachError={uploadError}
+          />
           <About />
           <HowItWorks />
           <Footer />
@@ -621,10 +712,19 @@ export default function App() {
           onSubmit={startResearch}
           onStop={stopResearch}
           onExit={goHome}
-          onRefresh={refreshArtifact}
-          onConfirmPlan={confirmPlan}
-          onRevisePlan={revisePlan}
-          onDiscardPlan={discardPlan}
+          outputs={outputs}
+          documents={documents}
+          openOutputId={openOutputId}
+          openOutputResult={openOutputResult}
+          onOpenOutput={showOutput}
+          onRefreshOutput={refreshOutput}
+          staged={staged}
+          onAttach={(files) => setStaged((current) => [...current, ...files])}
+          onUnstage={(index) => setStaged((current) => current.filter((_, i) => i !== index))}
+          onUpload={addDocument}
+          onRemoveDocument={removeDocument}
+          onFactCheck={factCheck}
+          uploadError={uploadError}
           running={anyRunning}
           onNewChat={newChat}
           accessNote={accessNote}
@@ -634,6 +734,32 @@ export default function App() {
           theme={theme}
           toggleTheme={toggleTheme}
         />
+      )}
+
+      {/* A background run finishes on its own, so it says so wherever the user
+          happens to be, with one tap to go and read it. */}
+      {ready && (
+        <div className="toast" role="status">
+          <span className="toast-text">{t.outputs.ready(ready.title)}</span>
+          <button
+            className="toast-open"
+            onClick={() => {
+              const output = ready;
+              setReady(null);
+              setView("chat");
+              showOutput(output.id);
+            }}
+          >
+            {t.outputs.open}
+          </button>
+          <button
+            className="toast-close"
+            onClick={() => setReady(null)}
+            aria-label={t.outputs.dismiss}
+          >
+            {I.close}
+          </button>
+        </div>
       )}
 
       <DemoDialog open={demoOpen} onClose={() => setDemoOpen(false)} />

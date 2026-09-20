@@ -30,7 +30,6 @@ def test_an_answer_is_judged_only_on_the_response() -> None:
         input="q",
         run_date="2026-09-14",
         model="m",
-        route="answer",
         reply="Hi.",
     )
 
@@ -46,7 +45,7 @@ def test_a_research_run_is_judged_at_every_stage() -> None:
         input="q",
         run_date="2026-09-14",
         model="m",
-        route="research",
+        tools=["research"],
         research_query="q today",
         plan=["a", "b"],
         researchers=[
@@ -113,7 +112,6 @@ async def test_without_a_judge_only_the_deterministic_checks_run() -> None:
         input="q",
         run_date="2026-09-14",
         model="m",
-        route="answer",
         reply="Hi.",
     )
 
