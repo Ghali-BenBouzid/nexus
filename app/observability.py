@@ -80,24 +80,3 @@ def record_metadata(**fields: Any) -> None:
     run = get_current_run_tree()
     if run is not None:
         run.add_metadata(fields)
-
-
-def _drop_self(inputs: dict[str, Any]) -> dict[str, Any]:
-    """Strip the bound ``self`` from a traced method's inputs so the run records
-    only the real arguments."""
-    return {k: v for k, v in inputs.items() if k != "self"}
-
-
-def traced_tool() -> Any:
-    """Decorator for ``BaseTool.execute``: records the call as a tool run with its
-    arguments (query, url, ...). Pair with ``record_run_name`` inside ``execute``
-    so each run is labeled with the concrete tool name instead of "execute"."""
-    return traceable(run_type="tool", process_inputs=_drop_self)
-
-
-def record_run_name(name: str) -> None:
-    """Rename the current run (used to label a tool run with its tool name).
-    A no-op when tracing is off."""
-    run = get_current_run_tree()
-    if run is not None:
-        run.name = name

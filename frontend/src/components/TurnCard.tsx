@@ -5,7 +5,7 @@ import { t } from "../lib/i18n";
 import type { Turn } from "../types";
 import { Markdown } from "./Markdown";
 import { ProgressBar } from "./ProgressBar";
-import { SourceList } from "./SourcesPanel";
+import { SourceList } from "./Sources";
 
 type TurnCardProps = {
   turn: Turn;
