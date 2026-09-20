@@ -11,7 +11,13 @@ import json
 import pytest
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
-from app.agents.supervisor import Decision
+from app.agents.supervisor import (
+    DeepResearchArgs,
+    FactCheckArgs,
+    ReadDocumentArgs,
+    ReadReportArgs,
+    ResearchArgs,
+)
 from app.agents.tools import (
     FetchPageArgs,
     SubmitFindingArgs,
@@ -19,7 +25,17 @@ from app.agents.tools import (
     WebSearchArgs,
 )
 
-SCHEMAS = [SubmitPlanArgs, SubmitFindingArgs, WebSearchArgs, FetchPageArgs, Decision]
+SCHEMAS = [
+    SubmitPlanArgs,
+    SubmitFindingArgs,
+    WebSearchArgs,
+    FetchPageArgs,
+    ResearchArgs,
+    DeepResearchArgs,
+    ReadDocumentArgs,
+    ReadReportArgs,
+    FactCheckArgs,
+]
 
 
 @pytest.mark.parametrize("schema", SCHEMAS, ids=lambda schema: schema.__name__)

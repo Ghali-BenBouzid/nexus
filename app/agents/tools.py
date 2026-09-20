@@ -1,8 +1,27 @@
+"""What agents retrieve with, and how retrieved text is handed to them.
+
+Two rules hold for every tool here, whichever agent calls it:
+
+- Retrieved text arrives inside a named tag, so an agent can tell a page's words
+  from its own instructions, and a page cannot close the tag to write outside it.
+- Sources are registered into the turn's ``Sources`` registry by code, and the
+  tool hands back the numbers it issued. A claim can only cite a number that a
+  real retrieval produced.
+"""
+
+from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
+from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
-from app.agents.schemas import Source
+from app.agents.schemas import AgentEvent, Source
+from app.agents.sources import Sources
+
+Emit = Callable[[AgentEvent], Awaitable[None]]
+_Retrieving = Callable[[], Awaitable["RetrievalResult"]]
+
+MAX_PAGE_CHARS = 6_000  # cap fetched page text so it can't blow the token budget
 
 
 def tagged(tag: str, body: str, **attributes: str) -> str:
@@ -23,11 +42,8 @@ def _attribute(value: str) -> str:
     return clean[:200]
 
 
-class ToolResult(BaseModel):
+class RetrievalResult(BaseModel):
     content: str
-
-
-class RetrievalResult(ToolResult):
     sources: list[Source] = []
 
 
@@ -41,7 +57,7 @@ class SearchBackend(Protocol):
     """A swappable web-retrieval backend (Tavily, Brave, ...). Isolates the
     concrete search provider from the tools that depend on it. It is an async
     context manager so the job can scope the client's lifetime with
-    ``async with backend:`` (mirrors LLMProvider)."""
+    ``async with backend:``."""
 
     async def __aenter__(self) -> "SearchBackend": ...
 
@@ -76,6 +92,9 @@ def inline_refs(schema: dict[str, Any]) -> dict[str, Any]:
     return resolve(schema)
 
 
+# --- the argument schemas models fill ---------------------------------------
+
+
 class SubmitPlanArgs(BaseModel):
     sub_questions: list[str] = Field(description="The list of sub-questions")
 
@@ -84,7 +103,7 @@ class SubmitFindingClaim(BaseModel):
     text: str = Field(description="A single, self-contained factual statement")
     cited_source_ids: list[int] = Field(
         default_factory=list,
-        description="ids of the sources that back THIS statement (empty if none)",
+        description="numbers of the sources that back THIS statement (empty if none)",
     )
 
 
@@ -92,7 +111,7 @@ class SubmitFindingArgs(BaseModel):
     claims: list[SubmitFindingClaim] = Field(
         default_factory=list,
         description="the answer broken into individual claims, each with the "
-        "source ids that support it; empty if no relevant info was found",
+        "source numbers that support it; empty if no relevant info was found",
     )
     found_info: bool = Field(description="False if no relevant info was found")
 
@@ -102,11 +121,17 @@ class WebSearchArgs(BaseModel):
     max_results: int = Field(default=5, description="How many results to return")
 
 
+class FetchPageArgs(BaseModel):
+    url: str = Field(description="The URL of the page to fetch and read in full")
+
+
+# --- retrieval ---------------------------------------------------------------
+
+
 async def web_search_results(
     backend: SearchBackend, query: str, max_results: int = 5
 ) -> RetrievalResult:
-    """One web search, tagged as retrieved material. Shared by every agent that
-    searches, so results look the same wherever they are read."""
+    """One web search, tagged as retrieved material."""
     hits = await backend.search(query, max_results)
     sources = [Source(title=hit.title, url=hit.url) for hit in hits]
     body = (
@@ -129,8 +154,69 @@ async def fetch_page_text(backend: SearchBackend, url: str) -> RetrievalResult:
     )
 
 
-class FetchPageArgs(BaseModel):
-    url: str = Field(description="The URL of the page to fetch and read in full")
+async def _noop(event: AgentEvent) -> None:
+    return None
 
 
-MAX_PAGE_CHARS = 6_000  # cap fetched page text so it can't blow the token budget
+def retrieval_tools(
+    backend: SearchBackend,
+    sources: Sources,
+    *,
+    emit: Emit = _noop,
+    agent: str = "agent",
+) -> list[StructuredTool]:
+    """The two tools every web-facing agent gets: search, and read a page in
+    full. Both register what they retrieved into ``sources`` and append the
+    numbers the agent may cite. A failure is told to the agent and to the live
+    feed, never raised: one dead search should cost a search, not the turn."""
+
+    async def retrieve(what: str, retrieving: _Retrieving) -> str:
+        try:
+            result = await retrieving()
+        except Exception as exc:  # noqa: BLE001 -- a failed tool is not a failed run
+            await emit(
+                AgentEvent(
+                    type="tool_error",
+                    message=f"{what} failed: {exc}",
+                    data={"agent": agent, "tool": what},
+                )
+            )
+            return f"{what} failed: {exc}. Try a different approach."
+        return with_numbers(result, sources)
+
+    async def web_search(query: str, max_results: int = 5) -> str:
+        return await retrieve(
+            "web_search", lambda: web_search_results(backend, query, max_results)
+        )
+
+    async def fetch_page(url: str) -> str:
+        return await retrieve("fetch_page", lambda: fetch_page_text(backend, url))
+
+    return [
+        StructuredTool.from_function(
+            coroutine=web_search,
+            name="web_search",
+            description=(
+                "Run a web search for a query and return up to max_results results."
+            ),
+            args_schema=WebSearchArgs,
+        ),
+        StructuredTool.from_function(
+            coroutine=fetch_page,
+            name="fetch_page",
+            description=(
+                "Fetch a web page by URL and return its cleaned full text, for when "
+                "a search snippet is promising but insufficient."
+            ),
+            args_schema=FetchPageArgs,
+        ),
+    ]
+
+
+def with_numbers(result: RetrievalResult, sources: Sources) -> str:
+    """Register a retrieval's sources and append the legend the agent cites from."""
+    if not result.sources:
+        return result.content
+    numbers = sources.register(result.sources)
+    legend = sources.legend(numbers)
+    return f"{result.content}\n\nCite these sources by number:\n{legend}"

@@ -118,7 +118,8 @@ async def _collect(
             if trace.researchers
             else ""
         )
-        status = f"FAILED ({trace.error})" if trace.error else trace.route
+        used = ", ".join(trace.tools) or "answered directly"
+        status = f"FAILED ({trace.error})" if trace.error else used
         print(
             f"[{done}/{len(goldens)}] {golden.id}: {status}{research}, "
             f"{trace.seconds:.0f}s, ${trace.cost_usd:.4f}",

@@ -1,10 +1,16 @@
-"""The jobs that run the research graph (app.agents.orchestrator), on a worker
-(JOB_QUEUE=redis) or in the API process (inline), see app.jobs.
+"""Running one job: what every agent run shares before it does its own work.
 
-A job runs the graph for one query and mirrors what happens onto the query row,
-which is what the API serves: the supervisor's decision names the turn, a pause
-for the plan sets awaiting_plan, the report completes it. The graph keeps its own
-state in the checkpointer, and only while a run is paused on its plan."""
+A job is one run of the agents against one ``Query`` row: a chat turn, a deep
+research run, a fact check, or the one-shot API run. What they share is
+everything around the work. The query is claimed, a heartbeat says the job is
+alive, the user's stop is watched for, every model call is billed to the
+account, the search backend is cached and closed, failures become one clear
+message on the row, and nothing is ever left in flight.
+
+So that is what lives here: ``run_query`` wraps a piece of work in all of it and
+hands it a ``Run``. What each job actually does lives next to the agents it
+drives (app.conversations.service for a turn, app.research.deep for a deep run).
+"""
 
 import asyncio
 import contextlib
@@ -15,29 +21,15 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-from langgraph.graph.state import CompiledStateGraph
-from langgraph.types import Command
-from psycopg.rows import dict_row
-from psycopg_pool import AsyncConnectionPool
-from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.model import Errors, Guard, retrying
-from app.agents.orchestrator import (
-    SERDE,
-    Deps,
-    OrchestratorCancelledError,
-    OrchestratorError,
-    Review,
-    compile_graph,
-    run_config,
-)
+from app.agents.model import Errors, Guard, Progress, StoppedError, retrying
 from app.agents.planner import PlannerError
 from app.agents.provider import ProviderCreditsError, ProviderError
+from app.agents.report import as_stored, write_report
+from app.agents.research import Limits, run_research
 from app.agents.schemas import AgentEvent
 from app.agents.search_cache import CachingSearchBackend
+from app.agents.sources import Sources
 from app.agents.tools import SearchBackend
 from app.billing.metering import billing
 from app.core.config import settings
@@ -49,62 +41,17 @@ from app.research.dependencies import get_model, get_search_backend
 logger = logging.getLogger(__name__)
 
 PROVIDER_DOWN = "The model provider is not responding. Try again in a moment."
-PLAN_EXPIRED = "This plan is no longer available. Send the question again."
-
-# Called with the supervisor's decision, while the run goes on.
-OnRoute = Callable[[AsyncSession, dict[str, Any]], Awaitable[None]]
 
 
-# --- the graph and its checkpointer -----------------------------------------
-
-_graph: CompiledStateGraph | None = None
-_pool: AsyncConnectionPool | None = None
+class RunCancelledError(Exception):
+    """The user stopped the run."""
 
 
-def _conninfo() -> str:
-    """The app's database URL, as psycopg (the checkpointer's driver) takes it."""
-    url = make_url(settings.database_url).set(drivername="postgresql")
-    if settings.database_ssl:
-        url = url.update_query_dict({"sslmode": "require"})
-    return url.render_as_string(hide_password=False)
+class RunFailedError(Exception):
+    """The run failed for a reason worth showing the user as it is."""
 
 
-async def open_graph(*, in_memory: bool = False) -> None:
-    """Compile the graph over its checkpointer, once per process that runs jobs:
-    the worker, or the API with JOB_QUEUE=inline. ``in_memory`` is for the tests,
-    whose SQLite database the Postgres checkpointer cannot use."""
-    global _graph, _pool
-    if in_memory:
-        _graph = compile_graph(InMemorySaver(serde=SERDE))
-        return
-    _pool = AsyncConnectionPool(
-        _conninfo(),
-        open=False,
-        kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
-    )
-    await _pool.open()
-    checkpointer = AsyncPostgresSaver(_pool, serde=SERDE)
-    # Creates and migrates its own tables, outside Alembic. Idempotent.
-    # ponytail: two workers booting at once can race here; the loser restarts.
-    await checkpointer.setup()
-    _graph = compile_graph(checkpointer)
-
-
-async def close_graph() -> None:
-    global _graph, _pool
-    if _pool is not None:
-        await _pool.close()
-        _pool = None
-    _graph = None
-
-
-def _get_graph() -> CompiledStateGraph:
-    if _graph is None:
-        raise RuntimeError("The research graph is not open (open_graph at startup).")
-    return _graph
-
-
-# --- live feed and liveness ------------------------------------------------
+# --- live feed and liveness -------------------------------------------------
 
 
 class EventSink:
@@ -158,7 +105,7 @@ class Liveness:
                 with contextlib.suppress(asyncio.CancelledError):
                     await task
         if task.cancelled():
-            raise OrchestratorCancelledError("research was stopped")
+            raise RunCancelledError("the run was stopped")
         return task.result()
 
 
@@ -194,23 +141,43 @@ async def job_liveness(query_id: int) -> AsyncIterator[Liveness]:
         await task
 
 
-# --- running the graph ------------------------------------------------------
+# --- one run ----------------------------------------------------------------
 
 
-def _model(model: BaseChatModel | None) -> BaseChatModel:
+@dataclass
+class Run:
+    """Everything a job's work is handed: the model to call, the web to call it
+    against, where progress goes, and what wraps every call."""
+
+    query_id: int
+    user_id: int
+    model: BaseChatModel
+    backend: SearchBackend
+    emit: EventSink
+    sources: Sources
+    stopped: Callable[[], bool]
+    _shared: list = field(default_factory=list)
+
+    def middleware(self, agent: str, emit: Any = None, **data: Any) -> list:
+        """What wraps every call one agent makes: the run-wide concerns, plus a
+        progress tag naming the agent, so the feed can say who is working and
+        nest a sub-agent's steps under the tool call that started it."""
+        return [*self._shared, Progress(emit or self.emit, agent=agent, **data)]
+
+
+def model_for(model: BaseChatModel | None) -> BaseChatModel:
     """The model a job runs on. An inline job reuses the request's (the tests'
     fake); a worker builds its own from settings."""
     return model or get_model()
 
 
-def _middleware(model: BaseChatModel, *, stopped) -> list:
-    """What wraps every call an agent makes: one clear error instead of an SDK
-    traceback, no new call once the user has stopped, and retries where retrying
-    can help.
+def _shared_middleware(*, stopped: Callable[[], bool]) -> list:
+    """One clear error instead of an SDK traceback, no new call once the user has
+    stopped, and retries where retrying can help.
 
     Billing and pacing are not here: middleware only sees an agent's calls, and
-    the planner and the writer call the model directly, so both ride on the
-    model itself."""
+    the planner and the report writer call the model directly, so both ride on
+    the model itself."""
     return [
         Errors(),
         Guard(should_cancel=stopped),
@@ -218,126 +185,67 @@ def _middleware(model: BaseChatModel, *, stopped) -> list:
     ]
 
 
-async def run_graph(
+async def run_query(
     query_id: int,
-    graph_input: dict[str, Any] | Command,
     *,
-    model: BaseChatModel,
-    backend: SearchBackend,
     user_id: int,
-    on_route: OnRoute | None = None,
+    work: Callable[[Run], Awaitable[None]],
+    model: BaseChatModel | None = None,
+    backend: SearchBackend | None = None,
+    timeout: float | None = None,
 ) -> None:
-    """Run the graph for one query (or resume it, given a Command) and always
-    resolve the query's status. Every call is billed to ``user_id``."""
-    graph = _get_graph()
-    config = run_config(query_id)
+    """Claim the query, run ``work`` against it, and always resolve its status.
+
+    ``work`` records the outcome itself (a reply, a report), because only it
+    knows what the run produced. Everything that can go wrong on the way is
+    resolved here, once, so no job has to remember to.
+    """
+    model = model_for(model)
+    backend = CachingSearchBackend(backend or get_search_backend())
     async with db_session.SessionLocal() as db, job_liveness(query_id) as live:
         if not await repository.mark_running(db, query_id):
             return  # stopped while it waited in the queue
-        if (
-            isinstance(graph_input, Command)
-            and not (await graph.aget_state(config)).next
-        ):
-            # Nothing is paused under this query: a plan from before the graph.
-            await repository.fail_query(db, query_id, PLAN_EXPIRED)
-            return
-        paused = False
         try:
             # Billing rides on the model, so a call is billed wherever it was
             # made, inside an agent or not.
             model.callbacks = [billing(user_id=user_id, query_id=query_id)]
-            backend = CachingSearchBackend(backend)
             async with backend:
-                deps = Deps(
+                run = Run(
+                    query_id=query_id,
+                    user_id=user_id,
                     model=model,
                     backend=backend,
                     emit=EventSink(query_id),
-                    should_cancel=lambda: live.stopped,
-                    middleware=_middleware(model, stopped=lambda: live.stopped),
+                    sources=Sources(),
+                    stopped=lambda: live.stopped,
+                    _shared=_shared_middleware(stopped=lambda: live.stopped),
                 )
-                updates = graph.astream(
-                    graph_input,
-                    config,
-                    context=deps,
-                    stream_mode="updates",
-                    # Checkpoint only when the run stops (a pause, the end), not
-                    # after every step: nothing resumes a run that crashed.
-                    # ponytail: "async" would let a redeployed worker pick one up.
-                    durability="exit",
-                )
-                paused = await asyncio.wait_for(
-                    live.unless_stopped(_mirror(db, query_id, updates, on_route)),
-                    timeout=settings.global_timeout,
+                await asyncio.wait_for(
+                    live.unless_stopped(work(run)),
+                    timeout=timeout or settings.global_timeout,
                 )
         except TimeoutError:
-            logger.warning("research job timed out for query %s", query_id)
-            await repository.fail_query(db, query_id, "Research timed out.")
-        except OrchestratorCancelledError:
+            logger.warning("job timed out for query %s", query_id)
+            await repository.fail_query(db, query_id, "The run timed out.")
+        except (RunCancelledError, StoppedError):
             # The stop endpoint already resolved the query as stopped.
-            logger.info("research job %s stopped by the user", query_id)
-        except (PlannerError, OrchestratorError, ProviderCreditsError) as exc:
+            logger.info("job %s stopped by the user", query_id)
+        except (PlannerError, RunFailedError, ProviderCreditsError) as exc:
             # our own domain errors carry safe, user-meaningful messages
-            logger.warning("research job failed for query %s: %s", query_id, exc)
+            logger.warning("job failed for query %s: %s", query_id, exc)
             await repository.fail_query(db, query_id, str(exc))
         except ProviderError:
             logger.warning("provider down for query %s", query_id, exc_info=True)
             await repository.fail_query(db, query_id, PROVIDER_DOWN)
         except Exception:
             # unknown/SDK errors may embed secrets: log full server-side, store generic
-            logger.exception("research job crashed for query %s", query_id)
+            logger.exception("job crashed for query %s", query_id)
             await repository.fail_query(
-                db, query_id, "Research failed due to an internal error."
+                db, query_id, "The run failed due to an internal error."
             )
-        finally:
-            if not paused:
-                await _forget(graph, query_id)
 
 
-async def _mirror(
-    db: AsyncSession,
-    query_id: int,
-    updates: AsyncIterator[dict[str, Any]],
-    on_route: OnRoute | None,
-) -> bool:
-    """Mirror the run onto the query row as each node finishes. Returns whether
-    the run paused for the user to review the plan."""
-    state: dict[str, Any] = {}
-    paused = False
-    # Read the stream to its end, even past the pause: the graph saves the
-    # paused checkpoint as the stream closes.
-    async for chunk in updates:
-        for node, update in chunk.items():
-            if node == "__interrupt__":
-                paused = True
-                continue
-            state |= update or {}
-            if node == "supervisor":
-                if update["route"] != "answer":
-                    await repository.update_turn(
-                        db, query_id, prompt=update["prompt"], title=update["title"]
-                    )
-                if on_route is not None:
-                    await on_route(db, update)
-
-    # Each write only moves a running query, so a stop that landed meanwhile wins.
-    if paused:
-        await repository.set_plan(db, query_id, state["plan"])
-    elif state.get("route") == "answer":
-        await repository.complete_answer(db, query_id, state["reply"])
-    else:
-        await repository.complete_query(db, query_id, state["report"], state["result"])
-    return paused
-
-
-async def _forget(graph: CompiledStateGraph, query_id: int) -> None:
-    """Drop a finished run's checkpoint: there is nothing left to resume."""
-    try:
-        await graph.checkpointer.adelete_thread(str(query_id))
-    except Exception:
-        logger.exception("could not delete the checkpoint of query %s", query_id)
-
-
-# --- the jobs ---------------------------------------------------------------
+# --- the one-shot API run ---------------------------------------------------
 
 
 async def run_research_job(
@@ -348,32 +256,28 @@ async def run_research_job(
     model: BaseChatModel | None = None,
     backend: SearchBackend | None = None,
 ) -> None:
-    """A one-shot run (POST /research/query): plan, research and write, with no
-    pause for the plan."""
-    await run_graph(
-        query_id,
-        {"prompt": prompt, "auto_approve": True},
-        model=_model(model),
-        user_id=user_id,
-        backend=backend or get_search_backend(),
-    )
+    """POST /research/query: research the prompt and write a report, with no
+    conversation around it. The API-first path, and what the evals record."""
 
+    async def work(run: Run) -> None:
+        result = await run_research(
+            prompt,
+            model=run.model,
+            backend=run.backend,
+            sources=run.sources,
+            emit=run.emit,
+            middleware=run.middleware,
+            limits=Limits.normal(),
+        )
+        report = await write_report(
+            result,
+            model=run.model,
+            emit=run.emit,
+            timeout=settings.writer_timeout,
+        )
+        async with db_session.SessionLocal() as db:
+            await repository.complete_query(
+                db, query_id, report, as_stored(result, report)
+            )
 
-async def review_plan_job(
-    query_id: int,
-    *,
-    user_id: int,
-    approved: bool,
-    feedback: str = "",
-    model: BaseChatModel | None = None,
-    backend: SearchBackend | None = None,
-) -> None:
-    """Resume a run paused on its plan with the user's answer. A confirm
-    researches and writes; a revise plans again with the feedback and pauses."""
-    await run_graph(
-        query_id,
-        Command(resume=Review(approved=approved, feedback=feedback)),
-        model=_model(model),
-        user_id=user_id,
-        backend=backend or get_search_backend(),
-    )
+    await run_query(query_id, user_id=user_id, work=work, model=model, backend=backend)

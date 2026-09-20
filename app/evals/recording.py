@@ -15,6 +15,7 @@ from app.agents.model import _usage_of as usage_of
 from app.agents.tools import MAX_PAGE_CHARS, SearchBackend, SearchHit
 from app.evals.trace import FetchCall, SearchCall, SearchHitRecord
 from app.evals.trace import StageUsage as StageUsage_
+from app.observability import STAGE
 
 
 def _describe(exc: Exception) -> str:
@@ -26,13 +27,21 @@ def _describe(exc: Exception) -> str:
 
 
 class RecordingSearchBackend:
-    """Keeps every search and page fetch with what came back. The inner backend's
-    lifecycle belongs to the collector, so entering this one does nothing."""
+    """Keeps every search and page fetch with what came back, tagged with the
+    stage that made it, so one recorder covers a whole turn and the trace can
+    still say which researcher searched what. The inner backend's lifecycle
+    belongs to the collector, so entering this one does nothing."""
 
     def __init__(self, inner: SearchBackend) -> None:
         self.inner = inner
         self.searches: list[SearchCall] = []
         self.fetches: list[FetchCall] = []
+
+    def searches_by(self, stage: str) -> list[SearchCall]:
+        return [call for call in self.searches if call.stage == stage]
+
+    def fetches_by(self, stage: str) -> list[FetchCall]:
+        return [call for call in self.fetches if call.stage == stage]
 
     async def __aenter__(self) -> "RecordingSearchBackend":
         return self
@@ -41,7 +50,7 @@ class RecordingSearchBackend:
         return None
 
     async def search(self, query: str, max_results: int) -> list[SearchHit]:
-        call = SearchCall(query=query)
+        call = SearchCall(query=query, stage=STAGE.get())
         self.searches.append(call)
         started = time.monotonic()
         try:
@@ -58,7 +67,7 @@ class RecordingSearchBackend:
         return hits
 
     async def extract(self, url: str) -> str:
-        call = FetchCall(url=url)
+        call = FetchCall(url=url, stage=STAGE.get())
         self.fetches.append(call)
         started = time.monotonic()
         try:
@@ -75,16 +84,20 @@ class RecordingSearchBackend:
 class StageUsage(AsyncCallbackHandler):
     """Tallies model calls, tokens, cost and latency per pipeline stage.
 
-    A callback, not middleware: the planner and the writer call the model
+    A callback, not middleware: the planner and the report writer call the model
     directly, and a stage that spends nothing because nobody was watching is
-    worse than no number at all. The collector moves ``stage`` as the run goes;
-    concurrent researchers share the research stage.
+    worse than no number at all. The stage comes from the run itself
+    (``app.observability.STAGE``), so concurrent researchers are counted apart
+    rather than sharing one mutable field.
     """
 
     def __init__(self) -> None:
-        self.stage = "supervisor"
         self.usage: dict[str, StageUsage_] = {}
         self._started: dict[UUID, tuple[str, float]] = {}
+
+    @property
+    def stage(self) -> str:
+        return STAGE.get()
 
     async def on_llm_start(self, serialized, prompts, *, run_id, **kwargs) -> None:
         self._started[run_id] = (self.stage, time.monotonic())

@@ -37,11 +37,7 @@ class RoleModel(ScriptedModel):
             tool.get("function", {}).get("name") or tool.get("name", "")
             for tool in (kwargs.get("tools") or [])
         }
-        if "Decision" in names:
-            reply = call(
-                "Decision", action="research", query="research", title="Research Topic"
-            )
-        elif "SubmitPlanArgs" in names:
+        if "SubmitPlanArgs" in names:
             reply = call("SubmitPlanArgs", sub_questions=self.sub_questions)
         elif "SubmitFindingArgs" in names:
             reply = call(
@@ -173,7 +169,7 @@ class _ProvenanceModel(ScriptedModel):
                 if self.agent_calls == 1
                 else call(
                     "SubmitFindingArgs",
-                    claims=[{"text": "ans", "cited_source_ids": [0]}],
+                    claims=[{"text": "ans", "cited_source_ids": [1]}],
                     found_info=True,
                 )
             )

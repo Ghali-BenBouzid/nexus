@@ -7,6 +7,7 @@ redeploying the API never kills a run. With JOB_QUEUE=inline it runs in the API
 process after the response: the tests, or a one-process setup without Redis.
 """
 
+import asyncio
 from collections.abc import Awaitable, Callable
 from typing import Any
 
@@ -20,10 +21,15 @@ from app.core.config import settings
 Job = Callable[..., Awaitable[None]]
 
 _pool: ArqRedis | None = None
+# Inline mode only: a strong reference to every spawned task, because asyncio
+# keeps only a weak one and a task nobody holds can be collected mid-run.
+_spawned: set[asyncio.Task] = set()
 
 
 async def open_queue() -> None:
-    """Connect to Redis once, at API startup (JOB_QUEUE=redis only)."""
+    """Connect to Redis once, at startup (JOB_QUEUE=redis only). Both the API
+    and the worker open it: the API to queue a turn, the worker to queue the
+    background runs a turn starts."""
     global _pool
     if settings.job_queue != "redis":
         return
@@ -41,6 +47,24 @@ async def close_queue() -> None:
     if _pool is not None:
         await _pool.aclose()
         _pool = None
+
+
+async def spawn(job: Job, **kwargs: Any) -> None:
+    """Queue a job from inside another job, with no request behind it.
+
+    This is how a run the supervisor starts (deep research, a fact check) gets
+    off the turn that asked for it: the tool returns at once and the run carries
+    on in the background. Inline, there is no request left to hang a background
+    task on, so it becomes a task of its own.
+    """
+    if settings.job_queue == "inline":
+        task = asyncio.create_task(job(**kwargs))
+        _spawned.add(task)
+        task.add_done_callback(_spawned.discard)
+        return
+    if _pool is None:
+        raise RuntimeError("The job queue is not open (open_queue at startup).")
+    await _pool.enqueue_job(job.__name__, **kwargs)
 
 
 async def submit(

@@ -45,6 +45,9 @@ async def test_inline_jobs_reuse_the_request_clients(monkeypatch) -> None:
 def test_the_worker_runs_every_job_the_api_queues() -> None:
     # A job queued under a name the worker lacks would sit in Redis forever.
     assert {f.name for f in WorkerSettings.functions} == {j.__name__ for j in JOBS}
-    assert {"route_message", "run_research_job", "review_plan_job"} <= {
-        f.name for f in WorkerSettings.functions
-    }
+    assert {
+        "route_message",
+        "run_research_job",
+        "run_deep_research_job",
+        "run_fact_check_job",
+    } <= {f.name for f in WorkerSettings.functions}

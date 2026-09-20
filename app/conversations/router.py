@@ -21,6 +21,7 @@ from app.documents.router import summary as document_summary
 from app.models.conversation import Conversation, Message
 from app.models.query import Query
 from app.models.user import User
+from app.research import repository as research_repository
 from app.research.dependencies import get_model, get_search_backend
 from app.research.repository import stopped_by_user
 from app.research.router import _load_result
@@ -39,7 +40,7 @@ def _message_query(query: Query | None) -> MessageQuery | None:
         reply=query.reply,
         error=query.error,
         stopped=stopped_by_user(query),
-        plan=query.plan,
+        suggestions=query.suggestions or [],
         sources=result.sources if result else [],
         gaps=result.gaps if result else [],
     )
@@ -66,12 +67,16 @@ async def _detail(db: AsyncSession, conversation: Conversation) -> ConversationD
     query_ids = [m.query_id for m in messages if m.query_id is not None]
     queries = await repository.queries_by_id(db, query_ids)
     documents = await documents_repository.list_for_conversation(db, conversation.id)
+    artifacts = await research_repository.list_conversation_artifacts(
+        db, conversation.id
+    )
     return ConversationDetail(
         id=conversation.id,
         title=conversation.title,
         created_at=conversation.created_at,
         messages=_to_responses(messages, queries),
         documents=[document_summary(d) for d in documents],
+        artifacts=artifacts,
     )
 
 

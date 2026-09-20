@@ -32,7 +32,7 @@ def _research_trace() -> RunTrace:
         input="q",
         run_date="2026-09-14",
         model="m",
-        route="research",
+        tools=["research"],
         plan=["a", "b"],
         researchers=[
             ResearcherTrace(
@@ -43,7 +43,7 @@ def _research_trace() -> RunTrace:
             ),
             ResearcherTrace(sub_question="b", searches=[SearchCall(query="b")]),
         ],
-        report="The answer, in English, is this fact [1]. More detail follows here.",
+        reply="The answer, in English, is this fact [1]. More detail follows here.",
         sources=[SourceRecord(title="t", url="https://a.example")],
     )
 
@@ -85,7 +85,7 @@ def test_researching_a_message_that_needed_a_direct_answer_is_a_routing_miss() -
     checks = _by_name(_golden(expected_route="answer"), _research_trace())
 
     assert not checks["route_correct"].passed
-    assert checks["route_correct"].reason == "expected answer, got research"
+    assert checks["route_correct"].reason.startswith("expected answer, got research")
 
 
 def test_any_route_is_not_scored_and_an_answer_has_no_research_checks() -> None:
@@ -94,7 +94,6 @@ def test_any_route_is_not_scored_and_an_answer_has_no_research_checks() -> None:
         input="q",
         run_date="2026-09-14",
         model="m",
-        route="answer",
         reply="Hello, what would you like me to research?",
     )
     checks = _by_name(_golden(expected_route="any"), trace)

@@ -11,11 +11,31 @@ year-round at near-zero cost. ``configure_tracing()`` is what flips them on.
 its own chat models, which is one of the things adopting it bought.
 """
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any
 
 from langsmith import get_current_run_tree, traceable
 
 from app.core.config import settings
+
+# Which part of a run is calling the model right now. A context variable rather
+# than an argument because everything that wants to know (the usage tally, the
+# search recorder in the evals) sits under the call, not next to it, and because
+# a researcher running in its own task inherits a copy rather than racing with
+# its siblings over one shared field.
+STAGE: ContextVar[str] = ContextVar("nexus_stage", default="supervisor")
+
+
+@contextmanager
+def stage(name: str) -> Iterator[None]:
+    token = STAGE.set(name)
+    try:
+        yield
+    finally:
+        STAGE.reset(token)
+
 
 # Plumbing args that carry no data worth recording on a step's trace inputs.
 _INFRA_KEYS = frozenset({"provider", "emit", "tools", "should_cancel", "backend"})

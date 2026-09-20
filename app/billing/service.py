@@ -19,6 +19,15 @@ def to_usd(micro_usd: int) -> float:
     return micro_usd / _MICRO
 
 
+async def has_budget(db: AsyncSession, user_id: int) -> bool:
+    """Whether this account can still pay for work. Read by the background runs
+    the supervisor starts, which have no request to raise a 402 from."""
+    user = await db.get(User, user_id)
+    if user is None:
+        return False
+    return await repository.spent_micro_usd(db, user_id) < user.budget_micro_usd
+
+
 async def ensure_budget(db: AsyncSession, user: User) -> None:
     """Refuse new work (402) once an account has spent its budget.
 

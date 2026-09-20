@@ -12,22 +12,24 @@ from app.evals import metrics as citations
 from app.evals.goldens import Golden
 from app.evals.trace import MetricResult, ResearcherTrace, RunTrace
 
-# On a first message compose has nothing to merge and runs research instead.
-_RESEARCH_ROUTES = {"research", "compose"}
 _GOOD_SEARCH_YIELD = 0.8
 
 
 def route_correct(golden: Golden, trace: RunTrace) -> MetricResult | None:
-    if golden.expected_route == "any" or trace.route is None:
+    """Did the supervisor reach for research when the question needed it, and
+    leave it alone when it did not? There is no router any more, so this reads
+    the judgement off what it actually did."""
+    if golden.expected_route == "any" or trace.error:
         return None
-    actual = "research" if trace.route in _RESEARCH_ROUTES else trace.route
+    actual = "research" if trace.researched else "answer"
     ok = actual == golden.expected_route
+    used = ", ".join(trace.tools) or "no tools"
     return MetricResult(
         name="route_correct",
         stage="routing",
         score=float(ok),
         passed=ok,
-        reason=f"expected {golden.expected_route}, got {trace.route}",
+        reason=f"expected {golden.expected_route}, got {actual} ({used})",
     )
 
 
@@ -118,10 +120,12 @@ def tool_errors(trace: RunTrace) -> MetricResult | None:
 
 
 def citation_checks(trace: RunTrace) -> list[MetricResult]:
-    if not trace.report:
+    """Citation integrity on whatever the user reads: the answer in the
+    conversation, or the report when the run produced one."""
+    if not trace.response.strip():
         return []
     report = Report(
-        content=trace.report,
+        content=trace.response,
         sources=[Source(title=s.title, url=s.url) for s in trace.sources],
         failed_subquestions=trace.gaps,
     )
@@ -131,7 +135,7 @@ def citation_checks(trace: RunTrace) -> list[MetricResult]:
         results.append(
             MetricResult(
                 name=outcome.name,
-                stage="report",
+                stage="response",
                 score=outcome.score,
                 passed=outcome.passed,
                 reason="; ".join([outcome.detail, *outcome.offenders]),

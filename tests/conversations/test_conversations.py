@@ -14,14 +14,14 @@ from tests.research.test_research import FakeBackend, _use_fake_pipeline
 
 
 class _AnswerModel(ScriptedModel):
-    """A supervisor that always answers from what the conversation holds."""
+    """A supervisor that answers straight away, reaching for no tool."""
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        reply = call("Decision", action="answer", reply="Answer from the report.")
+        reply = says("Answer from the report.")
         return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
-async def test_create_conversation_plans_then_confirms(
+async def test_a_turn_answers_in_the_conversation(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
     _use_fake_pipeline(sub_questions=["q1"])
@@ -32,69 +32,78 @@ async def test_create_conversation_plans_then_confirms(
     assert created.status_code == 201
     body = created.json()
 
-    # a research turn is a user message + an assistant message carrying the query
+    # a turn is a user message + the assistant message its run fills in
     roles = [m["role"] for m in body["messages"]]
     assert roles == ["user", "assistant"]
     assert body["messages"][0]["content"] == "first question"
-    query_id = body["messages"][1]["query_id"]
-    assert query_id is not None
+    assert body["messages"][1]["query_id"] is not None
 
-    # the routing job ran after the response: it named the report (and the
-    # conversation), planned, and paused the turn for confirmation
+    # the job ran after the response: the answer lands on the message itself,
+    # and there is no report artifact, because an ordinary turn does not make one
     detail = await client.get(f"/conversations/{body['id']}", headers=auth_headers)
-    assert detail.json()["title"] == "Research Topic"
-    awaiting = detail.json()["messages"][1]["query"]
-    assert awaiting["title"] == "Research Topic"
-    assert awaiting["status"] == "awaiting_plan"
-    assert awaiting["plan"] == ["q1"]
-
-    # confirm the plan -> the research runs -> complete
-    confirm = await client.post(
-        f"/research/query/{query_id}/confirm", headers=auth_headers
-    )
-    assert confirm.status_code == 204
-    final = await client.get(f"/conversations/{body['id']}", headers=auth_headers)
-    finished = final.json()["messages"][1]["query"]
-    assert finished["status"] == "complete"
-    assert finished["report"] == "FINAL REPORT"
+    assert detail.json()["title"] == "first question"
+    turn = detail.json()["messages"][1]
+    assert turn["query"]["status"] == "complete"
+    assert turn["query"]["report"] is None
+    assert turn["content"] == turn["query"]["reply"]
+    assert detail.json()["artifacts"] == []
 
 
-async def test_revise_replans_and_stays_awaiting(
+class _ResearchingModel(ScriptedModel):
+    """A supervisor that researches once, then answers from what came back."""
+
+    researched: bool = False
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        names = {
+            tool.get("function", {}).get("name") or tool.get("name", "")
+            for tool in (kwargs.get("tools") or [])
+        }
+        if "SubmitPlanArgs" in names:
+            reply = call("SubmitPlanArgs", sub_questions=["q1"])
+        elif "SubmitFindingArgs" in names:
+            reply = call(
+                "SubmitFindingArgs",
+                claims=[{"text": "a finding", "cited_source_ids": []}],
+                found_info=True,
+            )
+        elif not self.researched:
+            self.researched = True
+            reply = call("research", question="what about this")
+        else:
+            reply = says("Here is what the research found.")
+        return ChatResult(generations=[ChatGeneration(message=reply)])
+
+
+async def test_a_turn_that_researches_still_answers_inline(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    _use_fake_pipeline(sub_questions=["q1"])
+    # Research is a tool, not a route: its findings come back to the supervisor,
+    # which writes the answer into the conversation. No artifact, no approval.
+    app.dependency_overrides[get_model] = lambda: _ResearchingModel()
+    app.dependency_overrides[get_search_backend] = FakeBackend
+
     created = await client.post(
-        "/conversations", headers=auth_headers, json={"prompt": "topic"}
+        "/conversations", headers=auth_headers, json={"prompt": "research this"}
     )
-    query_id = created.json()["messages"][1]["query_id"]
+    conversation_id = created.json()["id"]
 
-    revise = await client.post(
-        f"/research/query/{query_id}/revise",
-        headers=auth_headers,
-        json={"feedback": "go deeper on safety"},
+    detail = await client.get(f"/conversations/{conversation_id}", headers=auth_headers)
+    turn = detail.json()["messages"][1]["query"]
+    assert turn["status"] == "complete"
+    assert turn["reply"] == "Here is what the research found."
+    assert turn["report"] is None
+    assert detail.json()["artifacts"] == []
+
+    # the researchers really ran, and the feed shows them
+    events = await client.get(
+        f"/research/query/{turn_id(detail)}/events", headers=auth_headers
     )
-    assert revise.status_code == 204
-
-    detail = await client.get(f"/research/query/{query_id}", headers=auth_headers)
-    assert detail.json()["status"] == "awaiting_plan"
-    assert detail.json()["plan"] == ["q1"]
+    assert "researcher_done" in [e["type"] for e in events.json()]
 
 
-async def test_confirm_rejected_when_not_awaiting_plan(
-    client: AsyncClient, auth_headers: dict[str, str]
-) -> None:
-    _use_fake_pipeline(sub_questions=["q1"])
-    created = await client.post(
-        "/conversations", headers=auth_headers, json={"prompt": "topic"}
-    )
-    query_id = created.json()["messages"][1]["query_id"]
-    await client.post(f"/research/query/{query_id}/confirm", headers=auth_headers)
-
-    # already confirmed (running/complete) -> a second confirm is a 409
-    second = await client.post(
-        f"/research/query/{query_id}/confirm", headers=auth_headers
-    )
-    assert second.status_code == 409
+def turn_id(detail) -> int:
+    return detail.json()["messages"][1]["query_id"]
 
 
 async def test_followup_message_appends_to_thread(
@@ -133,11 +142,9 @@ async def test_list_conversations_newest_first(
     assert ids[:2] == [second.json()["id"], first.json()["id"]]
 
 
-async def test_supervisor_answers_from_context_without_research(
+async def test_a_follow_up_can_answer_without_researching_again(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    # First message researches; the follow-up is routed to a direct answer, so it
-    # produces an assistant message with a reply and NO research run.
     _use_fake_pipeline(sub_questions=["q1"])
     created = await client.post(
         "/conversations", headers=auth_headers, json={"prompt": "first"}
@@ -160,58 +167,6 @@ async def test_supervisor_answers_from_context_without_research(
     assert last["query"]["status"] == "complete"
     assert last["query"]["reply"] == "Answer from the report."
     assert last["query"]["report"] is None
-
-
-class _ComposeModel(ScriptedModel):
-    """A supervisor that merges the conversation's reports, then the writer."""
-
-    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        names = {
-            tool.get("function", {}).get("name") or tool.get("name", "")
-            for tool in (kwargs.get("tools") or [])
-        }
-        reply = (
-            call(
-                "Decision",
-                action="compose_report",
-                instructions="merge them into one",
-                title="Combined Report",
-            )
-            if "Decision" in names
-            else says("MERGED REPORT")
-        )
-        return ChatResult(generations=[ChatGeneration(message=reply)])
-
-
-async def test_supervisor_composes_a_merged_report(
-    client: AsyncClient, auth_headers: dict[str, str]
-) -> None:
-    # First message researches and completes; the follow-up asks to merge, so the
-    # supervisor composes a NEW report artifact (no new research run).
-    _use_fake_pipeline(sub_questions=["q1"])
-    created = await client.post(
-        "/conversations", headers=auth_headers, json={"prompt": "first"}
-    )
-    conversation_id = created.json()["id"]
-    query_id = created.json()["messages"][1]["query_id"]
-    await client.post(f"/research/query/{query_id}/confirm", headers=auth_headers)
-
-    app.dependency_overrides[get_model] = lambda: _ComposeModel()
-    followed = await client.post(
-        f"/conversations/{conversation_id}/messages",
-        headers=auth_headers,
-        json={"content": "merge the reports into a longer one"},
-    )
-    last = followed.json()["messages"][-1]
-    assert last["role"] == "assistant"
-    assert last["query_id"] is not None  # compose carries a report artifact
-
-    # the compose job ran during the request cycle and produced the merged report
-    detail = await client.get(f"/conversations/{conversation_id}", headers=auth_headers)
-    composed = detail.json()["messages"][-1]["query"]
-    assert composed["status"] == "complete"
-    assert composed["report"] == "MERGED REPORT"
-    assert composed["title"] == "Combined Report"
 
 
 async def test_conversation_hidden_from_other_users(client: AsyncClient) -> None:

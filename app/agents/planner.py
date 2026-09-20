@@ -5,6 +5,10 @@ One forced call, with room to fix itself. An empty, malformed or over-cap plan i
 fed back so the model can correct it inside the retry budget; after that, an
 over-cap plan is clamped rather than thrown away, and only a plan that never
 arrived at all is a failure.
+
+A deep run passes its own template (app.prompts.deep) and a wider cap: the two
+prompts want opposite things, one to stop at the angles the question has, the
+other to cover it exhaustively.
 """
 
 from collections.abc import Awaitable, Callable
@@ -17,12 +21,13 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from langchain_core.prompts import ChatPromptTemplate
 from pydantic import ValidationError
 
 from app.agents.language import detect_language
 from app.agents.schemas import AgentEvent
 from app.agents.tools import SubmitPlanArgs
-from app.observability import traced_step
+from app.observability import stage, traced_step
 from app.prompts import render
 from app.prompts.common import today
 from app.prompts.planner import PROMPT
@@ -42,21 +47,30 @@ async def _noop(event: AgentEvent) -> None:
 
 @traced_step("plan")
 async def plan(
-    prompt: str,
+    query: str,
     *,
     model: BaseChatModel,
     emit: Emit = _noop,
     cap: int,
-    retry_cap: int,
-    feedback: str | None = None,
+    retry_cap: int = 2,
+    prompt: ChatPromptTemplate = PROMPT,
 ) -> list[str]:
-    """Decompose a prompt into at most ``cap`` sub-questions.
+    """Decompose a question into at most ``cap`` sub-questions."""
+    with stage("plan"):
+        return await _plan(query, model, emit, cap, retry_cap, prompt)
 
-    ``feedback`` carries a reason to plan differently than last time.
-    """
-    messages = _prompt_messages(prompt, cap=cap, feedback=feedback)
+
+async def _plan(
+    query: str,
+    model: BaseChatModel,
+    emit: Emit,
+    cap: int,
+    retry_cap: int,
+    prompt: ChatPromptTemplate,
+) -> list[str]:
+    messages = _prompt_messages(prompt, query, cap=cap)
     bound = model.bind_tools([SubmitPlanArgs], tool_choice="any")
-    await emit(AgentEvent(type="planner_start", message=f"Planning: {prompt}"))
+    await emit(AgentEvent(type="planner_start", message=f"Planning: {query}"))
 
     sub_questions: list[str] = []
     for _ in range(retry_cap + 1):
@@ -94,15 +108,14 @@ async def plan(
 
 
 def _prompt_messages(
-    prompt: str, *, cap: int, feedback: str | None
+    prompt: ChatPromptTemplate, query: str, *, cap: int
 ) -> list[BaseMessage]:
     rendered = render(
-        PROMPT,
-        query=prompt,
+        prompt,
+        query=query,
         cap=cap,
         today=today(),
-        feedback=(feedback or "").strip(),
-        language=detect_language(prompt) or "",
+        language=detect_language(query) or "",
     )
     return [
         HumanMessage(m.content or "")

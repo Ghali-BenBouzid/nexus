@@ -4,12 +4,12 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.schemas import AgentEvent, Report, ResearchResult
-from app.models.query import Query, QueryEvent, QueryStatus
+from app.models.query import Query, QueryEvent, QueryKind, QueryStatus
 
 # A query some job may still act on. The writes that end a job only move a query
 # still in flight, so two processes (the API stopping a run, a worker finishing
 # it) can never overwrite each other's outcome.
-_IN_FLIGHT = (QueryStatus.pending, QueryStatus.running, QueryStatus.awaiting_plan)
+_IN_FLIGHT = (QueryStatus.pending, QueryStatus.running)
 STOPPED_RESPONDING = "The research stopped responding. Try again."
 STOPPED = "Research was stopped."
 
@@ -51,6 +51,7 @@ async def reap_stalled_queries(db: AsyncSession, stale_after_seconds: float) -> 
         update(Query)
         .where(
             Query.status == QueryStatus.running,
+            Query.kind != QueryKind.deep_research,
             or_(Query.heartbeat_at.is_(None), Query.heartbeat_at < cutoff),
         )
         .values(
@@ -64,11 +65,74 @@ async def reap_stalled_queries(db: AsyncSession, stale_after_seconds: float) -> 
     return result.rowcount or 0
 
 
+async def stalled_deep_runs(db: AsyncSession, stale_after_seconds: float) -> list[int]:
+    """Deep runs whose worker stopped beating: redeployed, or crashed. They are
+    the one kind that is checkpointed, so they are handed back to a worker
+    instead of being failed like everything else. The heartbeat is bumped as they
+    are handed over, so a second reaper pass does not queue them twice."""
+    cutoff = _now() - timedelta(seconds=stale_after_seconds)
+    result = await db.execute(
+        update(Query)
+        .where(
+            Query.status == QueryStatus.running,
+            Query.kind == QueryKind.deep_research,
+            or_(Query.heartbeat_at.is_(None), Query.heartbeat_at < cutoff),
+        )
+        .values(heartbeat_at=_now())
+        .returning(Query.id)
+        .execution_options(synchronize_session=False)
+    )
+    ids = [row for row in result.scalars().all()]
+    await db.commit()
+    return ids
+
+
+async def list_conversation_artifacts(
+    db: AsyncSession, conversation_id: int
+) -> list[Query]:
+    """Every artifact run a conversation started, finished or not, newest first:
+    what its Outputs panel shows, including the one still running."""
+    result = await db.execute(
+        select(Query)
+        .where(Query.conversation_id == conversation_id, Query.kind != QueryKind.chat)
+        .order_by(Query.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+async def list_conversation_reports(
+    db: AsyncSession, conversation_id: int
+) -> list[Query]:
+    """The finished reports a conversation has produced, oldest first: what the
+    supervisor may read back with read_report."""
+    result = await db.execute(
+        select(Query)
+        .where(
+            Query.conversation_id == conversation_id,
+            Query.kind != QueryKind.chat,
+            Query.status == QueryStatus.complete,
+        )
+        .order_by(Query.created_at)
+    )
+    return list(result.scalars().all())
+
+
 async def create_pending_query(
-    db: AsyncSession, user_id: int, prompt: str, title: str | None = None
+    db: AsyncSession,
+    user_id: int,
+    prompt: str,
+    title: str | None = None,
+    *,
+    kind: QueryKind = QueryKind.chat,
+    conversation_id: int | None = None,
 ) -> Query:
     query = Query(
-        user_id=user_id, prompt=prompt, title=title, status=QueryStatus.pending
+        user_id=user_id,
+        prompt=prompt,
+        title=title,
+        kind=kind,
+        conversation_id=conversation_id,
+        status=QueryStatus.pending,
     )
     db.add(query)
     await db.commit()
@@ -138,30 +202,16 @@ async def touch_heartbeat(db: AsyncSession, query_id: int) -> QueryStatus | None
     return status
 
 
-async def update_turn(
-    db: AsyncSession, query_id: int, *, prompt: str, title: str | None
-) -> None:
-    """Record what the supervisor made of the message: the self-contained research
-    query (or the compose instructions) and the report's title."""
-    await db.execute(
-        update(Query)
-        .where(Query.id == query_id)
-        .values(prompt=prompt, title=title)
-        .execution_options(synchronize_session=False)
+async def list_artifacts(db: AsyncSession, user_id: int) -> list[Query]:
+    """The runs that produced something the user keeps: deep research reports and
+    fact checks, newest first. A chat turn is not one: its answer lives in the
+    conversation."""
+    result = await db.execute(
+        select(Query)
+        .where(Query.user_id == user_id, Query.kind != QueryKind.chat)
+        .order_by(Query.created_at.desc())
     )
-    await db.commit()
-
-
-async def set_plan(db: AsyncSession, query_id: int, plan: list[str]) -> None:
-    """Store a proposed plan and pause for confirmation (human-in-the-loop). Only
-    a running query moves, so a stop that landed while planning wins."""
-    await _transition(
-        db,
-        query_id,
-        (QueryStatus.running,),
-        plan=plan,
-        status=QueryStatus.awaiting_plan,
-    )
+    return list(result.scalars().all())
 
 
 async def complete_query(
@@ -185,14 +235,24 @@ async def complete_query(
     )
 
 
-async def complete_answer(db: AsyncSession, query_id: int, reply: str) -> None:
-    """End a turn the supervisor answered directly, with no research."""
+async def complete_answer(
+    db: AsyncSession,
+    query_id: int,
+    reply: str,
+    *,
+    result: ResearchResult | None = None,
+    suggestions: list[str] | None = None,
+) -> None:
+    """End a chat turn with the supervisor's answer, the sources it cited, and
+    the follow-ups offered under it."""
     await _transition(
         db,
         query_id,
         (QueryStatus.running,),
         status=QueryStatus.complete,
         reply=reply,
+        result=result.model_dump() if result else None,
+        suggestions=suggestions or None,
         completed_at=_now(),
     )
 

@@ -1,3 +1,11 @@
+"""The eval harness, recording a real turn.
+
+A turn is one agent with tools now, so what the harness has to prove is that it
+can still see inside them: which tools the supervisor reached for, what each
+researcher behind a ``research`` call searched and found, and what the run cost,
+without changing what the turn does.
+"""
+
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from app.agents.tools import SearchHit
@@ -14,32 +22,22 @@ GOLDEN = Golden(
 
 
 class PipelineModel(ScriptedModel):
-    """Routes to research, plans two sub-questions, searches once per researcher
-    and cites what came back, then writes a report. Every call reports a cost."""
+    """A supervisor that researches (two sub-questions, one search each, one of
+    them fruitless) and then answers. Every call reports a cost."""
 
-    route: str = "research"
+    answers_directly: bool = False
+    researched: bool = False
 
-    def __init__(self, route: str = "research", **kwargs):
+    def __init__(self, answers_directly: bool = False, **kwargs):
         super().__init__(**kwargs)
-        self.route = route
+        self.answers_directly = answers_directly
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         names = {
             tool.get("function", {}).get("name") or tool.get("name", "")
             for tool in (kwargs.get("tools") or [])
         }
-        if "Decision" in names:
-            reply = (
-                call("Decision", action="answer", reply="Hi there.")
-                if self.route == "answer"
-                else call(
-                    "Decision",
-                    action="research",
-                    query="How does X work in 2026?",
-                    title="X",
-                )
-            )
-        elif "SubmitPlanArgs" in names:
+        if "SubmitPlanArgs" in names:
             reply = call("SubmitPlanArgs", sub_questions=["what is X", "obscure q2"])
         elif "SubmitFindingArgs" in names:
             question = str(messages[1].content or "")
@@ -51,14 +49,19 @@ class PipelineModel(ScriptedModel):
                 reply = call(
                     "SubmitFindingArgs",
                     claims=(
-                        [{"text": "X works like this.", "cited_source_ids": [0]}]
+                        [{"text": "X works like this.", "cited_source_ids": [1]}]
                         if found
                         else []
                     ),
                     found_info=found,
                 )
+        elif self.answers_directly:
+            reply = says("Hi there.")
+        elif not self.researched:
+            self.researched = True
+            reply = call("research", question="How does X work in 2026?")
         else:
-            reply = says("X works like this [1].")
+            reply = says("X works like this.[1]")
         _priced(reply)
         return ChatResult(generations=[ChatGeneration(message=reply)])
 
@@ -97,15 +100,17 @@ class Backend:
         return ""
 
 
-async def test_research_run_is_recorded_stage_by_stage() -> None:
+async def test_a_turn_that_researches_is_recorded_all_the_way_down() -> None:
     trace = await collect_one(GOLDEN, model=PipelineModel(), backend=Backend())
 
     assert trace.error is None
-    assert trace.route == "research"
+    assert trace.tools == ["research"]
+    assert trace.researched
     assert trace.research_query == "How does X work in 2026?"
     assert trace.plan == ["what is X", "obscure q2"]
 
     found, empty = trace.researchers
+    # each researcher's own searches, told apart by the stage they ran under
     assert found.searches[0].query == "what is X"
     assert found.searches[0].hits[0].url == "https://x.example"
     assert found.succeeded
@@ -117,21 +122,22 @@ async def test_research_run_is_recorded_stage_by_stage() -> None:
 
     assert trace.gaps == ["obscure q2"]
     assert trace.consolidated == ["what is X: X works like this. [1]"]
-    assert trace.report == "X works like this [1]."
+    assert trace.response == "X works like this.[1]"
     assert [s.url for s in trace.sources] == ["https://x.example"]
-    assert set(trace.usage) == {"supervisor", "plan", "research", "write"}
-    assert trace.usage["research"].calls == 4  # two rounds for each researcher
+    assert set(trace.usage) == {"supervisor", "plan", "research-1", "research-2"}
+    assert trace.usage["research-1"].calls == 2  # search, then submit
     assert round(trace.cost_usd, 4) == 0.007
 
 
-async def test_direct_answer_stops_after_routing() -> None:
+async def test_a_turn_that_answers_directly_records_no_research() -> None:
     trace = await collect_one(
-        GOLDEN, model=PipelineModel(route="answer"), backend=Backend()
+        GOLDEN, model=PipelineModel(answers_directly=True), backend=Backend()
     )
 
-    assert trace.route == "answer"
-    assert trace.reply == "Hi there."
+    assert trace.tools == []
+    assert not trace.researched
     assert trace.plan == []
+    assert trace.researchers == []
     assert trace.response == "Hi there."
 
 
@@ -145,7 +151,8 @@ async def test_search_failures_are_recorded_not_raised() -> None:
 
     errors = [s.error for r in trace.researchers for s in r.searches]
     assert errors and all("search is down" in e for e in errors)
-    assert all(r.events for r in trace.researchers)  # the tool_error event is kept
+    # the tool_error events are kept so a post-mortem can say why
+    assert any("tool_error" in line for line in trace.lifecycle)
 
 
 async def test_a_plan_only_run_stops_before_any_search() -> None:
@@ -157,5 +164,5 @@ async def test_a_plan_only_run_stops_before_any_search() -> None:
     assert trace.until == "plan"
     assert trace.plan == ["what is X", "obscure q2"]
     assert trace.researchers == []
-    assert trace.report is None
+    assert trace.response == ""
     assert set(trace.usage) == {"supervisor", "plan"}

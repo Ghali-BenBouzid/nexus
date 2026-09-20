@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Text, func
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -11,22 +11,50 @@ from app.db.base import Base
 
 class QueryStatus(enum.StrEnum):
     pending = "pending"
-    # Planned, paused for the user to confirm or revise the plan (human in the loop).
-    awaiting_plan = "awaiting_plan"
     running = "running"
     complete = "complete"
     failed = "failed"
 
 
+class QueryKind(enum.StrEnum):
+    """What produced this run, which is also what the user gets out of it."""
+
+    chat = "chat"  # one turn of a conversation: the answer is the assistant message
+    deep_research = "deep_research"  # a background run whose report is an artifact
+    fact_check = "fact_check"  # a document checked against the web, also an artifact
+
+    @property
+    def is_artifact(self) -> bool:
+        return self is not QueryKind.chat
+
+
 class Query(Base):
+    """One run of the agents, whatever started it.
+
+    A chat turn, a deep research run and a fact check differ in what they produce
+    and where the user finds it, not in what they need from the system: an owner,
+    a status, a heartbeat, a live event feed, a stop button and a bill. So they
+    are one row with a ``kind``, and everything built around a run works for all
+    three without being written three times.
+    """
+
     __tablename__ = "queries"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(
         ForeignKey("users.id", ondelete="CASCADE"), nullable=False
     )
+    # The conversation this run belongs to. Null for a one-shot API run, which
+    # has no thread around it.
+    conversation_id: Mapped[int | None] = mapped_column(
+        ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    kind: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=QueryKind.chat, index=True
+    )
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
-    # A short, human title for the report artifact, named by the supervisor.
+    # A short, human title for the artifact this run produces, named by whoever
+    # started it. Null on a chat turn, which has no artifact.
     title: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[QueryStatus] = mapped_column(
         Enum(QueryStatus, name="query_status"),
@@ -34,13 +62,14 @@ class Query(Base):
         nullable=False,
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # The proposed sub-questions, set while awaiting_plan (human-in-the-loop).
-    plan: Mapped[list[str] | None] = mapped_column(
+    # The finished report, on a run that produces one (deep research, fact check).
+    report: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The supervisor's answer, on a chat turn. Also copied onto the message.
+    reply: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The follow-up questions offered under a chat answer.
+    suggestions: Mapped[list[str] | None] = mapped_column(
         JSONB().with_variant(JSON(), "sqlite"), nullable=True
     )
-    report: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # The supervisor's direct answer, when the turn needed no research.
-    reply: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Real JSONB in Postgres; plain JSON in the aiosqlite test suite.
     result: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB().with_variant(JSON(), "sqlite"), nullable=True

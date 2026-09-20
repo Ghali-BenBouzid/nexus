@@ -53,7 +53,6 @@ def _trace(response: str | None) -> RunTrace:
         input="Who won?",
         run_date="2026-09-17",
         model="m",
-        route="answer",
         reply=response,
     )
 
@@ -130,7 +129,7 @@ def test_a_plan_only_run_is_not_a_missing_response() -> None:
     judge = FakeJudge(prefers="GOOD")
     answered = _trace("GOOD answer")
     planned = _trace(None).model_copy(
-        update={"until": "plan", "route": "research", "plan": ["q"]}
+        update={"until": "plan", "tools": ["research"], "plan": ["q"]}
     )
 
     result = _compare(answered, planned, judge)
@@ -141,7 +140,7 @@ def test_a_plan_only_run_is_not_a_missing_response() -> None:
 
 def test_the_report_lists_goldens_whose_route_changed() -> None:
     researched = _trace(None).model_copy(
-        update={"until": "plan", "route": "research", "plan": ["q"]}
+        update={"until": "plan", "tools": ["research"], "plan": ["q"]}
     )
     result = _compare(_trace("from memory"), researched, FakeJudge(prefers="GOOD"))
 

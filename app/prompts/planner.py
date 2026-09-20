@@ -22,16 +22,11 @@ researcher would answer in one pass, such as one sub-question per city, per \
 option being compared, or per price bracket: ask for all of them together.
 - Call submit_plan with the list."""
 
-# feedback: why the user rejected the previous plan, empty on a first plan.
-USER = """\
-{{{query}}}{{#feedback}}
-
-Your previous plan was rejected. Revise it based on this feedback from the \
-user: {{{feedback}}}{{/feedback}}"""
+USER = "{{{query}}}"
 
 PROMPT = ChatPromptTemplate(
     [("system", SYSTEM + LANGUAGE), ("human", USER)],
     template_format="mustache",
     name="planner",
-    metadata={"version": 5},
+    metadata={"version": 6},
 )
