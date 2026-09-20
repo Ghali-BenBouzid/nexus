@@ -22,6 +22,7 @@ router = APIRouter(tags=["documents"])
 def summary(document: Document) -> DocumentSummary:
     return DocumentSummary(
         id=document.id,
+        message_id=document.message_id,
         filename=document.filename,
         media_type=document.media_type,
         size_bytes=document.size_bytes,

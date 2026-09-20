@@ -12,12 +12,18 @@ from app.schemas.base import BaseSchema
 
 class ConversationCreate(BaseModel):
     # The first user message; creating a conversation and posting its first
-    # message is one call so a new chat is a single round-trip.
-    prompt: str
+    # message is one call, so a new chat is a single round-trip. Empty creates
+    # the conversation and nothing else, which is what a file attached before
+    # the first message needs: a file belongs to a conversation, so the
+    # conversation has to exist before the message that carries it.
+    prompt: str = ""
+    document_ids: list[int] = []
 
 
 class MessageCreate(BaseModel):
     content: str
+    # Files uploaded into this conversation and sent with this message.
+    document_ids: list[int] = []
 
 
 class ConversationSummary(BaseSchema):
@@ -49,6 +55,8 @@ class MessageResponse(BaseModel):
     content: str
     query_id: int | None
     created_at: datetime
+    # The files sent with this message, shown on the bubble that carries them.
+    documents: list[DocumentSummary] = []
     # Present on an assistant message that carries a research run.
     query: MessageQuery | None = None
 

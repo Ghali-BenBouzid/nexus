@@ -335,10 +335,12 @@ type ConvMessage = {
   content: string;
   query_id: number | null;
   created_at: string;
+  documents?: BackendDoc[];
   query: ConvMessageQuery | null;
 };
 type BackendDoc = {
   id: number;
+  message_id?: number | null;
   filename: string;
   media_type: string;
   size_bytes: number;
@@ -351,6 +353,7 @@ type BackendDoc = {
 function toDoc(raw: BackendDoc): Doc {
   return {
     id: raw.id,
+    messageId: raw.message_id ?? null,
     filename: raw.filename,
     mediaType: raw.media_type,
     sizeBytes: raw.size_bytes,
@@ -395,27 +398,46 @@ async function postConvJson(path: string, body: object, token: string): Promise<
   return (await res.json()) as ConvDetail;
 }
 
-const startTurn = (prompt: string, conversationId: number | null, token: string) =>
+const startTurn = (
+  prompt: string,
+  conversationId: number | null,
+  documentIds: number[],
+  token: string,
+) =>
   conversationId == null
-    ? postConvJson(`/conversations`, { prompt }, token)
-    : postConvJson(`/conversations/${conversationId}/messages`, { content: prompt }, token);
+    ? postConvJson(`/conversations`, { prompt, document_ids: documentIds }, token)
+    : postConvJson(
+        `/conversations/${conversationId}/messages`,
+        { content: prompt, document_ids: documentIds },
+        token,
+      );
+
+// Create a conversation with no message in it. A file belongs to a conversation,
+// so attaching one before the first message needs somewhere to put it; the
+// message that carries it follows.
+export async function createConversation(): Promise<number> {
+  const token = await ensureToken();
+  const detail = await postConvJson(`/conversations`, { prompt: "" }, token);
+  return detail.id;
+}
 
 export async function runLiveResearch(
   prompt: string,
   cb: ResearchCallbacks,
   conversationId: number | null,
+  documentIds: number[] = [],
 ): Promise<ResearchOutcome | null> {
   cb.onStatus("running");
 
   let token = await ensureToken();
   let detail: ConvDetail;
   try {
-    detail = await startTurn(prompt, conversationId, token);
+    detail = await startTurn(prompt, conversationId, documentIds, token);
   } catch (err) {
     // One retry after a fresh session, only when the stored token went stale.
     if (!(err instanceof SessionExpiredError)) throw err;
     token = await ensureToken();
-    detail = await startTurn(prompt, conversationId, token);
+    detail = await startTurn(prompt, conversationId, documentIds, token);
   }
   cb.onConversation?.(detail.id);
 
@@ -595,6 +617,7 @@ export async function listConversations(): Promise<ConversationSummary[]> {
 export type LoadedTurn = {
   queryId: number | null;
   query: string;
+  attachments?: Doc[]; // the files sent with this message
   title?: string;
   status: Status;
   error: string | null;
@@ -621,9 +644,11 @@ export async function loadConversation(id: number): Promise<LoadedConversation |
 
   const turns: LoadedTurn[] = [];
   let prompt = "";
+  let attached: Doc[] = [];
   for (const m of detail.messages) {
     if (m.role === "user") {
       prompt = m.content;
+      attached = (m.documents ?? []).map(toDoc);
       continue;
     }
     // A turn with no run behind it (an older thread) still said something.
@@ -631,6 +656,7 @@ export async function loadConversation(id: number): Promise<LoadedConversation |
       turns.push({
         queryId: null,
         query: prompt,
+        attachments: attached,
         status: "complete",
         error: null,
         result: { report: "", sources: [], consulted: [], gaps: [] },
@@ -642,6 +668,7 @@ export async function loadConversation(id: number): Promise<LoadedConversation |
     turns.push({
       queryId: m.query_id,
       query: prompt,
+      attachments: attached,
       title: q?.title ?? undefined,
       status: q?.status ?? "complete",
       error: q?.error ?? null,

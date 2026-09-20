@@ -30,10 +30,19 @@ async def get_conversation(
 
 
 async def list_conversations(db: AsyncSession, user_id: int) -> list[Conversation]:
-    """The caller's conversations, most-recently-active first."""
+    """The caller's conversations, most-recently-active first.
+
+    A conversation with no message in it is skipped: attaching a file creates
+    one before the message that carries it, and a chat the user never sent
+    should not sit in the sidebar with nothing in it."""
     result = await db.execute(
         select(Conversation)
-        .where(Conversation.user_id == user_id)
+        .where(
+            Conversation.user_id == user_id,
+            select(Message.id)
+            .where(Message.conversation_id == Conversation.id)
+            .exists(),
+        )
         .order_by(Conversation.updated_at.desc())
     )
     return list(result.scalars().all())

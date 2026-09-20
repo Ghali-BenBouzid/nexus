@@ -28,6 +28,10 @@ type ConversationProps = {
   onOpenOutput: (id: number | null) => void;
   onRefreshOutput: (id: number) => void;
   onUpload: (file: File) => void;
+  // Files picked in the composer, sent with the next message.
+  staged: File[];
+  onAttach: (files: File[]) => void;
+  onUnstage: (index: number) => void;
   onRemoveDocument: (doc: Doc) => void;
   onFactCheck: (doc: Doc) => void;
   uploadError?: string | null;
@@ -61,6 +65,9 @@ export function Conversation({
   onOpenOutput,
   onRefreshOutput,
   onUpload,
+  staged,
+  onAttach,
+  onUnstage,
   onRemoveDocument,
   onFactCheck,
   uploadError,
@@ -290,6 +297,10 @@ export function Conversation({
                 onSubmit={submit}
                 onStop={onStop}
                 running={running}
+                staged={staged}
+                onAttach={onAttach}
+                onUnstage={onUnstage}
+                attachError={uploadError}
                 autoFocus
                 placeholder={running ? t.chat.runningPlaceholder : t.chat.idlePlaceholder}
               />

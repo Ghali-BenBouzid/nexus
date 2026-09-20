@@ -19,6 +19,7 @@ from app.db.session import get_db
 from app.documents import repository as documents_repository
 from app.documents.router import summary as document_summary
 from app.models.conversation import Conversation, Message
+from app.models.document import Document
 from app.models.query import Query
 from app.models.user import User
 from app.research import repository as research_repository
@@ -47,8 +48,14 @@ def _message_query(query: Query | None) -> MessageQuery | None:
 
 
 def _to_responses(
-    messages: list[Message], queries: dict[int, Query]
+    messages: list[Message],
+    queries: dict[int, Query],
+    documents: list[Document],
 ) -> list[MessageResponse]:
+    by_message: dict[int, list[Document]] = {}
+    for document in documents:
+        if document.message_id is not None:
+            by_message.setdefault(document.message_id, []).append(document)
     return [
         MessageResponse(
             id=m.id,
@@ -56,6 +63,7 @@ def _to_responses(
             content=m.content,
             query_id=m.query_id,
             created_at=m.created_at,
+            documents=[document_summary(d) for d in by_message.get(m.id, [])],
             query=_message_query(queries.get(m.query_id)) if m.query_id else None,
         )
         for m in messages
@@ -74,7 +82,7 @@ async def _detail(db: AsyncSession, conversation: Conversation) -> ConversationD
         id=conversation.id,
         title=conversation.title,
         created_at=conversation.created_at,
-        messages=_to_responses(messages, queries),
+        messages=_to_responses(messages, queries, documents),
         documents=[document_summary(d) for d in documents],
         artifacts=artifacts,
     )
@@ -91,17 +99,22 @@ async def create(
     model: Any = Depends(get_model),
     backend: SearchBackend = Depends(get_search_backend),
 ):
-    # Every message costs a routing call, so the budget is checked up front.
+    # Every message costs a call, so the budget is checked up front.
     await ensure_budget(db, current_user)
     conversation = await repository.create_conversation(db, current_user.id)
-    await service.submit_message(
-        db,
-        conversation,
-        payload.prompt,
-        model=model,
-        backend=backend,
-        background_tasks=background_tasks,
-    )
+    # An empty prompt creates the conversation and nothing else: what a file
+    # attached before the first message needs, since it has to be uploaded into
+    # a conversation before the message that carries it can be sent.
+    if payload.prompt.strip():
+        await service.submit_message(
+            db,
+            conversation,
+            payload.prompt,
+            model=model,
+            backend=backend,
+            background_tasks=background_tasks,
+            document_ids=payload.document_ids,
+        )
     return await _detail(db, conversation)
 
 
@@ -152,5 +165,6 @@ async def add_message(
         model=model,
         backend=backend,
         background_tasks=background_tasks,
+        document_ids=payload.document_ids,
     )
     return await _detail(db, conversation)

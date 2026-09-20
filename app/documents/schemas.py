@@ -10,6 +10,7 @@ class DocumentSummary(BaseSchema):
     can be long, and the thread only needs to show what is attached."""
 
     id: int
+    message_id: int | None = None  # the message it was sent with, if any
     filename: str
     media_type: str
     size_bytes: int

@@ -10,6 +10,7 @@ import { Nav } from "./components/Nav";
 import { About, Footer, HowItWorks } from "./components/Sections";
 import {
   cancelQuery,
+  createConversation,
   deleteDocument,
   factCheckDocument,
   getAccount,
@@ -124,6 +125,9 @@ export default function App() {
   const [openOutputId, setOpenOutputId] = useState<number | null>(null);
   const [openOutputResult, setOpenOutputResult] = useState<Result | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  // Files picked in the composer but not sent yet. They are uploaded when the
+  // message goes, so a file can be the first thing in a chat.
+  const [staged, setStaged] = useState<File[]>([]);
   // Which finished outputs the user has already been told about, so a report is
   // announced once per browser and not again on every reload.
   const announced = useRef<Set<number>>(new Set(storedAnnounced()));
@@ -142,6 +146,7 @@ export default function App() {
       id: ++turnSeq.current,
       queryId: lt.queryId ?? undefined,
       query: lt.query,
+      attachments: lt.attachments,
       title: lt.title,
       status: lt.status,
       events: [],
@@ -465,15 +470,51 @@ export default function App() {
     } else {
       setTurns((prev) => [...prev, turn]);
     }
-    const conversationId = fresh ? null : activeConversationId;
+    let conversationId = fresh ? null : activeConversationId;
 
     try {
-      const res = await runResearch(prompt, callbacksFor(id), conversationId);
+      // The staged files go up first: a file belongs to a conversation, so if
+      // this is the first message, the conversation is created for them and the
+      // message follows, carrying their ids.
+      let attached: Doc[] = [];
+      if (staged.length && isLive()) {
+        if (conversationId == null) {
+          conversationId = await createConversation();
+          setActiveConversation(conversationId);
+          navigate(`/chat/${conversationId}`, { replace: true });
+        }
+        attached = await uploadStaged(conversationId);
+        patchTurn(id, (t) => ({ ...t, attachments: attached }));
+      }
+      const res = await runResearch(
+        prompt,
+        callbacksFor(id),
+        conversationId,
+        attached.map((doc) => doc.id),
+      );
       if (cancelled.current.has(id)) return;
       applyOutcome(id, res);
     } catch (err) {
       if (!cancelled.current.has(id)) failTurn(id, err);
     }
+  }
+
+  // Upload everything staged in the composer, keeping what fails visible rather
+  // than dropping it silently. Returns what actually landed.
+  async function uploadStaged(conversationId: number): Promise<Doc[]> {
+    const files = staged;
+    setStaged([]);
+    setUploadError(null);
+    const uploaded: Doc[] = [];
+    for (const file of files) {
+      try {
+        uploaded.push(await uploadDocument(conversationId, file));
+      } catch (err) {
+        setUploadError(err instanceof Error ? err.message : t.uploads.failed);
+      }
+    }
+    if (uploaded.length) setDocuments((docs) => [...docs, ...uploaded]);
+    return uploaded;
   }
 
   function stopResearch() {
@@ -515,11 +556,12 @@ export default function App() {
     refreshOutputs();
   }
 
+  // Attaching from the Outputs panel, for a file the user wants in the
+  // conversation without asking anything about it yet. Before the first message
+  // there is no conversation to put it in, so it is staged like a composer pick.
   async function addDocument(file: File) {
-    // A file belongs to a conversation, and a chat has none until its first
-    // message: say so rather than dropping the file silently.
     if (activeConversationId == null) {
-      setUploadError(t.uploads.needsChat);
+      setStaged((files) => [...files, file]);
       return;
     }
     setUploadError(null);
@@ -576,6 +618,7 @@ export default function App() {
     setTurns(loaded);
     setActiveConversation(conv.id);
     setDocuments(conv.documents);
+    setStaged([]);
     setUploadError(null);
     refreshOutputs();
     setFocusedId(null);
@@ -589,6 +632,7 @@ export default function App() {
     turns.forEach((t) => cancelled.current.add(t.id));
     setTurns([]);
     setDocuments([]); // documents belong to a conversation, not to the account
+    setStaged([]);
     setUploadError(null);
     setFocusedId(null);
     setOpenOutputId(null);
@@ -643,7 +687,14 @@ export default function App() {
 
       {view === "home" && (
         <Fragment>
-          <Hero onSubmit={heroSubmit} note={accessNote} />
+          <Hero
+            onSubmit={heroSubmit}
+            note={accessNote}
+            staged={live ? staged : undefined}
+            onAttach={(files) => setStaged((current) => [...current, ...files])}
+            onUnstage={(index) => setStaged((current) => current.filter((_, i) => i !== index))}
+            attachError={uploadError}
+          />
           <About />
           <HowItWorks />
           <Footer />
@@ -667,6 +718,9 @@ export default function App() {
           openOutputResult={openOutputResult}
           onOpenOutput={showOutput}
           onRefreshOutput={refreshOutput}
+          staged={staged}
+          onAttach={(files) => setStaged((current) => [...current, ...files])}
+          onUnstage={(index) => setStaged((current) => current.filter((_, i) => i !== index))}
           onUpload={addDocument}
           onRemoveDocument={removeDocument}
           onFactCheck={factCheck}

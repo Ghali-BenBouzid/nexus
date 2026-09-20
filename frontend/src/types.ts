@@ -59,6 +59,8 @@ export type Turn = {
   id: number;
   queryId?: number; // backend query id (live mode), for refresh + cancel
   query: string;
+  // The files sent with this message, shown on the bubble that carries them.
+  attachments?: Doc[];
   title?: string; // the supervisor-given report/artifact title
   status: Status;
   events: TimelineEvent[];
@@ -101,6 +103,8 @@ export type Output = {
 // A file the user attached to the conversation.
 export type Doc = {
   id: number;
+  // The message this file was sent with, when it was attached in the composer.
+  messageId?: number | null;
   filename: string;
   mediaType: string;
   sizeBytes: number;

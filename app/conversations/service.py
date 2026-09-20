@@ -82,12 +82,23 @@ async def submit_message(
     model: BaseChatModel,
     backend: SearchBackend,
     background_tasks: BackgroundTasks,
+    document_ids: list[int] | None = None,
 ) -> Message:
     """Record the user's message and the assistant turn that will answer it, and
     queue the job; no model is called in the request. The turn's query tracks it
     from here: its events feed the live progress, and it ends complete or failed.
     The caller checks the account's budget first."""
-    await repository.add_message(db, conversation.id, MessageRole.user, content)
+    user_message = await repository.add_message(
+        db, conversation.id, MessageRole.user, content
+    )
+    # The files were uploaded before the message, because a file belongs to a
+    # conversation; this is what ties them to the message they were sent with.
+    await documents_repository.attach_to_message(
+        db,
+        document_ids or [],
+        message_id=user_message.id,
+        user_id=conversation.user_id,
+    )
     if not conversation.title:
         await repository.set_title(db, conversation.id, title_for(content))
     query = await research_repository.create_pending_query(

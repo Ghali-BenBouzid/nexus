@@ -6,6 +6,14 @@ import { useQueryHistory } from "../lib/history";
 
 type PromptBarProps = {
   onSubmit: (prompt: string) => void;
+  // Files picked but not sent yet. They ride along with the next message, the
+  // way an attachment does anywhere else, rather than needing a chat to exist
+  // first. Leaving these out hides the attach button (the hero has no chat to
+  // attach to yet).
+  staged?: File[];
+  onAttach?: (files: File[]) => void;
+  onUnstage?: (index: number) => void;
+  attachError?: string | null;
   placeholder?: string;
   autoFocus?: boolean;
   // The composer variant (pinned in the conversation) hides the verbose hint row.
@@ -25,11 +33,24 @@ export type PromptBarHandle = { inject: (text: string) => void };
 // forwardRef so a parent (the hero's example chips) can type text into the bar
 // instead of submitting straight past it.
 export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function PromptBar(
-  { onSubmit, placeholder, autoFocus, variant = "hero", running, onStop },
+  {
+    onSubmit,
+    placeholder,
+    autoFocus,
+    variant = "hero",
+    running,
+    onStop,
+    staged,
+    onAttach,
+    onUnstage,
+    attachError,
+  },
   ref,
 ) {
   const [val, setVal] = useState("");
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const attachments = staged ?? [];
 
   const { history, remember } = useQueryHistory();
   // null = editing a fresh draft; otherwise an index into `history` being browsed.
@@ -125,14 +146,61 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
 
   const active = !!running || val.trim().length > 0;
 
+  // The staged files, above the input: what is about to be sent with the message.
+  const chips = onAttach && (attachments.length > 0 || attachError) && (
+    <div className="staged">
+      {attachments.map((file, i) => (
+        <span key={file.name + i} className="staged-chip">
+          {I.doc}
+          <span className="staged-name">{file.name}</span>
+          <button
+            className="staged-x"
+            onClick={() => onUnstage?.(i)}
+            aria-label={t.uploads.remove}
+            title={t.uploads.remove}
+          >
+            {I.close}
+          </button>
+        </span>
+      ))}
+      {attachError && <span className="staged-error">{attachError}</span>}
+    </div>
+  );
+
+  const attachButton = onAttach && (
+    <>
+      <input
+        ref={fileRef}
+        type="file"
+        multiple
+        className="visually-hidden"
+        accept=".pdf,.docx,.doc,.txt,.md"
+        onChange={(e) => {
+          const picked = Array.from(e.target.files ?? []);
+          if (picked.length) onAttach(picked);
+          e.target.value = ""; // so the same file can be picked again
+        }}
+      />
+      <button
+        className="cinput-attach"
+        onClick={() => fileRef.current?.click()}
+        aria-label={t.uploads.add}
+        title={t.uploads.add}
+      >
+        {I.paperclip}
+      </button>
+    </>
+  );
+
   if (variant === "composer") {
     return (
       <div
-        className="cinput"
+        className={"cinput" + (chips ? " with-staged" : "")}
         onClick={(e) => {
           if (!(e.target as HTMLElement).closest("button, textarea")) taRef.current?.focus();
         }}
       >
+        {chips}
         <textarea
           ref={taRef}
           rows={1}
@@ -144,6 +212,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
           className="cinput-ta"
         />
         <div className="cinput-actions">
+          {attachButton}
           <button
             className={"cinput-send" + (active ? " active" : "") + (running ? " stop" : "")}
             onClick={() => (running ? onStop?.() : fire(val))}
@@ -160,7 +229,9 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
 
   return (
     <div className="prompt-wrap">
+      {chips}
       <div className="prompt">
+        {attachButton}
         <textarea
           ref={taRef}
           rows={1}

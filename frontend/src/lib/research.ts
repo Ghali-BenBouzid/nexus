@@ -49,9 +49,10 @@ export function runResearch(
   prompt: string,
   cb: ResearchCallbacks,
   conversationId?: number | null,
+  documentIds: number[] = [],
 ): Promise<ResearchOutcome | null> {
   return isLive()
-    ? runLiveResearch(prompt, cb, conversationId ?? null)
+    ? runLiveResearch(prompt, cb, conversationId ?? null, documentIds)
     : runSimulated(prompt, cb);
 }
 
