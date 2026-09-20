@@ -142,21 +142,23 @@ export function TurnCard({
   );
 }
 
-// The model's thinking. Open while it is all there is to show, foldable after,
-// and never styled like the answer: it is working-out, not a reply.
+// The model's thinking. It opens itself while it is the only thing happening,
+// because that stretch is most of the wait, and closes itself once the answer
+// starts. Either way one click always wins: the moment the reader touches it,
+// their choice is the one that holds for the rest of the turn.
 function Thinking({ text, live }: { text: string; live: boolean }) {
-  const [open, setOpen] = useState(true);
-  const shown = live || open;
+  const [choice, setChoice] = useState<boolean | null>(null);
+  const shown = choice ?? live;
   return (
     <div className="thinking" onClick={(e) => e.stopPropagation()}>
       <button
+        type="button"
         className={"thinking-toggle" + (shown ? " open" : "")}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setChoice(!shown)}
         aria-expanded={shown}
-        disabled={live}
       >
         <span className="thinking-chevron" aria-hidden="true">
-          &rsaquo;
+          {I.chevron}
         </span>
         {live ? t.turn.thinkingLive : t.turn.thinkingDone}
       </button>

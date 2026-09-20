@@ -907,11 +907,12 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .thinking-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
   padding: 0; border: 0; background: none; color: var(--faint); font-family: inherit;
   font-size: 13px; transition: color 0.2s; }
-.thinking-toggle:hover:not(:disabled) { color: var(--muted); }
-.thinking-toggle:disabled { cursor: default; }
-.thinking-chevron { display: inline-block; font-size: 14px; line-height: 1;
-  transition: transform 0.18s ease; }
-.thinking-toggle.open .thinking-chevron { transform: rotate(90deg); }
+.thinking-toggle:hover { color: var(--muted); }
+/* Same chevron convention as the progress bar: points right when closed, down
+   when open, so the two disclosures in a turn read as one control. */
+.thinking-chevron { flex: none; display: inline-flex; width: 13px; height: 13px;
+  transform: rotate(-90deg); transition: transform 0.18s ease; }
+.thinking-toggle.open .thinking-chevron { transform: none; }
 .thinking-text { margin-top: 6px; padding-left: 13px; border-left: 1px solid var(--line);
   font-size: 13.5px; line-height: 1.6; color: var(--faint); white-space: pre-wrap; }
 
