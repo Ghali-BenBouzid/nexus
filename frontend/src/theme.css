@@ -701,6 +701,14 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .report .doc th, .report .doc td { padding: 10px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
 .report .doc th { font-weight: 600; background: var(--surface); white-space: nowrap; }
 .report .doc tr:last-child td { border-bottom: none; }
+/* A verdict reads as one thing, so it never wraps mid-phrase. */
+.report .doc td:last-child { white-space: nowrap; color: var(--muted); }
+/* A link into this same report is navigation, not a way out of it: quiet until
+   you reach for it. */
+.report .doc a.jump { text-decoration: none; color: var(--fg); }
+.report .doc a.jump:hover { text-decoration: underline; color: var(--accent-text); }
+/* A jumped-to heading lands clear of the panel's top edge, not glued to it. */
+.report .doc h2, .report .doc h3 { scroll-margin-top: 18px; }
 .cite {
   font-family: var(--font-mono); font-size: 0.72em; font-weight: 600;
   color: var(--accent-text); cursor: pointer; vertical-align: super;

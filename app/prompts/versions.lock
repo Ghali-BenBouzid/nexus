@@ -20,7 +20,7 @@
     "sha256": "cf5a3546d3381107747d92e8ae26ea50e96a2c897b67358a25c468812069819d"
   },
   "fact_check": {
-    "version": 1,
-    "sha256": "373c85bbcc8e0c26f5d30f0be50390a6d0f9298ac964fbe68f79fe795454859c"
+    "version": 2,
+    "sha256": "d42fb009f8b9176e86c3eb0d2cc11e83a11dfa9ad3a218287644888c6a1b705a"
   }
 }

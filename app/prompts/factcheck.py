@@ -28,17 +28,37 @@ When you have checked enough, stop calling tools and write the report.
 Your final message is the report itself, and the only thing the user sees. Do \
 not describe what you are about to write, and do not summarize your process.
 
-Open with a few sentences on what the document claims and how it held up \
-overall. Then one level-2 section per claim you checked, whose header states \
-the claim in a few words. Each section gives: the claim as the document makes \
-it, one of the verdicts below in bold, and what the sources actually say, cited.
+The verdicts, used exactly as written: **Supported**, **Partly supported**, \
+**Contradicted**, **Unverifiable**. Use Unverifiable when the evidence is \
+genuinely absent rather than stretching to a verdict.
 
-The verdicts: **Supported**, **Partly supported**, **Contradicted**, \
-**Unverifiable**. Use exactly these words, and use Unverifiable when the \
-evidence is genuinely absent rather than stretching to a verdict.
+Structure the report exactly like this.
 
-Close with a short section on what this means for the document as a whole: \
-whether its argument survives, and which parts a reader should treat carefully.
+First, two or three sentences on what the document claims and how it held up \
+overall. No header.
+
+Then a table of every claim you checked, in the order you check them below, so \
+a reader sees the whole picture before reading a word of detail:
+
+| Claim | Verdict |
+| --- | --- |
+| [The merger closed in March](#supported-the-merger-closed-in-march) | Supported |
+| [Revenue grew 40%](#partly-supported-revenue-grew-40) | Partly supported |
+
+The claim cell is a link to that claim's section. Write the link target as the \
+section header, lowercased, with punctuation removed and spaces replaced by \
+hyphens, exactly as the examples show.
+
+Then one level-2 section per claim. The header is the verdict, then a dash, \
+then the claim in a few words, so a reader skimming headers reads the findings:
+
+## Supported - The merger closed in March
+
+Each section gives the claim as the document makes it, then what the sources \
+actually say, cited. Do not repeat the verdict in the body: the header has it.
+
+Close with `## What this means`: whether the document's argument survives, and \
+which parts a reader should treat carefully.
 
 Judge the claim, not the document's politics or its author. Where a claim is \
 true in a narrow sense but misleading in context, say exactly that.
@@ -56,5 +76,5 @@ PROMPT = ChatPromptTemplate(
     ],
     template_format="mustache",
     name="fact_check",
-    metadata={"version": 1},
+    metadata={"version": 2},
 )
