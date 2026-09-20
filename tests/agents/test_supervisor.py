@@ -3,17 +3,16 @@ and what code refuses to let through.
 
 The supervisor has no route to assert any more, so what these pin is the part
 that is not the model's judgement: a citation it invented never reaches the
-user, the sources it kept are the ones it cited, its follow-up line becomes
-chips rather than text, and a tool it has no business having is not offered.
+user, the sources it kept are the ones it cited, its reply is streamed as it is
+written, and a tool it has no business having is not offered.
 """
 
-import pytest
 
-from app.agents.schemas import Turn
+from app.agents.schemas import AgentEvent, Turn
 from app.agents.sources import Sources
 from app.agents.supervisor import Document, Output, respond
 from app.agents.tools import SearchHit
-from tests.agents.fakes import ScriptedModel, call, says
+from tests.agents.fakes import ScriptedModel, call, says, thinks
 
 
 class FakeBackend:
@@ -89,25 +88,6 @@ async def test_an_answer_that_cites_nothing_carries_no_source_list() -> None:
     answer = await _respond(model)
 
     assert answer.sources == []
-
-
-async def test_the_follow_up_line_becomes_chips_not_text() -> None:
-    model = ScriptedModel(
-        [says("The answer.\n<suggest>Why? | How many? | Since when?</suggest>")]
-    )
-
-    answer = await _respond(model)
-
-    assert answer.text == "The answer."
-    assert answer.suggestions == ["Why?", "How many?", "Since when?"]
-
-
-async def test_no_follow_up_line_is_fine() -> None:
-    model = ScriptedModel([says("Just the answer.")])
-
-    answer = await _respond(model)
-
-    assert answer.suggestions == []
 
 
 async def test_it_reads_a_document_by_id() -> None:
@@ -207,16 +187,57 @@ async def _never_deep(question: str, title: str) -> str:
     raise AssertionError("deep_research should not have been called")
 
 
-@pytest.mark.parametrize(
-    ("written", "expected"),
-    [
-        ("Answer.<suggest>a|b</suggest>", ["a", "b"]),
-        ("Answer.<suggest>a | b | c | d</suggest>", ["a", "b", "c"]),  # capped at 3
-        ("Answer.<suggest></suggest>", []),
-    ],
-)
-async def test_the_suggestion_line_is_parsed_leniently(written, expected) -> None:
-    answer = await _respond(ScriptedModel([says(written)]))
+async def test_the_answer_is_emitted_as_it_is_written() -> None:
+    """The reply reaches the browser a piece at a time, and the pieces put back
+    together are exactly the reply. A turn that only arrives at the end is the
+    thing streaming exists to stop."""
+    model = ScriptedModel([thinks("Small talk. Keep it short.", "It is blue.")])
+    seen: list[AgentEvent] = []
 
-    assert answer.suggestions == expected
-    assert answer.text == "Answer."
+    answer = await _respond(model, emit=_record(seen))
+
+    assert answer.text == "It is blue."
+    assert _joined(seen, "token") == "It is blue."
+    assert _joined(seen, "thought") == "Small talk. Keep it short."
+
+
+async def test_a_sub_agents_tokens_never_reach_the_reply() -> None:
+    """Researchers run on the same model object as the supervisor. Only the
+    supervisor's own node is the answer being written, so only its tokens are
+    streamed; a researcher's would otherwise interleave into the user's reply."""
+
+    def reply(messages, tools):
+        if "SubmitPlanArgs" in tools:
+            return call("SubmitPlanArgs", sub_questions=["why is it blue?"])
+        if "SubmitFindingArgs" in tools:
+            return call(
+                "SubmitFindingArgs",
+                thought="a researcher thinking out loud",
+                claims=[{"text": "a researcher talking", "cited_source_ids": []}],
+                found_info=True,
+            )
+        if any(m.type == "tool" for m in messages):
+            return says("Because of Rayleigh scattering.")
+        return call("research", question="why is it blue?")
+
+    model = ScriptedModel(respond=reply)
+    seen: list[AgentEvent] = []
+
+    answer = await _respond(model, emit=_record(seen))
+
+    assert answer.text == "Because of Rayleigh scattering."
+    assert _joined(seen, "token") == "Because of Rayleigh scattering."
+    # Its thinking is its own too: a sub-agent's model node is called "model"
+    # just like the supervisor's, so only the stage separates them.
+    assert "researcher thinking out loud" not in _joined(seen, "thought")
+
+
+def _joined(events: list[AgentEvent], type_: str) -> str:
+    return "".join(e.message for e in events if e.type == type_).strip()
+
+
+def _record(into: list[AgentEvent]):
+    async def emit(event: AgentEvent) -> None:
+        into.append(event)
+
+    return emit

@@ -35,7 +35,7 @@ from app.billing.metering import billing
 from app.core.config import settings
 from app.db import session as db_session
 from app.models.query import QueryStatus
-from app.research import repository
+from app.research import bus, repository
 from app.research.dependencies import get_model, get_search_backend
 
 logger = logging.getLogger(__name__)
@@ -54,27 +54,41 @@ class RunFailedError(Exception):
 # --- live feed and liveness -------------------------------------------------
 
 
-class EventSink:
-    """The emit sink: persists each agent event so a polling client can tail the
-    live feed (``GET /research/query/{id}/events``).
+# Events that exist only while someone is watching. A token is a fragment of a
+# reply that is persisted whole when the turn ends, and a thought is the model's
+# scratchpad, which nothing later reads: storing either would be hundreds of rows
+# per turn to say what one row already says.
+LIVE_ONLY = frozenset({"token", "thought"})
 
-    Each event is written in its own short-lived session: the job's own session
-    is single-threaded and not safe for the concurrent emits a researcher fan-out
-    produces, and a fresh session per event sidesteps that entirely. A feed write
-    must never sink the run, so any failure here is logged and swallowed."""
+
+class EventSink:
+    """The emit sink: every agent event, to whoever needs it.
+
+    Two destinations, because they answer different questions. The durable feed
+    (``query_events``) is what a browser reads when it arrives late or reloads,
+    so it holds the run's stages. The bus is what a browser attached right now
+    reads, so it carries everything, tokens included.
+
+    Each durable event is written in its own short-lived session: the job's own
+    session is single-threaded and not safe for the concurrent emits a researcher
+    fan-out produces, and a fresh session per event sidesteps that entirely. A
+    feed write must never sink the run, so any failure here is logged and
+    swallowed."""
 
     def __init__(self, query_id: int) -> None:
         self.query_id = query_id
 
     async def __call__(self, event: AgentEvent) -> None:
-        logger.info("agent[%s] %s", event.type, event.message)
-        try:
-            async with db_session.SessionLocal() as db:
-                await repository.add_event(db, self.query_id, event)
-        except Exception:
-            logger.exception(
-                "failed to persist agent event for query %s", self.query_id
-            )
+        if event.type not in LIVE_ONLY:
+            logger.info("agent[%s] %s", event.type, event.message)
+            try:
+                async with db_session.SessionLocal() as db:
+                    await repository.add_event(db, self.query_id, event)
+            except Exception:
+                logger.exception(
+                    "failed to persist agent event for query %s", self.query_id
+                )
+        await bus.publish(self.query_id, event)
 
 
 HEARTBEAT_SECONDS = 5.0
@@ -243,6 +257,10 @@ async def run_query(
             await repository.fail_query(
                 db, query_id, "The run failed due to an internal error."
             )
+        finally:
+            # However it ended, tell anyone watching to stop watching. Without
+            # this a browser holds its stream open until a proxy tires of it.
+            await bus.publish(query_id, AgentEvent(type=bus.DONE, message=""))
 
 
 # --- the one-shot API run ---------------------------------------------------

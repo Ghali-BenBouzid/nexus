@@ -26,7 +26,7 @@ from app.core.config import settings
 from app.db import session as db_session
 from app.jobs import Job
 from app.observability import configure_tracing
-from app.research import repository
+from app.research import bus, repository
 from app.research.deep import close_graph, open_graph, run_deep_research_job
 from app.research.factcheck import run_fact_check_job
 from app.research.service import run_research_job
@@ -76,11 +76,13 @@ async def startup(ctx: dict[str, Any]) -> None:
     logging.getLogger("arq").propagate = False
     configure_tracing()
     await jobs.open_queue()  # so a turn can queue the runs it starts
+    await bus.open_bus()  # the live feed's pipe to the API
     await open_graph()
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
     await close_graph()
+    await bus.close_bus()
     await jobs.close_queue()
 
 

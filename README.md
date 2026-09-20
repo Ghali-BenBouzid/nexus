@@ -51,7 +51,7 @@ The supervisor decides which to use and how many times, and then writes the answ
 Nothing is a route: "does this need research?" is judgement, which a model does well and a classifier does badly.
 
 The browser never waits on the models.
-The API saves your message and puts a job on a queue, a separate worker runs the agents, and the frontend polls for progress and shows each step as it happens.
+The API saves your message and puts a job on a queue, a separate worker runs the agents, and the browser holds a stream open so the model's thinking and its answer appear as they are written.
 
 What each piece is used for:
 
@@ -129,9 +129,10 @@ The demo runs on paid models, so there's no public signup.
 I create each account with a budget, every model call is priced and written to a ledger, and new work is refused once the budget is spent.
 The catch is that I hand out accounts myself.
 
-**Polling instead of streaming.**
-The frontend asks for new progress events every second and a half instead of holding a stream open.
-It's simpler to host and to recover from a dropped connection, at the price of more requests.
+**Streaming over a bus, with the database still underneath.**
+The model runs in the worker and the browser talks to the API, so the two are joined by Redis: the worker publishes each frame, the API forwards it over server-sent events.
+Stages are still written to Postgres and replayed when a stream opens, so a reload or a dropped connection costs a redraw rather than the answer.
+Tokens are never stored, because the reply is saved whole when the turn ends.
 
 ## What went wrong along the way
 
@@ -224,7 +225,7 @@ Scoring the full 150-question set is still the next step.
 - Access is invite-only, and I create accounts by hand.
 - Research covers the web only; searching your own documents isn't built yet.
 - A run whose worker crashes is failed, not resumed.
-- Progress arrives by polling, so updates can lag by a second or two.
+- A stream that drops is not resumed automatically; reopening the conversation rejoins the run.
 - Slow reasoning models don't fit the time budget and fall back to a less polished report.
 - The evaluation relies on a model as a judge, and the scored runs so far are small.
 - Prompt injection defences are written and structured, but not yet measured: that needs full research runs, which cost search credits.

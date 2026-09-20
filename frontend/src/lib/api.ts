@@ -17,6 +17,7 @@ import type {
 import { t } from "./i18n";
 import { outcomeFor } from "./outcome";
 import type { ResearchCallbacks, ResearchOutcome } from "./research";
+import { sseFrames } from "./sse";
 
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
 const TOKEN_KEY = "nexus-token";
@@ -39,15 +40,13 @@ type QueryDetail = {
   // The assistant's answer in the conversation.
   reply?: string | null;
   // Follow-up questions offered under the answer.
-  suggestions?: string[];
   // How long ago the job last showed signs of life (null before it starts).
   seconds_since_heartbeat?: number | null;
 };
 
-const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-// The backend bounds a run (research budget, timeouts); this only stops a poll
+// The backend bounds a run (research budget, timeouts); this only stops a stream
 // that would otherwise never end, such as a run whose job died unnoticed.
-const MAX_POLL_MS = 20 * 60_000;
+const MAX_STREAM_MS = 20 * 60_000;
 
 export function hasInvite(): boolean {
   try {
@@ -184,25 +183,13 @@ async function getQuery(id: number, token: string): Promise<QueryDetail> {
   return (await res.json()) as QueryDetail;
 }
 
-// One persisted agent event from GET /research/query/{id}/events.
+// One agent event as the feed carries it.
 type BackendEvent = {
   id: number;
   type: string;
   message: string;
   data: Record<string, unknown> | null;
 };
-
-async function getEvents(
-  id: number,
-  after: number,
-  token: string,
-): Promise<BackendEvent[]> {
-  const res = await fetch(`${BASE}/research/query/${id}/events?after=${after}`, {
-    headers: { Authorization: `Bearer ${token}` },
-  });
-  if (!res.ok) return []; // the feed is best-effort; never fail the run over it
-  return (await res.json()) as BackendEvent[];
-}
 
 function hostname(url: unknown): string {
   if (typeof url !== "string") return "source";
@@ -299,7 +286,6 @@ type ConvMessageQuery = {
   reply?: string | null;
   error: string | null;
   stopped?: boolean;
-  suggestions?: string[];
   sources: Source[];
   gaps: string[];
 };
@@ -455,83 +441,113 @@ export async function runLiveResearch(
   }
   cb.onQueryId?.(assistant.query_id);
   if (assistant.query?.title) cb.onTitle?.(assistant.query.title);
-  return pollQuery(assistant.query_id, token, cb);
+  return followQuery(assistant.query_id, token, cb);
 }
 
-// Poll a query to its terminal state, draining the agent event feed as it goes.
-// `sinceEventId` seeds the event cursor: a resumed poll (after confirm/revise)
-// passes the last id it already showed, so the planner events from phase 1 are not
-// re-fetched and duplicated into the feed.
-async function pollQuery(
+// Follow a query to its terminal state over server-sent events.
+//
+// The stream carries two kinds of frame. Stored ones (a stage the run reached)
+// have an `id`, which is the durable feed's cursor, so a reconnection can say
+// where it got to. Live ones (a thought, a token) have none, because they are
+// never stored: the reply is persisted whole when the turn ends.
+//
+// The stream says what is happening; the query row says what happened. So the
+// run's outcome is read once, from the row, after the stream closes. A dropped
+// connection then costs a redraw rather than the answer.
+//
+// `sinceEventId` seeds the cursor: a resumed follow passes the last id it has
+// already drawn, so reopening a running conversation appends instead of
+// duplicating.
+async function followQuery(
   id: number,
   token: string,
   cb: ResearchCallbacks,
   sinceEventId = 0,
 ): Promise<ResearchOutcome | null> {
-  // The backend event id is a monotonic cursor and a stable, unique timeline id.
   let lastEventId = sinceEventId;
-  const drainEvents = async () => {
-    const events = await getEvents(id, lastEventId, token);
-    for (const e of events) {
-      lastEventId = Math.max(lastEventId, e.id);
-      const mapped = toAgentEvent(e);
-      if (mapped) cb.onEvent({ ...mapped, id: e.id, delay: 0 });
+  const stop = new AbortController();
+  const watchCancel = setInterval(() => {
+    if (cb.isCancelled()) stop.abort();
+  }, 250);
+  const giveUp = setTimeout(() => stop.abort(), MAX_STREAM_MS);
+
+  try {
+    // fetch, not EventSource: EventSource cannot send an Authorization header,
+    // and the usual workaround puts the token in the query string, where it
+    // lands in access logs and browser history.
+    const res = await fetch(
+      `${BASE}/research/query/${id}/stream?after=${lastEventId}`,
+      { headers: { Authorization: `Bearer ${token}` }, signal: stop.signal },
+    );
+    if (!res.ok || !res.body) throw new Error(`Could not follow the run (${res.status}).`);
+
+    for await (const frame of sseFrames(res.body, stop.signal)) {
+      if (frame.type === "done") break;
+      if (frame.type === "token") {
+        cb.onToken?.(frame.message);
+        continue;
+      }
+      if (frame.type === "thought") {
+        cb.onThought?.(frame.message);
+        continue;
+      }
+      if (frame.type === "heartbeat") {
+        const since = frame.data?.since;
+        cb.onHeartbeat?.(typeof since === "number" ? since : null);
+        continue;
+      }
+      if (typeof frame.id === "number") lastEventId = Math.max(lastEventId, frame.id);
+      const mapped = toAgentEvent({
+        id: frame.id ?? lastEventId,
+        type: frame.type,
+        message: frame.message,
+        data: frame.data,
+      });
+      if (mapped) cb.onEvent({ ...mapped, id: frame.id ?? lastEventId, delay: 0 });
     }
+  } catch (err) {
+    // An aborted stream is either the user stopping or our own time limit; the
+    // query row below still says what really happened.
+    if (!stop.signal.aborted) throw err;
+  } finally {
+    clearInterval(watchCancel);
+    clearTimeout(giveUp);
+  }
+
+  if (cb.isCancelled()) return null;
+  return outcomeOf(await getQuery(id, token));
+}
+
+// What the run produced, from the row that is the source of truth.
+function outcomeOf(detail: QueryDetail): ResearchOutcome {
+  if (detail.status === "failed") {
+    return {
+      result: { report: "", sources: [], consulted: [], gaps: [] },
+      outcome: "failed",
+      error: detail.error ?? "The research run failed.",
+    };
+  }
+  const result: Result = {
+    report: detail.report ?? "",
+    sources: detail.sources,
+    consulted: detail.consulted_sources,
+    gaps: detail.gaps,
   };
-
-  // Poll until terminal.
-  const giveUpAt = Date.now() + MAX_POLL_MS;
-  let title: string | null = null;
-  while (Date.now() < giveUpAt) {
-    if (cb.isCancelled()) return null;
-    const detail = await getQuery(id, token);
-    cb.onHeartbeat?.(detail.seconds_since_heartbeat ?? null);
-    // The routing job names the report once it has decided; show it as it lands.
-    if (detail.title && detail.title !== title) {
-      title = detail.title;
-      cb.onTitle?.(title);
-    }
-    await drainEvents();
-
-    if (detail.status === "complete") {
-      // A turn answers in the conversation; its sources ride along so the answer
-      // can carry clickable citations.
-      const result: Result = {
-        report: detail.report ?? "",
-        sources: detail.sources,
-        consulted: detail.consulted_sources,
-        gaps: detail.gaps,
-      };
-      return {
-        result,
-        outcome: outcomeFor(detail.status, detail.reply ?? "", result.sources.length),
-        reply: detail.reply ?? "",
-        suggestions: detail.suggestions ?? [],
-        title: detail.title ?? undefined,
-      };
-    }
-
-    if (detail.status === "failed") {
-      return {
-        result: { report: "", sources: [], consulted: [], gaps: [] },
-        outcome: "failed",
-        error: detail.error ?? "The research run failed.",
-      };
-    }
-
-    await sleep(1500);
+  if (detail.status !== "complete") {
+    return { result, outcome: "failed", error: "The run stopped before it finished." };
   }
   return {
-    result: { report: "", sources: [], consulted: [], gaps: [] },
-    outcome: "failed",
-    error: "The research run timed out.",
+    result,
+    outcome: outcomeFor(detail.status, detail.reply ?? "", result.sources.length),
+    reply: detail.reply ?? "",
+    title: detail.title ?? undefined,
   };
 }
 
-// Resume polling an existing query without posting a new message: used when a
-// conversation is reopened while one of its turns is still running.
-// `sinceEventId` is the last feed event already shown, so the resumed poll
-// appends only new events instead of re-draining the ones already on screen.
+// Rejoin a run already in flight, without posting a new message: used when a
+// conversation is reopened while one of its turns is still going.
+// `sinceEventId` is the last feed event already on screen, so the stream
+// appends only what came after it.
 export async function resumeRun(
   queryId: number,
   cb: ResearchCallbacks,
@@ -539,7 +555,7 @@ export async function resumeRun(
 ): Promise<ResearchOutcome | null> {
   cb.onStatus("running");
   const token = await ensureToken();
-  return pollQuery(queryId, token, cb, sinceEventId);
+  return followQuery(queryId, token, cb, sinceEventId);
 }
 
 // Ask the backend to stop a run (POST /research/query/{id}/cancel). Best-effort
@@ -624,7 +640,6 @@ export type LoadedTurn = {
   stopped?: boolean; // the user stopped it: not shown as an error
   result: Result;
   reply?: string; // the answer, which is what a turn produces
-  suggestions?: string[];
 };
 export type LoadedConversation = {
   id: number;
@@ -674,7 +689,6 @@ export async function loadConversation(id: number): Promise<LoadedConversation |
       error: q?.error ?? null,
       stopped: q?.stopped,
       reply: q?.reply ?? m.content,
-      suggestions: q?.suggestions ?? [],
       result: {
         report: "",
         sources: q?.sources ?? [],

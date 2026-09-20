@@ -1,8 +1,11 @@
+import json
 import logging
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -12,8 +15,9 @@ from app.agents.tools import SearchBackend
 from app.auth.dependencies import get_current_user
 from app.billing.service import ensure_budget
 from app.db.session import get_db
+from app.models.query import Query, QueryStatus
 from app.models.user import User
-from app.research import repository, service
+from app.research import bus, repository, service
 from app.research.dependencies import get_model, get_search_backend
 from app.research.schemas import (
     ArtifactSummary,
@@ -113,6 +117,84 @@ async def get_query_events(
     return await repository.list_events(db=db, query_id=query_id, after_id=after)
 
 
+@router.get("/query/{query_id}/stream")
+async def stream_query_events(
+    query_id: int,
+    after: int = 0,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """The live agent feed as it happens, over server-sent events.
+
+    The durable feed is drained first, from ``after``, so a browser that arrives
+    late or reloads sees the run's stages before it starts following along. Only
+    then does it join the bus, which carries the stages again plus the tokens
+    that are never stored.
+
+    Both halves matter: without the drain a reload shows an empty thread, and
+    without the bus the reply appears all at once when the run ends.
+    """
+    query = await repository.get_query(
+        db=db, query_id=query_id, user_id=current_user.id
+    )
+    if query is None:
+        raise HTTPException(status_code=404, detail="Query not found")
+    return StreamingResponse(
+        feed(db, query, after=after),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            # nginx (Railway, and any proxy in front of it) buffers a response
+            # body by default, which holds every frame until the run ends.
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+async def feed(db: AsyncSession, query: Query, *, after: int = 0) -> AsyncIterator[str]:
+    """One query's feed as SSE frames: what was missed, then what happens next.
+
+    Its own function rather than a closure so it can be driven directly. A test
+    that goes through HTTP cannot produce events while the response is held
+    open, which is the one behaviour worth proving here.
+    """
+    seen = after
+    for stored in await repository.list_events(
+        db=db, query_id=query.id, after_id=after
+    ):
+        seen = stored.id
+        yield _frame(stored.type, stored.message, stored.data, stored.id)
+    # A run that ended while nobody watched has nothing left to send.
+    if query.status in (QueryStatus.complete, QueryStatus.failed):
+        yield _frame(bus.DONE, "", None, seen)
+        return
+    async with bus.subscribe(query.id) as live:
+        async for event in live:
+            if event is None:
+                # Both a keep-alive, because a proxy closes a quiet stream, and
+                # the run's liveness: a job that died mid-tool sends nothing at
+                # all, and this is what lets the bar say so.
+                await db.refresh(query, ["heartbeat_at"])
+                yield _frame(
+                    "heartbeat", "", {"since": _seconds_since(query.heartbeat_at)}, None
+                )
+                continue
+            yield _frame(event.type, event.message, event.data, None)
+            if event.type == bus.DONE:
+                return
+
+
+def _frame(
+    type_: str, message: str, data: dict[str, Any] | None, event_id: int | None
+) -> str:
+    """One SSE frame. ``id`` is the durable feed's cursor, present only on an
+    event that was stored, so a reconnecting client can resume from it."""
+    payload: dict[str, Any] = {"type": type_, "message": message, "data": data}
+    if event_id is not None:
+        payload["id"] = event_id
+    return f"data: {json.dumps(payload)}\n\n"
+
+
 @router.post("/query/{query_id}/cancel", status_code=204)
 async def cancel_query(
     query_id: int,
@@ -168,7 +250,6 @@ async def get_query(
         error=query.error,
         stopped=repository.stopped_by_user(query),
         kind=query.kind,
-        suggestions=query.suggestions or [],
         sources=result.sources if result else [],
         consulted_sources=consulted,
         gaps=result.gaps if result else [],

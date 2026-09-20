@@ -25,9 +25,14 @@ export type ResearchCallbacks = {
   onConversation?: (id: number) => void;
   // Live mode only: the run's title, when it has one.
   onTitle?: (title: string) => void;
-  // Live mode only: on every poll, seconds since the backend job last showed signs
-  // of life, so the progress bar can warn when a run looks stuck.
+  // Live mode only: seconds since the backend job last showed signs of life, so
+  // the progress bar can warn when a run looks stuck.
   onHeartbeat?: (secondsSince: number | null) => void;
+  // Live mode only: the reply as it is written, one chunk at a time.
+  onToken?: (text: string) => void;
+  // Live mode only: the model's thinking while it works, same chunk at a time.
+  // It is a scratchpad, not an answer: show it as provisional.
+  onThought?: (text: string) => void;
 };
 
 export type ResearchOutcome = {
@@ -37,7 +42,6 @@ export type ResearchOutcome = {
   error?: string;
   // What the turn produced: the answer, and the follow-ups offered under it.
   reply?: string;
-  suggestions?: string[];
 };
 
 const EMPTY_RESULT: Result = { report: "", sources: [], consulted: [], gaps: [] };

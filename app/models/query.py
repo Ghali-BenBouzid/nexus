@@ -66,10 +66,6 @@ class Query(Base):
     report: Mapped[str | None] = mapped_column(Text, nullable=True)
     # The supervisor's answer, on a chat turn. Also copied onto the message.
     reply: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # The follow-up questions offered under a chat answer.
-    suggestions: Mapped[list[str] | None] = mapped_column(
-        JSONB().with_variant(JSON(), "sqlite"), nullable=True
-    )
     # Real JSONB in Postgres; plain JSON in the aiosqlite test suite.
     result: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB().with_variant(JSON(), "sqlite"), nullable=True

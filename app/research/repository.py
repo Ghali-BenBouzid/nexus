@@ -241,10 +241,8 @@ async def complete_answer(
     reply: str,
     *,
     result: ResearchResult | None = None,
-    suggestions: list[str] | None = None,
 ) -> None:
-    """End a chat turn with the supervisor's answer, the sources it cited, and
-    the follow-ups offered under it."""
+    """End a chat turn with the supervisor's answer and the sources it cited."""
     await _transition(
         db,
         query_id,
@@ -252,7 +250,6 @@ async def complete_answer(
         status=QueryStatus.complete,
         reply=reply,
         result=result.model_dump() if result else None,
-        suggestions=suggestions or None,
         completed_at=_now(),
     )
 

@@ -216,7 +216,6 @@ export function Conversation({
             focused={t.id === focusedId}
             onSelect={() => onFocus(t.id)}
             onRerun={submit}
-            onAsk={submit}
           />
         ))}
       </div>

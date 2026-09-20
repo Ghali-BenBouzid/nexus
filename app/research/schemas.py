@@ -59,7 +59,6 @@ class QueryDetail(BaseSchema):
     error: str | None
     stopped: bool = False  # failed because the user stopped it, not broken
     kind: str = "chat"
-    suggestions: list[str] = []  # follow-up questions offered under a chat answer
     sources: list[Source]  # cited sources backing the report or the reply
     consulted_sources: list[Source] = []  # full provenance/audit trail
     gaps: list[str]

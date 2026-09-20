@@ -14,7 +14,6 @@ type TurnCardProps = {
   focused?: boolean;
   onSelect?: () => void; // split: focus this turn in the side panel
   onRerun: (query: string) => void;
-  onAsk: (question: string) => void; // a follow-up chip
 };
 
 // One conversation turn rendered as chat: the user's question, the run's live
@@ -27,18 +26,21 @@ export function TurnCard({
   focused,
   onSelect,
   onRerun,
-  onAsk,
 }: TurnCardProps) {
   const [showSources, setShowSources] = useState(false);
   const [activeCite, setActiveCite] = useState<number | null>(null);
   const running = turn.status === "running" || turn.status === "pending";
 
-  const answer = turn.reply ?? "";
+  // The stored reply once there is one, what has streamed in until then. The
+  // stored one always wins: a retried call can leave streamed text behind that
+  // the model never actually sent.
+  const answer = turn.reply ?? turn.streamed ?? "";
+  const streaming = running && !turn.reply && !!turn.streamed;
+  const thinking = (turn.thinking ?? "").trim();
   const sources = turn.result?.sources ?? [];
   const isEmpty = turn.status === "complete" && !answer.trim() && sources.length === 0;
   const isFailed = !turn.stopped && (turn.status === "failed" || turn.outcome === "failed");
   const hasActivity = turn.events.length > 0;
-  const suggestions = turn.suggestions ?? [];
 
   // Clicking a [n] in the answer opens the source list and highlights that source.
   const onCite = (n: number) => {
@@ -75,8 +77,15 @@ export function TurnCard({
               still inspectable after the fact. */}
           {(running || hasActivity) && <ProgressBar turn={turn} now={now} />}
 
+          {/* The model's thinking, while it is the only thing happening. It is
+              a scratchpad and often blunt, so it reads as provisional and is
+              folded away by default once the answer starts arriving. */}
+          {thinking && (
+            <Thinking text={thinking} live={running && !answer.trim()} />
+          )}
+
           {answer.trim() && (
-            <div className="reply-text">
+            <div className={"reply-text" + (streaming ? " streaming" : "")}>
               <Markdown text={answer} onCite={onCite} activeCite={activeCite} />
             </div>
           )}
@@ -99,20 +108,6 @@ export function TurnCard({
                   onPick={setActiveCite}
                 />
               )}
-            </div>
-          )}
-
-          {suggestions.length > 0 && !running && (
-            <div className="suggestions" onClick={(e) => e.stopPropagation()}>
-              {suggestions.map((question) => (
-                <button
-                  key={question}
-                  className="suggestion"
-                  onClick={() => onAsk(question)}
-                >
-                  {question}
-                </button>
-              ))}
             </div>
           )}
 
@@ -143,6 +138,29 @@ export function TurnCard({
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// The model's thinking. Open while it is all there is to show, foldable after,
+// and never styled like the answer: it is working-out, not a reply.
+function Thinking({ text, live }: { text: string; live: boolean }) {
+  const [open, setOpen] = useState(true);
+  const shown = live || open;
+  return (
+    <div className="thinking" onClick={(e) => e.stopPropagation()}>
+      <button
+        className={"thinking-toggle" + (shown ? " open" : "")}
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={shown}
+        disabled={live}
+      >
+        <span className="thinking-chevron" aria-hidden="true">
+          &rsaquo;
+        </span>
+        {live ? t.turn.thinkingLive : t.turn.thinkingDone}
+      </button>
+      {shown && <div className="thinking-text">{text}</div>}
     </div>
   );
 }

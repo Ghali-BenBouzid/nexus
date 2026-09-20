@@ -41,6 +41,23 @@ _OPENAI_PRESETS = {
     ),
 }
 
+# Extra body fields only OpenRouter understands, sent on every call.
+#
+# ``reasoning.enabled`` asks for the model's thinking as its own stream of
+# deltas. On a reasoning model that thinking is most of the turn: the first
+# thought arrives seconds before the first word of the answer, so this is what
+# the live feed has to show while the answer is still being formed. Some models
+# reason whether or not we ask (glm refuses to turn it off); asking is what makes
+# it visible rather than silent.
+#
+# ``provider.sort`` picks the fastest upstream serving the model instead of
+# OpenRouter's default balance. The same call measured 2.2s and 18.2s on
+# different draws, and a stream makes a slow draw something the user watches.
+_OPENROUTER_BODY: dict[str, Any] = {
+    "reasoning": {"enabled": True},
+    "provider": {"sort": "throughput"},
+}
+
 # Free-tier (requests-per-minute, tokens-per-minute) per provider+model, from the
 # providers' published rate-limit tables. The token-aware RateLimiter paces calls
 # under these so a multi-researcher fan-out never bursts into a 429. TPM is the
@@ -122,6 +139,9 @@ def get_model() -> Any:  # ChatOpenAI; see the note below
         base_url=base_url,
         api_key=api_key,
         pacing=_rate_limiter(provider, name),
+        # extra_body, not the ChatOpenAI ``reasoning`` field: that field switches
+        # langchain-openai to OpenAI's Responses API, which OpenRouter rejects.
+        extra_body=_OPENROUTER_BODY if provider == "openrouter" else None,
     )
 
 

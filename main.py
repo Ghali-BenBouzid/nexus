@@ -11,8 +11,8 @@ from app.core.config import settings
 from app.db import session as db_session
 from app.documents.router import router as documents_router
 from app.observability import configure_tracing
+from app.research import bus, repository
 from app.research import deep as research_deep
-from app.research import repository
 from app.research.router import router as research_router
 
 logger = logging.getLogger(__name__)
@@ -38,7 +38,9 @@ async def lifespan(app: FastAPI):
         # Only a process that runs jobs needs the deep graph's checkpointer.
         await research_deep.open_graph()
     await jobs.open_queue()
+    await bus.open_bus()  # the API forwards the live feed; the worker fills it
     yield
+    await bus.close_bus()
     await jobs.close_queue()
     await research_deep.close_graph()
 
