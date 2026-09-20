@@ -99,6 +99,13 @@ class SubmitPlanArgs(BaseModel):
     sub_questions: list[str] = Field(description="The list of sub-questions")
 
 
+class SubmitSelectionArgs(BaseModel):
+    keep: list[int] = Field(
+        default_factory=list,
+        description="the numbers of the claims worth reporting, best first",
+    )
+
+
 class SubmitFindingClaim(BaseModel):
     text: str = Field(description="A single, self-contained factual statement")
     cited_source_ids: list[int] = Field(

@@ -97,7 +97,28 @@ class Settings(BaseSettings):
     deep_concurrency: int = 6  # simultaneous researchers
     deep_research_budget: float = 600.0  # seconds before researchers must submit
     deep_researcher_timeout: float = 660.0  # hard stop for one researcher
-    deep_timeout: float = 1_500.0  # whole-run backstop
+    # The writer's limit on a deep run. Its own setting because a deep run hands
+    # the writer several times the material a normal one does: twelve
+    # sub-questions of findings instead of six, each researched six rounds deep.
+    # At the normal 150 s it timed out every time, and a timed-out writer does
+    # not produce a shorter report, it produces no report at all: the findings
+    # are dumped raw, uncurated, citing every source anyone touched.
+    deep_writer_timeout: float = 480.0  # seconds
+    # How many findings a deep report is built from. Researchers work in
+    # parallel and never see each other's claims, so what comes back overlaps
+    # and every claim drags its sources into the citation list: one run came
+    # back with 134 claims behind 215 sources. The curator cuts to this before
+    # the writer sees anything.
+    deep_claim_cap: int = 45
+    # The curator's own limit. Reading 134 claims took five minutes on a real
+    # run, and past this the report is built from everything rather than losing
+    # the writer's budget to the step before it.
+    deep_curate_timeout: float = 360.0  # seconds
+    # Whole-run backstop, above what the stages can spend between them: the
+    # researchers' hard stop (660 s), then the curator (360 s), then the writer
+    # (480 s). At 1500 s a run that used all three was killed just before it
+    # wrote anything.
+    deep_timeout: float = 2_100.0  # whole-run backstop
     # The fact checker's own loop: read, search, read, write. Wider than a
     # researcher's because it checks several claims inside one loop.
     factcheck_max_iters: int = 14

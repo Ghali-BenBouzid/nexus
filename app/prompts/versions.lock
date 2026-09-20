@@ -22,5 +22,9 @@
   "fact_check": {
     "version": 2,
     "sha256": "d42fb009f8b9176e86c3eb0d2cc11e83a11dfa9ad3a218287644888c6a1b705a"
+  },
+  "curate": {
+    "version": 2,
+    "sha256": "317e55ce2666c131e6b4131b47722b1a264458edafa0310e97000fa6f07008ac"
   }
 }
