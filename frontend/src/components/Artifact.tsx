@@ -4,6 +4,7 @@ import { I } from "../icons";
 import { t } from "../lib/i18n";
 import type { Result, Status } from "../types";
 import { Markdown } from "./Markdown";
+import { useScrollToCite } from "./Sources";
 
 const stripScheme = (url: string) => url.replace(/^https?:\/\//, "").replace(/^www\./, "");
 
@@ -35,10 +36,10 @@ function Sources({
   return (
     <section className={"art-sources" + (open ? " open" : "")}>
       <div className="art-sources-head">
-        <button type="button" className="art-sources-toggle" onClick={onToggle} aria-expanded={open}>
-          <span className="art-sources-chev" aria-hidden="true">{I.chevron}</span>
-          <h3>{t.artifact.sourcesHead}</h3>
-          <span className="art-sources-cnt">{t.artifact.cited(result.sources.length)}</span>
+        <button type="button" className="src-toggle" onClick={onToggle} aria-expanded={open}>
+          <span className="src-chev" aria-hidden="true">{I.chevron}</span>
+          <span className="src-label">{t.artifact.sourcesHead}</span>
+          <span className="src-cnt">{t.artifact.cited(result.sources.length)}</span>
         </button>
         {/* The scope control sits in the header, so widening the list never
             moves the control that widened it. */}
@@ -50,34 +51,34 @@ function Sources({
       </div>
 
       {open && (
-        <div className="art-src-list" ref={listRef}>
+        <div className="src-list" ref={listRef}>
           {result.sources.map((s, i) => {
             const n = i + 1;
             return (
               <a
                 key={n}
-                className={"art-src" + (activeCite === n ? " active" : "")}
+                className={"src-row" + (activeCite === n ? " active" : "")}
                 data-n={n}
                 href={s.url}
                 target="_blank"
                 rel="noreferrer"
                 onClick={() => onPick(n)}
               >
-                <span className="art-src-n">{n}</span>
-                <span className="art-src-main">
-                  <span className="art-src-title">{s.title}</span>
-                  <span className="art-src-url">{stripScheme(s.url)}{I.ext}</span>
+                <span className="src-n">{n}</span>
+                <span className="src-main">
+                  <span className="src-title">{s.title}</span>
+                  <span className="src-url">{stripScheme(s.url)}{I.ext}</span>
                 </span>
               </a>
             );
           })}
           {all &&
             result.consulted.map((s, i) => (
-              <a key={"c" + i} className="art-src consulted" href={s.url} target="_blank" rel="noreferrer">
-                <span className="art-src-n" aria-hidden="true">·</span>
-                <span className="art-src-main">
-                  <span className="art-src-title">{s.title}</span>
-                  <span className="art-src-url">{stripScheme(s.url)}{I.ext}</span>
+              <a key={"c" + i} className="src-row consulted" href={s.url} target="_blank" rel="noreferrer">
+                <span className="src-n" aria-hidden="true">·</span>
+                <span className="src-main">
+                  <span className="src-title">{s.title}</span>
+                  <span className="src-url">{stripScheme(s.url)}{I.ext}</span>
                 </span>
               </a>
             ))}
@@ -116,17 +117,13 @@ export function Artifact({
   const [sourcesOpen, setSourcesOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
+  const [citeSeq, setCiteSeq] = useState(0);
   const onCite = (n: number) => {
     setActiveCite(n);
     setSourcesOpen(true);
-    // The source list isn't its own scroll container (the report body is), so
-    // scrollIntoView is what actually moves the source into view. A frame later,
-    // because a citation clicked while the list is folded has to open it first.
-    requestAnimationFrame(() => {
-      const el = listRef.current?.querySelector<HTMLElement>(`[data-n="${n}"]`);
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
-    });
+    setCiteSeq((k) => k + 1);
   };
+  useScrollToCite(listRef, sourcesOpen ? activeCite : null, citeSeq);
 
   if (!result || (!result.report.trim() && result.sources.length === 0)) {
     const msg =

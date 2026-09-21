@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import type { Turn } from "../types";
 import { Markdown } from "./Markdown";
 import { Activity } from "./Activity";
-import { SourceList } from "./Sources";
+import { SourceList, useScrollToCite } from "./Sources";
 
 type TurnCardProps = {
   turn: Turn;
@@ -29,6 +29,8 @@ export function TurnCard({
 }: TurnCardProps) {
   const [showSources, setShowSources] = useState(false);
   const [activeCite, setActiveCite] = useState<number | null>(null);
+  const [citeSeq, setCiteSeq] = useState(0);
+  const listRef = useRef<HTMLDivElement>(null);
   const running = turn.status === "running" || turn.status === "pending";
 
   // The stored reply once there is one, what has streamed in until then. The
@@ -42,11 +44,15 @@ export function TurnCard({
   const isFailed = !turn.stopped && (turn.status === "failed" || turn.outcome === "failed");
   const hasActivity = turn.events.length > 0;
 
-  // Clicking a [n] in the answer opens the source list and highlights that source.
+  // Clicking a [n] in the answer opens the source list, highlights that source
+  // and moves the view to it. The seq is what lets the same citation be clicked
+  // twice and still bring its source back after scrolling away.
   const onCite = (n: number) => {
     setShowSources(true);
     setActiveCite(n);
+    setCiteSeq((k) => k + 1);
   };
+  useScrollToCite(listRef, showSources ? activeCite : null, citeSeq);
 
   return (
     <div
@@ -86,19 +92,21 @@ export function TurnCard({
           {sources.length > 0 && (
             <div className="reply-sources" onClick={(e) => e.stopPropagation()}>
               <button
-                className={"sources-toggle" + (showSources ? " open" : "")}
+                type="button"
+                className="src-toggle"
                 onClick={() => setShowSources((open) => !open)}
                 aria-expanded={showSources}
               >
-                {I.link}
-                {t.turn.sourcesUsed(sources.length)}
-                <span className="sources-chevron">{showSources ? "−" : "+"}</span>
+                <span className="src-chev" aria-hidden="true">{I.chevron}</span>
+                <span className="src-label">{t.artifact.sourcesHead}</span>
+                <span className="src-cnt">{t.artifact.cited(sources.length)}</span>
               </button>
               {showSources && (
                 <SourceList
                   sources={sources}
                   activeCite={activeCite}
-                  onPick={setActiveCite}
+                  onPick={onCite}
+                  listRef={listRef}
                 />
               )}
             </div>
