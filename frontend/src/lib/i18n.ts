@@ -67,7 +67,7 @@ const en = {
   },
   about: {
     title: "About",
-    body: "Nexus is a research assistant. You ask a question in a chat and it answers, doing whatever work the question turns out to need: nothing, one search, or a team of agents reading the web in parallel. Every claim links to the page it came from. It also runs longer jobs in the background: a full report on a question, or a fact check of a document you upload. I designed and built all of it: the backend, the agent orchestration, and the frontend.",
+    body: "Nexus is a general purpose agent that happens to be very good at research. You talk to it in a chat and it works out what your message needs, then does it: answering outright, running a search, sending out researcher sub-agents, starting a deep run that takes minutes, or checking a document you gave it against its sources. Whatever it tells you, every claim links to the page it came from. I designed and built all of it: the backend, the agent orchestration, and the frontend.",
     proof: ["Open source", "Invite-only live demo"],
     builtWithLabel: "Built with",
     builtWith: [
@@ -79,7 +79,7 @@ const en = {
   },
   hiw: {
     title: "How it works",
-    body: "You send a message. One agent decides what answering it actually takes: nothing, a single search, or a team of researchers reading the web in parallel. Citations are assigned by code as each page comes back, so the model can only cite something that was really read.",
+    body: "Underneath, Nexus is one agent holding a set of tools, not a research pipeline with a chat bolted on top. The deep dive draws two things: how that agent decides whether your message needs a search, a team of researcher sub-agents, a deep run or a document checked, and the machinery it runs on, where a queue, a worker and a checkpoint are what let a run outlive a deploy.",
     cta: "Read the technical deep dive",
   },
   deep: {
@@ -303,7 +303,7 @@ const fr: Dict = {
   },
   about: {
     title: "À propos",
-    body: "Nexus est un assistant de recherche. Vous posez une question dans une conversation et il y répond, en faisant le travail que la question demande vraiment : rien, une recherche, ou une équipe d'agents qui lisent le web en parallèle. Chaque affirmation renvoie à la page dont elle vient. Il lance aussi des travaux plus longs en arrière-plan : un rapport complet sur une question, ou la vérification d'un document que vous déposez. J'ai tout conçu et construit : la partie serveur, l'orchestration des agents et l'interface.",
+    body: "Nexus est un agent généraliste qui se trouve être très bon en recherche. Vous lui parlez dans une conversation, il détermine ce que votre message demande, puis le fait : répondre directement, lancer une recherche, envoyer des sous-agents chercheurs, démarrer un traitement approfondi de plusieurs minutes, ou vérifier un document que vous lui avez donné face à ses sources. Quoi qu'il vous dise, chaque affirmation renvoie à la page dont elle vient. J'ai tout conçu et construit : la partie serveur, l'orchestration des agents et l'interface.",
     proof: ["Open source", "Démo en direct sur invitation"],
     builtWithLabel: "Construit avec",
     builtWith: [
@@ -315,7 +315,7 @@ const fr: Dict = {
   },
   hiw: {
     title: "Fonctionnement",
-    body: "Vous envoyez un message. Un agent détermine ce qu'il faut vraiment pour y répondre : rien, une seule recherche, ou une équipe de chercheurs qui lisent le web en parallèle. Les citations sont attribuées par le code à mesure que les pages reviennent : le modèle ne peut donc citer que ce qui a réellement été lu.",
+    body: "Sous le capot, Nexus est un agent muni d'outils, pas une chaîne de recherche sur laquelle on a posé une conversation. Le détail technique dessine deux choses : comment cet agent décide si votre message demande une recherche, une équipe de sous-agents chercheurs, un traitement approfondi ou la vérification d'un document, et la mécanique sur laquelle il tourne, où une file, un worker et un jalon sont ce qui permet à un traitement de survivre à un déploiement.",
     cta: "Lire le détail technique",
   },
   deep: {
