@@ -181,3 +181,33 @@ describe("headline", () => {
     expect(headline(p, "")).toEqual({ kind: "stage" });
   });
 });
+
+describe("steps on a run that answered", () => {
+  it("closes a step no event ever closed, instead of leaving it spinning", () => {
+    // A short answer: the supervisor replied without planning or researching,
+    // so "understanding" never got an event to end it.
+    const p = summarize([at({ kind: "thinking", agent: "supervisor" }, 0)]);
+    expect(steps(p, "done")).toEqual([{ kind: "understanding", mark: "ok", cut: false }]);
+  });
+
+  it("still marks a run that was cut short as unfinished", () => {
+    const p = summarize([at({ kind: "thinking", agent: "supervisor" }, 0)]);
+    expect(steps(p, "stopped")).toEqual([{ kind: "understanding", mark: "stop", cut: true }]);
+    expect(steps(p, "failed")).toEqual([{ kind: "understanding", mark: "warn", cut: true }]);
+  });
+
+  it("leaves it spinning while the run is still live", () => {
+    const p = summarize([at({ kind: "thinking", agent: "supervisor" }, 0)]);
+    expect(steps(p, null)).toEqual([{ kind: "understanding", mark: "run", cut: false }]);
+  });
+
+  it("closes a researcher the run answered over", () => {
+    const p = summarize([
+      at({ kind: "researcher", state: "start", index: 1, total: 1, question: "q1" }, 0),
+    ]);
+    expect(steps(p, "done").map((s) => [s.kind, s.mark, s.cut])).toEqual([
+      ["plan", "ok", false],
+      ["researcher", "ok", false],
+    ]);
+  });
+});

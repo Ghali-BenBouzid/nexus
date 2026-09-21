@@ -121,8 +121,10 @@ export function summarize(events: TimelineEvent[]): Progress {
   return { stage, planSize, researchers, total, active, thinking, latest, lastAt, started };
 }
 
-// How a run that is no longer live ended; null while it runs.
-export type Ended = "stopped" | "failed" | null;
+// How a run that is no longer live ended; null while it runs. "done" matters as
+// much as the other two: a run that answered finished every step it took, even
+// the ones no event ever closed, and a finished run must not show a spinner.
+export type Ended = "stopped" | "failed" | "done" | null;
 
 export type Mark = "run" | "ok" | "warn" | "stop";
 
@@ -140,11 +142,16 @@ export type Step =
 // spinner and a timer that would keep counting.
 export function steps(p: Progress, ended: Ended): Step[] {
   const settle = (mark: Mark) => {
-    const cut = mark === "run" && ended !== null;
-    return { mark: cut ? (ended === "stopped" ? "stop" : "warn") : mark, cut } as const;
+    if (mark !== "run" || ended === null) return { mark, cut: false } as const;
+    // The run answered, so whatever was still marked running did finish; only a
+    // run that was cut short leaves a step unfinished.
+    if (ended === "done") return { mark: "ok", cut: false } as const;
+    return { mark: ended === "stopped" ? "stop" : "warn", cut: true } as const;
   };
   const list: Step[] = [];
-  if (p.stage === "starting" && ended === null) list.push({ kind: "understanding", ...settle("run") });
+  // Shown on a finished run too, where settle() marks it done: leaving it out
+  // was what made a short answer's step list start at "Planned 0 questions".
+  if (p.stage === "starting") list.push({ kind: "understanding", ...settle("run") });
   if (p.stage !== "starting" || p.planSize != null) {
     const planned = p.planSize != null || p.stage !== "planning";
     list.push({ kind: "plan", size: p.planSize, ...settle(planned ? "ok" : "run") });

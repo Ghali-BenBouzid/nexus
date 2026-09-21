@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
@@ -134,17 +134,44 @@ function StepItem({ step, now, stopped }: { step: StepRow; now: number; stopped:
   }
 }
 
+// How long a headline holds before another may replace it. Thinking streams a
+// finished sentence every few hundred milliseconds, and a line that rewrites
+// itself that fast reads as flicker rather than as progress. Something new
+// actually starting (a search, a page, a researcher) is worth cutting in for,
+// but it still gets a floor so six parallel researchers cannot strobe the row.
+const DWELL_MS = 1100;
+const DWELL_URGENT_MS = 350;
+
+function useCalmLabel(label: string, urgent: boolean): string {
+  const [shown, setShown] = useState(label);
+  const shownAt = useRef(0);
+
+  useEffect(() => {
+    if (label === shown) return;
+    const floor = urgent ? DWELL_URGENT_MS : DWELL_MS;
+    const wait = Math.max(0, floor - (Date.now() - shownAt.current));
+    const id = setTimeout(() => {
+      shownAt.current = Date.now();
+      setShown(label);
+    }, wait);
+    return () => clearTimeout(id);
+  }, [label, shown, urgent]);
+
+  return shown;
+}
+
 // Everything a turn did before it answered, as the one inline row a chat app
 // shows: what it is doing right now, how long it has taken, and a chevron onto
 // the thinking behind it and the steps it took. The model's thinking is not a
 // separate disclosure, because to a reader it is not a separate thing.
 export function Activity({ turn, now }: { turn: Turn; now: number }) {
-  const [choice, setChoice] = useState<boolean | null>(null);
+  // Folded away until asked for. The row says what is happening; the thinking
+  // behind it is there for whoever wants it, not pushed at everyone.
+  const [open, setOpen] = useState(false);
   const p = summarize(turn.events);
   const running = turn.status === "running" || turn.status === "pending";
   const elapsed = ((turn.endedAt ?? now) - turn.startedAt) / 1000;
   const thinking = (turn.thinking ?? "").trim();
-  const answering = !!(turn.reply ?? turn.streamed ?? "").trim();
 
   const age = running ? heartbeatAge(turn, now) : null;
   const stale = age != null && age > STALE_AFTER;
@@ -153,27 +180,30 @@ export function Activity({ turn, now }: { turn: Turn; now: number }) {
   // words available. Once it has answered, it says what it cost: the work is
   // still there to inspect, but it stops competing with the answer for the eye.
   const settled = !running && turn.status === "complete";
-  const label = stale
+  const head = headline(p, thinking);
+  const next = stale
     ? t.progress.stale(clock(age!))
     : settled
       ? [t.progress.thoughtFor(brief(elapsed))]
           .concat(p.researchers.length > 0 ? t.progress.researched(p.researchers.length) : [])
           .join(" · ")
-      : headlineText(headline(p, thinking), p, turn, now);
+      : headlineText(head, p, turn, now);
+  // A search starting, a page opening, a researcher taking over, or the run
+  // ending: those are events. One thought giving way to the next is not.
+  const urgent = !running || head.kind === "activity" || head.kind === "researcher";
+  const label = useCalmLabel(next, urgent);
 
-  const rows = steps(p, running ? null : turn.stopped ? "stopped" : turn.status === "failed" ? "failed" : null);
-
-  // It opens itself while the thinking is the only thing happening, because that
-  // stretch is most of the wait. One click always wins after that: the moment the
-  // reader touches it, their choice holds for the rest of the turn.
-  const open = choice ?? (running && !!thinking && !answering);
+  const rows = steps(
+    p,
+    running ? null : turn.stopped ? "stopped" : turn.status === "failed" ? "failed" : "done",
+  );
 
   return (
     <div
       className={"act" + (open ? " open" : "") + (running ? " live" : "") + (stale ? " stale" : "")}
       onClick={(e) => e.stopPropagation()}
     >
-      <button type="button" className="act-bar" onClick={() => setChoice(!open)} aria-expanded={open}>
+      <button type="button" className="act-bar" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
         {running && !stale && (
           <span className="act-dots" aria-hidden="true">
             <i />
