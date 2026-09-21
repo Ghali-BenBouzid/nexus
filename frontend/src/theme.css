@@ -200,20 +200,18 @@ a { color: inherit; text-decoration: none; }
 .nav-start { display: inline-flex; align-items: center; }
 .nav-start-icon { display: none; }
 .nav-start-icon svg { width: 17px; height: 17px; }
-.nav-left { display: flex; align-items: center; gap: 12px; }
-/* Icon-only rail toggle. The nav is centered (max-width), so on wide screens the
-   toggle floats out to the real viewport edge (media query below); on narrower
-   screens it stays in flow at the nav's left. The history drawer emerges here. */
+.nav-left { display: flex; align-items: center; gap: 14px; }
+/* Icon-only rail toggle, opening the history drawer. It sits in the nav's own
+   left gutter with the brand, not pinned to the viewport edge: against the glass
+   it read as something stuck to the side of the screen rather than part of the
+   bar. The small negative margin is optical, putting the icon's edge on the
+   gutter rather than the button's padding. */
 .nav-rail { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 34px;
-  color: var(--muted); background: none; border: none; padding: 0; margin-left: -20px;
-  cursor: pointer; transition: color 0.2s; }
-.nav-rail:hover { color: var(--fg); }
+  color: var(--muted); background: none; border: none; padding: 0; margin-left: -5px;
+  border-radius: 9px; cursor: pointer; transition: color 0.2s, background 0.2s; }
+.nav-rail:hover { color: var(--fg); background: var(--surface-2); }
+.nav-rail:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .nav-rail svg { width: 19px; height: 19px; }
-/* Once the centered nav has real side gutters, pin the toggle hard against the
-   screen edge (absolute resolves against the fixed, full-width .nav). */
-@media (min-width: 1220px) {
-  .nav-rail { position: absolute; left: -2px; top: 50%; transform: translateY(-50%); margin-left: 0; }
-}
 .nav-right { display: flex; align-items: center; gap: 14px; }
 
 /* Theme toggle */
