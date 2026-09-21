@@ -132,8 +132,10 @@ export default function App() {
   // message goes, so a file can be the first thing in a chat.
   const [staged, setStaged] = useState<File[]>([]);
   // Deep research mode: the next message starts a research run instead of a
-  // chat turn. A mode, so it stays on until it is turned off, and it belongs to
-  // the composer rather than to a chat: it is how the next thing is asked.
+  // chat turn. It belongs to the chat it was switched on in, and is dropped on
+  // the way to any other one: it spends minutes and real money, so it is only
+  // ever on because the user just said so, never because they said so earlier
+  // somewhere else.
   const [deep, setDeep] = useState(false);
   // Which finished outputs the user has already been told about, so a report is
   // announced once per browser and not again on every reload.
@@ -158,7 +160,6 @@ export default function App() {
       query: lt.query,
       attachments: lt.attachments,
       title: lt.title,
-      deep: lt.deep,
       status: lt.status,
       events: [],
       reply: lt.reply,
@@ -501,11 +502,13 @@ export default function App() {
     // hero submission replaces the workspace, so it is never blocked this way.
     if (!fresh && turns.some((t) => t.status === "running" || t.status === "pending")) return;
     const id = ++turnSeq.current;
-    const deepRun = deep && isLive();
+    // A fresh submission from the hero starts a new chat, and the hero has no
+    // mode control: whatever the last chat was switched into does not follow
+    // the user here, any more than it follows them into an existing one.
+    const deepRun = deep && !fresh && isLive();
     const turn: Turn = {
       id,
       query: prompt,
-      deep: deepRun,
       status: "running",
       events: [],
       result: null,
@@ -522,6 +525,7 @@ export default function App() {
       setFocusedId(null);
       setLayout("thread");
       setTurns([turn]);
+      setDeep(false);
     } else {
       setTurns((prev) => [...prev, turn]);
     }
@@ -701,6 +705,7 @@ export default function App() {
     setActiveConversation(conv.id);
     setDocuments(conv.documents);
     setStaged([]);
+    setDeep(false); // the mode was switched on for another chat, not this one
     setUploadError(null);
     refreshOutputs();
     setFocusedId(null);
@@ -715,6 +720,7 @@ export default function App() {
     setTurns([]);
     setDocuments([]); // documents belong to a conversation, not to the account
     setStaged([]);
+    setDeep(false); // a new chat starts in the ordinary mode, like every other
     setUploadError(null);
     setFocusedId(null);
     setOpenOutputId(null);

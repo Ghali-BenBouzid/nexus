@@ -17,30 +17,6 @@ type TurnCardProps = {
   onRerun: (query: string) => void;
 };
 
-// A deep turn's answer is a document, so it is framed as one: a titled sheet in
-// the thread rather than loose prose. Everything under it (citations, sources,
-// the failure notes) is the turn's, and is left where it already was.
-function ReportSheet({ title, text, children }: { title: string; text: string; children: React.ReactNode }) {
-  return (
-    <article className="sheet">
-      <header className="sheet-head">
-        <span className="sheet-icon" aria-hidden="true">{I.doc}</span>
-        <h3 className="sheet-title">{title}</h3>
-        <button
-          type="button"
-          className="sheet-copy"
-          onClick={() => navigator.clipboard?.writeText(text)}
-          aria-label={t.artifact.copy}
-          title={t.artifact.copy}
-        >
-          {I.copy}
-        </button>
-      </header>
-      <div className="sheet-body report">{children}</div>
-    </article>
-  );
-}
-
 // One conversation turn rendered as chat: the user's question, the run's live
 // progress while it works, and then the answer itself. A turn produces an answer,
 // not a document: the reports in the Outputs panel come from background runs.
@@ -61,14 +37,11 @@ export function TurnCard({
   // The stored reply once there is one, what has streamed in until then. The
   // stored one always wins: a retried call can leave streamed text behind that
   // the model never actually sent.
-  // A deep turn writes a report, not a reply: that report is what it said.
-  const report = turn.deep ? (turn.result?.report ?? "").trim() : "";
   const answer = turn.reply ?? turn.streamed ?? "";
   const streaming = running && !turn.reply && !!turn.streamed;
   const thinking = (turn.thinking ?? "").trim();
   const sources = turn.result?.sources ?? [];
-  const isEmpty =
-    turn.status === "complete" && !answer.trim() && !report && sources.length === 0;
+  const isEmpty = turn.status === "complete" && !answer.trim() && sources.length === 0;
   const isFailed = !turn.stopped && (turn.status === "failed" || turn.outcome === "failed");
   const hasActivity = turn.events.length > 0;
 
@@ -109,21 +82,11 @@ export function TurnCard({
               still inspectable after the fact. */}
           {(running || hasActivity || thinking) && <Activity turn={turn} now={now} />}
 
-          {report ? (
-            <ReportSheet title={turn.title || turn.query} text={report}>
-              <Markdown text={report} onCite={onCite} activeCite={activeCite} sources={sources} />
-            </ReportSheet>
-          ) : (
-            answer.trim() && (
-              <div className={"reply-text" + (streaming ? " streaming" : "")}>
-                <Markdown text={answer} onCite={onCite} activeCite={activeCite} sources={sources} />
-              </div>
-            )
+          {answer.trim() && (
+            <div className={"reply-text" + (streaming ? " streaming" : "")}>
+              <Markdown text={answer} onCite={onCite} activeCite={activeCite} sources={sources} />
+            </div>
           )}
-
-          {/* A deep run takes minutes, so the thread says so while it works
-              rather than leaving the reader wondering what it is waiting for. */}
-          {turn.deep && running && <div className="reply-note">{t.deepMode.working}</div>}
 
           {sources.length > 0 && (
             <div className="reply-sources" onClick={(e) => e.stopPropagation()}>

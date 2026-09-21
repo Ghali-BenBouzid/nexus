@@ -239,7 +239,6 @@ const en = {
     off: "Turn off deep research",
     note: "A few minutes, and a large share of the demo budget.",
     placeholder: "What should the report cover?",
-    working: "Researching. This runs for several minutes; you can leave and come back.",
   },
   history: {
     recent: "Recent",
@@ -487,8 +486,6 @@ const fr: Dict = {
     off: "Désactiver la recherche approfondie",
     note: "Quelques minutes, et une bonne part du budget de démo.",
     placeholder: "Sur quoi doit porter le rapport ?",
-    working:
-      "Recherche en cours. Elle dure plusieurs minutes ; vous pouvez revenir plus tard.",
   },
   history: {
     recent: "Récent",

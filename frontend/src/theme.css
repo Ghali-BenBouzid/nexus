@@ -986,32 +986,6 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
    list as a report's, so a citation looks the same wherever it is read. */
 .reply-sources { margin-top: 2px; padding-top: 12px; border-top: 1px solid var(--line); }
 
-/* A deep turn answers with a document, so the thread gives it the edges of one:
-   a titled sheet, set apart from the prose an ordinary turn replies with. It
-   borrows .report for its typography and drops the panel's chrome, which is
-   sized for a reader that fills a column of its own. */
-.sheet { border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--panel);
-  box-shadow: var(--shadow); overflow: hidden; }
-.sheet-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px 12px 16px;
-  border-bottom: 1px solid var(--line); background: var(--surface-2); }
-.sheet-icon { display: grid; place-items: center; flex: none; color: var(--faint); }
-.sheet-icon svg { width: 15px; height: 15px; }
-.sheet-title { flex: 1; min-width: 0; margin: 0; font-family: var(--font-display); font-size: 14.5px;
-  font-weight: 600; letter-spacing: -0.01em; color: var(--fg);
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sheet-copy { display: grid; place-items: center; width: 28px; height: 28px; flex: none;
-  border: none; background: none; border-radius: 8px; color: var(--faint); cursor: pointer; }
-.sheet-copy:hover { background: var(--panel); color: var(--fg); }
-.sheet-copy svg { width: 15px; height: 15px; }
-.sheet-body.report { background: none; border: none; box-shadow: none; backdrop-filter: none;
-  border-radius: 0; padding: 22px 26px 24px; }
-.sheet-body.report .doc { font-size: 15.5px; line-height: 1.68; }
-.sheet-body.report .doc > :first-child { margin-top: 0; }
-.sheet-body.report .doc > :last-child { margin-bottom: 0; }
-.sheet-body.report .doc h2 { font-size: 20px; margin: 26px 0 10px; }
-.sheet-body.report .doc h3 { font-size: 16.5px; margin: 20px 0 8px; }
-@media (max-width: 560px) { .sheet-body.report { padding: 18px 16px 20px; } }
-
 .reply-note { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--muted); font-size: 14px; }
 .linkish { background: none; border: none; color: var(--accent); font-size: 13.5px; font-family: inherit; cursor: pointer; padding: 0; }
 .linkish:hover { text-decoration: underline; }

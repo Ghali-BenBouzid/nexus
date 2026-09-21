@@ -283,7 +283,6 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
 // what a background run points back at when it finishes.
 
 type ConvMessageQuery = {
-  kind: string;
   status: Status;
   title: string | null;
   report: string | null;
@@ -544,13 +543,7 @@ function outcomeOf(detail: QueryDetail): ResearchOutcome {
   }
   return {
     result,
-    // A deep turn answers with a report and no reply, so "produced nothing"
-    // has to look at both or every deep turn reads as empty.
-    outcome: outcomeFor(
-      detail.status,
-      detail.reply || detail.report || "",
-      result.sources.length,
-    ),
+    outcome: outcomeFor(detail.status, detail.reply ?? "", result.sources.length),
     reply: detail.reply ?? "",
     title: detail.title ?? undefined,
   };
@@ -650,7 +643,6 @@ export type LoadedTurn = {
   status: Status;
   error: string | null;
   stopped?: boolean; // the user stopped it: not shown as an error
-  deep?: boolean; // the turn was run as deep research; its report is the answer
   result: Result;
   reply?: string; // the answer, which is what a turn produces
 };
@@ -714,11 +706,9 @@ export function turnsFrom(messages: ConvMessage[]): LoadedTurn[] {
       status: q?.status ?? "complete",
       error: q?.error ?? null,
       stopped: q?.stopped,
-      deep: q?.kind === "deep_research",
       reply: q?.reply ?? m.content,
       result: {
-        // A deep turn's report is what it said, so it is rehydrated with it.
-        report: q?.report ?? "",
+        report: "",
         sources: q?.sources ?? [],
         consulted: [],
         gaps: q?.gaps ?? [],

@@ -30,11 +30,10 @@ Two kinds of work produce a document rather than a reply:
 - **Deep research**, when you want a question properly covered. It runs much wider, takes minutes, and writes its own report. It runs in the background and survives a redeploy, so you can close the chat and come back to it.
 - **A fact check** of a file you upload: it pulls out the claims the document rests on, tests each against the web, and writes a report saying which held up.
 
-Deep research is a mode you switch the composer into, so asking for it is a choice rather than something the supervisor decides for you.
-A message sent that way is answered by the run itself: the report is that turn's answer, read in the thread where it was asked for.
+Deep research is also a mode you can switch the composer into, so asking for it is a choice rather than something the supervisor decides for you.
+Either way the run is the same, and so is where it ends up.
 
-A run the supervisor starts on its own, while it is busy answering something else, has nowhere in the thread to go.
-Those land in **Outputs**, and you are told when one is ready wherever you happen to be.
+Both land in **Outputs**, and you are told when one is ready wherever you happen to be.
 
 ## How it works
 
@@ -47,7 +46,7 @@ flowchart LR
     S -.-> T2[read_document]
     S -.-> T3[research]
     T3 --> P[Plan] --> X[Researchers, in parallel] --> S
-    S -.-> T4[deep_research] --> D[Wide run, checkpointed] --> Out[Report]
+    S -.-> T4[deep_research] --> D[Wide run, checkpointed] --> Out[Report in Outputs]
     S -.-> T5[fact_check] --> F[Claims checked] --> Out
 ```
 

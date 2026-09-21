@@ -18,7 +18,6 @@ const assistant = (query: Partial<NonNullable<ConvMessage["query"]>>): ConvMessa
   query_id: 9,
   created_at: "2026-09-21T00:00:01Z",
   query: {
-    kind: "chat",
     status: "complete",
     title: null,
     report: null,
@@ -32,26 +31,19 @@ const assistant = (query: Partial<NonNullable<ConvMessage["query"]>>): ConvMessa
 });
 
 describe("turnsFrom", () => {
-  it("reads a deep run's report as what the turn said", () => {
-    const [turn] = turnsFrom([
-      user("why is the sky blue"),
-      assistant({ kind: "deep_research", report: "## Findings", title: "Sky" }),
-    ]);
-
-    expect(turn.deep).toBe(true);
-    expect(turn.result.report).toBe("## Findings");
-    expect(turn.title).toBe("Sky");
-  });
-
-  it("leaves a chat turn answering with its reply and no report", () => {
+  it("answers a turn with its reply and its cited sources", () => {
     const [turn] = turnsFrom([
       user("hi"),
-      assistant({ kind: "chat", reply: "Hello." }),
+      assistant({
+        reply: "Hello.",
+        title: "Greeting",
+        sources: [{ title: "A page", url: "https://example.org" }],
+      }),
     ]);
 
-    expect(turn.deep).toBe(false);
     expect(turn.reply).toBe("Hello.");
-    expect(turn.result.report).toBe("");
+    expect(turn.title).toBe("Greeting");
+    expect(turn.result.sources).toHaveLength(1);
   });
 
   it("keeps the question each answer belongs to", () => {
@@ -59,10 +51,23 @@ describe("turnsFrom", () => {
       user("first"),
       assistant({ reply: "one" }),
       user("second"),
-      assistant({ kind: "deep_research", report: "two" }),
+      assistant({ reply: "two" }),
     ]);
 
     expect(turns.map((turn) => turn.query)).toEqual(["first", "second"]);
-    expect(turns.map((turn) => turn.deep)).toEqual([false, true]);
+    expect(turns.map((turn) => turn.reply)).toEqual(["one", "two"]);
+  });
+
+  // The announcement a deep run leaves behind: a plain message with no run to
+  // follow, which must still read as an answer rather than as an empty turn.
+  it("keeps a message that carries no run at all", () => {
+    const [turn] = turnsFrom([
+      user("go deep on X"),
+      { ...assistant({}), query_id: null, query: null, content: "Starting deep research." },
+    ]);
+
+    expect(turn.queryId).toBeNull();
+    expect(turn.reply).toBe("Starting deep research.");
+    expect(turn.status).toBe("complete");
   });
 });

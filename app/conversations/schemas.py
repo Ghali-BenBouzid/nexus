@@ -43,7 +43,6 @@ class ConversationSummary(BaseSchema):
 class MessageQuery(BaseModel):
     """The research run a message carries, rendered for the thread view."""
 
-    kind: str  # chat, deep_research, fact_check: what this turn produced
     status: QueryStatus
     title: str | None = None  # the artifact's title, on a run that makes one
     report: str | None

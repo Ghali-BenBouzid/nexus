@@ -62,9 +62,6 @@ export type Turn = {
   // The files sent with this message, shown on the bubble that carries them.
   attachments?: Doc[];
   title?: string; // the supervisor-given report/artifact title
-  // The user asked for this turn in deep research mode, so what it produces is
-  // a report rather than an answer, and it takes minutes rather than seconds.
-  deep?: boolean;
   status: Status;
   events: TimelineEvent[];
   // The assistant's answer, rendered in the thread. Every turn has one now: a
