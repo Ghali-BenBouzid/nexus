@@ -163,3 +163,44 @@ export function steps(p: Progress, ended: Ended): Step[] {
   }
   return list;
 }
+
+// The one sentence the collapsed activity row shows while a run works. Events
+// give short, already-finished strings, so they win. The model's thinking is a
+// scratchpad streaming in a token at a time, so its tail is usually half a
+// sentence: only a finished one is worth putting on a line that a reader scans.
+export type Headline =
+  | { kind: "activity"; activity: Activity }
+  | { kind: "researcher"; question: string }
+  | { kind: "thought"; text: string }
+  | { kind: "stage" };
+
+export function headline(p: Progress, thinking: string): Headline {
+  // A finished read or search only describes the run while research is live;
+  // afterwards the latest activity is stale and the stage is the truth.
+  if (p.stage === "researching" && p.active > 0) {
+    if (p.latest && p.latest.kind !== "thinking") return { kind: "activity", activity: p.latest };
+    const live = p.researchers.filter((r) => r.outcome === "running");
+    // With several at once, no single question speaks for the run: the stage
+    // line ("3 of 5 researchers") does.
+    if (live.length === 1) return { kind: "researcher", question: live[0].question };
+  }
+  const thought = lastSentence(thinking);
+  if (thought) return { kind: "thought", text: thought };
+  return { kind: "stage" };
+}
+
+const TERMINATOR = /[.!?…]$/;
+
+// The last finished sentence of a streaming scratchpad, or null while the first
+// one is still being written. Long sentences are cut to one line's worth.
+export function lastSentence(text: string, max = 90): string | null {
+  const parts = text
+    .split(/(?<=[.!?…])\s+|\n+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length === 0) return null;
+  const last = parts[parts.length - 1];
+  const done = TERMINATOR.test(last) ? last : parts.length > 1 ? parts[parts.length - 2] : null;
+  if (!done) return null;
+  return done.length > max ? done.slice(0, max - 1).trimEnd() + "…" : done;
+}

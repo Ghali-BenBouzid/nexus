@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentEvent, TimelineEvent } from "../types";
-import { steps, summarize } from "./progress";
+import { headline, lastSentence, steps, summarize } from "./progress";
 
 let seq = 0;
 const at = (event: AgentEvent, when: number): TimelineEvent => ({ ...event, id: seq++, delay: 0, at: when });
@@ -107,5 +107,77 @@ describe("steps", () => {
       text: "claims.pdf",
       at: 1,
     });
+  });
+});
+
+describe("lastSentence", () => {
+  it("ignores the half-written tail a stream is still producing", () => {
+    expect(lastSentence("The user wants a comparison. I should check the")).toBe(
+      "The user wants a comparison.",
+    );
+  });
+
+  it("is empty until the first sentence has finished", () => {
+    expect(lastSentence("I should start by")).toBeNull();
+    expect(lastSentence("")).toBeNull();
+  });
+
+  it("takes the most recent finished sentence", () => {
+    expect(lastSentence("First thought. Second thought. ")).toBe("Second thought.");
+  });
+
+  it("treats a line break as an end, so a list of notes still reads", () => {
+    expect(lastSentence("Checking the filings\nComparing the two")).toBe("Checking the filings");
+  });
+
+  it("cuts a sentence too long for one line", () => {
+    const long = "x".repeat(200) + ".";
+    const out = lastSentence(long, 40)!;
+    expect(out).toHaveLength(40);
+    expect(out.endsWith("\u2026")).toBe(true);
+  });
+});
+
+describe("headline", () => {
+  const working = (events: TimelineEvent[]) => summarize(events);
+
+  it("prefers what a researcher is doing right now", () => {
+    const p = working([
+      at({ kind: "researcher", state: "start", index: 1, total: 2, question: "q1" }, 0),
+      at({ kind: "researcher", state: "start", index: 2, total: 2, question: "q2" }, 0),
+      at({ kind: "tool", action: "read", domain: "reuters.com", index: 1 }, 1),
+    ]);
+    expect(headline(p, "A thought.")).toEqual({
+      kind: "activity",
+      activity: { kind: "read", domain: "reuters.com", at: 1 },
+    });
+  });
+
+  it("names the question when exactly one researcher is left working", () => {
+    const p = working([
+      at({ kind: "researcher", state: "start", index: 1, total: 2, question: "q1" }, 0),
+      at({ kind: "researcher", state: "start", index: 2, total: 2, question: "q2" }, 0),
+      at({ kind: "researcher", state: "done", index: 1, question: "q1", outcome: "found" }, 1),
+      at({ kind: "thinking", agent: "researcher", index: 2 }, 2),
+    ]);
+    expect(headline(p, "")).toEqual({ kind: "researcher", question: "q2" });
+  });
+
+  it("falls back to the model's own words before any event is specific", () => {
+    const p = working([at({ kind: "thinking", agent: "supervisor" }, 0)]);
+    expect(headline(p, "Working out what is being asked. And then")).toEqual({
+      kind: "thought",
+      text: "Working out what is being asked.",
+    });
+  });
+
+  it("does not describe the run with a read that has already finished", () => {
+    const p = working([
+      at({ kind: "researcher", state: "start", index: 1, total: 1, question: "q1" }, 0),
+      at({ kind: "tool", action: "read", domain: "reuters.com", index: 1 }, 1),
+      at({ kind: "researcher", state: "done", index: 1, question: "q1", outcome: "found" }, 2),
+      at({ kind: "writer", state: "start" }, 3),
+    ]);
+    expect(headline(p, "")).toEqual({ kind: "stage" });
   });
 });

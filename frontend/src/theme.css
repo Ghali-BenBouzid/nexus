@@ -605,66 +605,83 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .src-list::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px; }
 .src-list::-webkit-scrollbar-track { background: transparent; }
 
-/* Run progress: one line that follows the run's stage, expandable into its steps. */
-.pb { border: 1px solid var(--line); border-radius: var(--r-md); background: var(--surface); overflow: hidden; }
-.pb-bar {
-  display: flex; align-items: center; gap: 11px; width: 100%;
-  padding: 10px 14px; border: none; background: transparent; color: var(--muted);
+/* A run's activity: one inline row, never a card. It is the progress headline
+   and the thinking disclosure at once, because to a reader those are one thing.
+   Expanded, it shows the thinking that produced the answer and the steps taken
+   to get there, so the work stays inspectable without ever shouting. */
+.act { display: flex; flex-direction: column; align-items: flex-start; width: 100%; }
+.act-bar {
+  display: inline-flex; align-items: center; gap: 9px; max-width: 100%;
+  padding: 2px 0; border: none; background: none; color: var(--faint);
   font: inherit; text-align: left; cursor: pointer;
 }
-.pb-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; border-radius: var(--r-md); }
-.pb-bar:hover .pb-chevron { color: var(--fg); }
-.pb-icon { display: inline-flex; width: 15px; height: 15px; flex: none; color: var(--ok); }
-.pb-icon svg, .pb-mark svg { width: 15px; height: 15px; }
-.pb.stale .pb-icon { color: var(--warn); }
-.pb-head { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
-.pb-label {
-  /* The stage never truncates for the detail beside it; the detail gives way. */
-  flex-shrink: 0; max-width: 100%; font-size: 14.5px; font-weight: 500; color: var(--fg);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: pbIn 0.25s var(--ease);
+.act-bar:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.act-bar:hover .act-label, .act-bar:hover .act-chevron { color: var(--muted); }
+.act-icon { display: inline-flex; width: 14px; height: 14px; flex: none; color: var(--warn); }
+.act-icon svg, .act-mark svg { width: 14px; height: 14px; }
+.act.stale .act-label { color: var(--warn); }
+.act-label {
+  min-width: 0; font-size: 14px; color: var(--faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: actIn 0.25s var(--ease);
 }
-/* A light sweep across the live stage, like a chat app's "thinking" line. */
-.pb-label.live {
-  background: linear-gradient(90deg, var(--muted) 0%, var(--muted) 38%, var(--fg) 50%, var(--muted) 62%, var(--muted) 100%);
+/* A light sweep across the line while the run works, so a long step still reads
+   as something happening rather than as a caption that got stuck. */
+.act.live:not(.stale) .act-label {
+  background: linear-gradient(90deg, var(--faint) 0%, var(--faint) 38%, var(--fg) 50%, var(--faint) 62%, var(--faint) 100%);
   background-size: 250% 100%; -webkit-background-clip: text; background-clip: text; color: transparent;
-  animation: pbIn 0.25s var(--ease), pbShimmer 2.4s linear infinite;
+  animation: actIn 0.25s var(--ease), actShimmer 2.4s linear infinite;
 }
-.pb-detail {
-  min-width: 0; font-family: var(--font-mono); font-size: 12px; color: var(--faint);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; animation: pbIn 0.25s var(--ease);
-}
-.pb.stale .pb-detail { color: var(--warn); }
-.pb-time { flex: none; font-family: var(--font-mono); font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
-.pb-chevron {
+/* The three dots every chat app uses for "working": the affordance is already
+   learned, so it needs no label. */
+.act-dots { flex: none; display: inline-flex; align-items: center; gap: 3px; }
+.act-dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--accent-2);
+  animation: actDot 1.25s ease-in-out infinite; }
+.act-dots i:nth-child(2) { animation-delay: 0.16s; }
+.act-dots i:nth-child(3) { animation-delay: 0.32s; }
+.act-time { flex: none; font-family: var(--font-mono); font-size: 11.5px; color: var(--faint);
+  font-variant-numeric: tabular-nums; }
+.act-chevron {
   flex: none; display: inline-flex; width: 13px; height: 13px; color: var(--faint);
   transform: rotate(-90deg); transition: transform 0.18s ease, color 0.15s ease;
 }
-.pb.open .pb-chevron { transform: none; }
-.pb-steps { list-style: none; margin: 0; padding: 4px 14px 10px; border-top: 1px solid var(--line); display: grid; }
-.pb-step {
-  display: grid; grid-template-columns: 15px minmax(0, 1fr) auto; align-items: center; gap: 11px;
-  padding: 7px 0; font-size: 13.5px; color: var(--fg);
+.act.open .act-chevron { transform: none; }
+
+/* One rule down the left edge holds the thinking and the steps together as the
+   inside of the row above, rather than as two more blocks in the thread. */
+.act-body { width: 100%; margin: 7px 0 2px; padding-left: 13px; border-left: 1px solid var(--line);
+  display: flex; flex-direction: column; gap: 10px; animation: actIn 0.2s var(--ease); }
+/* Thinking is working-out, not prose: quieter than the answer, and never styled. */
+.act-think { font-size: 13.5px; line-height: 1.6; color: var(--faint); white-space: pre-wrap; }
+.act-steps { list-style: none; margin: 0; padding: 0; display: grid; }
+.act-step {
+  display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  padding: 5px 0; font-size: 13px; color: var(--muted);
 }
-.pb-mark { display: inline-flex; width: 15px; height: 15px; color: var(--ok); }
-.pb-step-warn .pb-mark { color: var(--warn); }
-.pb-step-stop .pb-mark { color: var(--faint); }
-.pb-step-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.pb-num { font-family: var(--font-mono); font-size: 11.5px; color: var(--accent-text); margin-right: 8px; }
-.pb-step-state {
-  max-width: 26ch; font-family: var(--font-mono); font-size: 12px; color: var(--faint);
+.act-mark { display: inline-flex; width: 14px; height: 14px; color: var(--ok); }
+.act-step-warn .act-mark { color: var(--warn); }
+.act-step-stop .act-mark { color: var(--faint); }
+.act-step-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.act-num { font-family: var(--font-mono); font-size: 11.5px; color: var(--accent-text); margin-right: 8px; }
+.act-step-state {
+  max-width: 26ch; font-family: var(--font-mono); font-size: 11.5px; color: var(--faint);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.pb-step-run .pb-step-state { color: var(--muted); }
-@keyframes pbIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
-@keyframes pbShimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+.act-step .spin { width: 13px; height: 13px; }
+@keyframes actIn { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@keyframes actShimmer { from { background-position: 100% 0; } to { background-position: -150% 0; } }
+@keyframes actDot {
+  0%, 60%, 100% { opacity: 0.3; transform: scale(0.8); }
+  30% { opacity: 1; transform: none; }
+}
 @media (max-width: 560px) {
-  /* Too narrow for stage and detail side by side: stack them. */
-  .pb-head { flex-direction: column; align-items: flex-start; gap: 2px; }
-  .pb-label, .pb-detail { max-width: 100%; }
-  .pb-step-state { max-width: 14ch; }
+  .act-step-state { max-width: 14ch; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .pb-label, .pb-label.live, .pb-detail { animation: none; }
+  .act-label, .act.live:not(.stale) .act-label { animation: none; }
+  .act.live:not(.stale) .act-label { color: var(--faint); background: none; -webkit-text-fill-color: currentColor; }
+  .act-body { animation: none; }
+  .act-dots i { animation: none; opacity: 0.7; }
+  .act-chevron { transition: none; }
 }
 
 /* ============================================================
@@ -896,7 +913,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .msg-row.assistant { justify-content: flex-start; }
 .bubble-user { max-width: 82%; padding: 10px 15px; border-radius: 18px; background: var(--surface-2);
   border: 1px solid var(--line); color: var(--fg); font-size: 14.5px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
-.assistant-reply { width: 100%; display: flex; flex-direction: column; gap: 10px; }
+.assistant-reply { width: 100%; display: flex; flex-direction: column; gap: 14px; }
 
 .spin { width: 15px; height: 15px; border-radius: 50%; flex: none;
   border: 2px solid var(--line-strong); border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
@@ -908,22 +925,6 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .reply-text .doc h2 { font-size: 18px; margin: 18px 0 8px; }
 .reply-text .doc h3 { font-size: 16px; margin: 14px 0 6px; }
 .reply-text .doc p { margin: 0 0 10px; }
-/* The model's thinking while it works. Inline in the thread, not boxed: it is
-   part of the same conversation, and a box around it would read as a different
-   kind of thing. Quieter than the answer, because it is working-out. */
-.thinking { margin: 2px 0 10px; }
-.thinking-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  padding: 0; border: 0; background: none; color: var(--faint); font-family: inherit;
-  font-size: 13px; transition: color 0.2s; }
-.thinking-toggle:hover { color: var(--muted); }
-/* Same chevron convention as the progress bar: points right when closed, down
-   when open, so the two disclosures in a turn read as one control. */
-.thinking-chevron { flex: none; display: inline-flex; width: 13px; height: 13px;
-  transform: rotate(-90deg); transition: transform 0.18s ease; }
-.thinking-toggle.open .thinking-chevron { transform: none; }
-.thinking-text { margin-top: 6px; padding-left: 13px; border-left: 1px solid var(--line);
-  font-size: 13.5px; line-height: 1.6; color: var(--faint); white-space: pre-wrap; }
-
 /* A reply still arriving carries a caret on its last line, so a pause in the
    stream reads as the model thinking rather than the app having stalled. */
 .reply-text.streaming > .doc > :last-child::after { content: ""; display: inline-block;
@@ -932,7 +933,6 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 @keyframes caret { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) {
   .reply-text.streaming > .doc > :last-child::after { animation: none; }
-  .thinking-chevron { transition: none; }
 }
 
 /* The sources behind an answer: folded away by default, because the answer is
@@ -946,9 +946,6 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .sources-toggle svg { width: 14px; height: 14px; }
 .sources-chevron { font-family: var(--font-mono); font-size: 12px; color: var(--faint); }
 .reply-sources .src-list { margin-top: 10px; display: grid; gap: 4px; }
-
-/* Follow-ups: offers, not instructions, so they read as quiet chips under the
-   answer rather than as a row of calls to action. */
 
 .reply-note { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--muted); font-size: 14px; }
 .linkish { background: none; border: none; color: var(--accent); font-size: 13.5px; font-family: inherit; cursor: pointer; padding: 0; }
@@ -1071,10 +1068,24 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .hist-item:hover { background: var(--surface-2); border-color: var(--line); }
 /* Only the outputs list keeps a status dot; a chat row is just its name. */
 .hist-item.with-dot { grid-template-columns: 14px 1fr; }
-.hist-dot { width: 9px; height: 9px; border-radius: 50%; margin-top: 5px; background: var(--faint); }
-.hist-dot.complete { background: var(--ok); }
-.hist-dot.failed { background: var(--bad); }
-.hist-dot.running, .hist-dot.pending { background: var(--accent-2); }
+/* Unread, and nothing else. A report the user has already read keeps the column
+   so the titles stay in line, but shows nothing in it. */
+.hist-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 6px; background: transparent; }
+.hist-item.unread .hist-dot { background: var(--accent-2); box-shadow: 0 0 0 3px var(--accent-soft); }
+.hist-item.unread .hist-q { color: var(--fg); font-weight: 600; }
+/* How the run went, in words, where the size and kind already are. */
+.hist-meta.failed { color: var(--bad); }
+.hist-meta .spin { width: 10px; height: 10px; border-width: 1.5px; margin-right: 6px;
+  display: inline-block; vertical-align: -1px; }
+
+/* The count of unread reports, on whichever button opens the panel. */
+.unread-badge {
+  position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px;
+  border: 2px solid var(--bg);
+  display: grid; place-items: center; border-radius: 999px;
+  background: var(--accent-2); color: #1a1200;
+  font-family: var(--font-mono); font-size: 10px; font-weight: 600; line-height: 1;
+}
 .hist-main { min-width: 0; }
 .hist-q { font-size: 14px; color: var(--fg); line-height: 1.4; overflow: hidden;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
@@ -1104,11 +1115,23 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 
 /* A report finishing is news wherever the user is, so it says so in the corner
    and offers one tap to go and read it. */
-.toast { position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 60;
-  display: flex; align-items: center; gap: 12px; max-width: min(560px, calc(100vw - 32px));
-  padding: 11px 12px 11px 16px; border-radius: 14px; border: 1px solid var(--line);
-  background: var(--surface-solid); box-shadow: 0 12px 40px rgb(0 0 0 / 0.28); }
-.toast-text { font-size: 14px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.toasts { position: fixed; top: 14px; right: 16px; z-index: 60;
+  display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
+  max-width: min(420px, calc(100vw - 32px)); pointer-events: none; }
+.toast { pointer-events: auto; display: flex; align-items: center; gap: 10px; max-width: 100%;
+  padding: 10px 10px 10px 15px; border-radius: 14px; border: 1px solid var(--line-strong);
+  background: var(--surface-solid);
+  /* Two shadows: a tight one for the edge, a wide one for the lift, so it reads
+     as sitting above the page rather than printed on it. */
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.22), 0 18px 48px -12px rgb(0 0 0 / 0.55);
+  animation: toastIn 0.32s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes toastIn {
+  from { opacity: 0; transform: translateX(18px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
+.toast-text { min-width: 0; font-size: 13.5px; color: var(--fg); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
 .toast-open { cursor: pointer; font-family: inherit; font-size: 13.5px; font-weight: 600; color: var(--accent);
   background: var(--accent-soft); border: none; border-radius: 9px; padding: 7px 13px; }
 .toast-close { cursor: pointer; display: grid; place-items: center; width: 28px; height: 28px;
@@ -1171,7 +1194,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
     padding: env(safe-area-inset-top, 0px) 12px 0;
     background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(14px) saturate(1.4);
     border-bottom: 1px solid var(--line); }
-  .chat-corner { display: grid; place-items: center; cursor: pointer; padding: 2px;
+  .chat-corner { position: relative; display: grid; place-items: center; cursor: pointer; padding: 2px;
     background: none; border: none; color: var(--muted); transition: color 0.2s; }
   .chat-corner:hover { color: var(--fg); }
   .chat-corner svg { width: 19px; height: 19px; }

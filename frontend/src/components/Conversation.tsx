@@ -26,6 +26,8 @@ type ConversationProps = {
   openOutputId: number | null;
   openOutputResult: Result | null;
   onOpenOutput: (id: number | null) => void;
+  // Finished reports the user has not opened since they last changed.
+  unread: Set<number>;
   onRefreshOutput: (id: number) => void;
   onUpload: (file: File) => void;
   // Files picked in the composer, sent with the next message.
@@ -63,6 +65,7 @@ export function Conversation({
   openOutputId,
   openOutputResult,
   onOpenOutput,
+  unread,
   onRefreshOutput,
   onUpload,
   staged,
@@ -250,6 +253,7 @@ export function Conversation({
               title={t.chat.showArtifacts}
             >
               {I.doc}
+              {unread.size > 0 && <span className="unread-badge">{unread.size}</span>}
             </button>
           )}
         </div>
@@ -321,6 +325,7 @@ export function Conversation({
               openId={openOutputId}
               openResult={openOutputResult}
               onOpen={onOpenOutput}
+              unread={unread}
               onClose={() => onLayout("thread")}
               onRefresh={onRefreshOutput}
               onUpload={onUpload}
@@ -342,6 +347,7 @@ export function Conversation({
               title={t.chat.showArtifacts}
             >
               {I.doc}
+              {unread.size > 0 && <span className="unread-badge">{unread.size}</span>}
             </button>
           )
         )}

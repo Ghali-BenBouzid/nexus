@@ -2,11 +2,11 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 import { Conversation } from "./components/Conversation";
-import { I } from "./icons";
 import { DemoDialog } from "./components/DemoDialog";
 import { Hero } from "./components/Hero";
 import { History } from "./components/History";
 import { Nav } from "./components/Nav";
+import { Toast } from "./components/Toast";
 import { About, Footer, HowItWorks } from "./components/Sections";
 import {
   cancelQuery,
@@ -39,6 +39,7 @@ import {
 } from "./lib/design";
 import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
 import { isLive, LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
+import { isUnread, loadSeen, markSeen, saveSeen, type Seen } from "./lib/unread";
 import type { Doc, LayoutMode, Output, Result, Theme, Turn, View } from "./types";
 
 // Which outputs this browser has already announced. A per-viewer convenience,
@@ -131,7 +132,10 @@ export default function App() {
   // Which finished outputs the user has already been told about, so a report is
   // announced once per browser and not again on every reload.
   const announced = useRef<Set<number>>(new Set(storedAnnounced()));
-  const [ready, setReady] = useState<Output | null>(null);
+  const [ready, setReady] = useState<Output[]>([]);
+  // Which reports this browser has read, so a finished one is marked new until
+  // it is opened, and marked new again when a refresh rewrites it.
+  const [seen, setSeen] = useState<Seen>(loadSeen);
 
   const turnSeq = useRef(0);
   const cancelled = useRef<Set<number>>(new Set());
@@ -280,16 +284,19 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, anyOutputRunning, view]);
 
-  // Tell the user once when a report they are no longer watching is ready.
+  // Tell the user once when a report they are no longer watching is ready. Two
+  // can land in the same poll, so they queue rather than overwrite each other.
   useEffect(() => {
-    const finished = outputs.find(
+    const finished = outputs.filter(
       (o) => o.status === "complete" && !announced.current.has(o.id),
     );
-    if (!finished) return;
-    announced.current.add(finished.id);
+    if (finished.length === 0) return;
+    for (const o of finished) announced.current.add(o.id);
     rememberAnnounced(announced.current);
-    setReady(finished);
+    setReady((current) => [...current, ...finished]);
   }, [outputs]);
+
+  const dismiss = (id: number) => setReady((current) => current.filter((o) => o.id !== id));
 
   // Nav shadow on scroll + hero-focal fluid fade: the blob is full behind the
   // hero and fades out over the first ~70vh as the sections rise. On chat stages
@@ -555,6 +562,9 @@ export default function App() {
   const refreshOutputs = () => {
     if (!isLive()) return;
     listOutputs().then(setOutputs).catch(() => {});
+    // A deep run or a fact check spends from the demo budget while it works, so
+    // the credits line follows the same poll rather than waiting for a reload.
+    getAccount().then(setAccount).catch(() => {});
   };
 
   // Open one report in the panel, loading its body on demand.
@@ -563,6 +573,14 @@ export default function App() {
     setOpenOutputResult(null);
     if (id == null) return;
     setLayout("split");
+    const output = outputs.find((o) => o.id === id);
+    if (output) {
+      setSeen((current) => {
+        const next = markSeen(current, output);
+        saveSeen(next);
+        return next;
+      });
+    }
     const result = await openOutput(id);
     setOpenOutputResult(result);
   }
@@ -677,6 +695,10 @@ export default function App() {
   // One line under the composer, keeping the demo's terms visible: the share of
   // credits left for an invited visitor, or why their invite did not work.
   // Local simulated-only builds show nothing.
+  // The reports that finished and have not been opened since, for the dot in the
+  // Outputs list and the count on the button that opens it.
+  const unread = new Set(outputs.filter((o) => isUnread(o, seen)).map((o) => o.id));
+
   const accessNote = !LIVE_MODE
     ? null
     : live
@@ -733,6 +755,7 @@ export default function App() {
           openOutputId={openOutputId}
           openOutputResult={openOutputResult}
           onOpenOutput={showOutput}
+          unread={unread}
           onRefreshOutput={refreshOutput}
           staged={staged}
           onAttach={(files) => setStaged((current) => [...current, ...files])}
@@ -753,28 +776,22 @@ export default function App() {
       )}
 
       {/* A background run finishes on its own, so it says so wherever the user
-          happens to be, with one tap to go and read it. */}
-      {ready && (
-        <div className="toast" role="status">
-          <span className="toast-text">{t.outputs.ready(ready.title)}</span>
-          <button
-            className="toast-open"
-            onClick={() => {
-              const output = ready;
-              setReady(null);
-              setView("chat");
-              showOutput(output.id);
-            }}
-          >
-            {t.outputs.open}
-          </button>
-          <button
-            className="toast-close"
-            onClick={() => setReady(null)}
-            aria-label={t.outputs.dismiss}
-          >
-            {I.close}
-          </button>
+          happens to be, with one tap to go and read it. It sits in the corner the
+          Outputs panel opens from, and never over the composer. */}
+      {ready.length > 0 && (
+        <div className="toasts">
+          {ready.map((output) => (
+            <Toast
+              key={output.id}
+              title={output.title}
+              onOpen={() => {
+                dismiss(output.id);
+                setView("chat");
+                showOutput(output.id);
+              }}
+              onDismiss={() => dismiss(output.id)}
+            />
+          ))}
         </div>
       )}
 

@@ -4,7 +4,7 @@ import { I } from "../icons";
 import { t } from "../lib/i18n";
 import type { Turn } from "../types";
 import { Markdown } from "./Markdown";
-import { ProgressBar } from "./ProgressBar";
+import { Activity } from "./Activity";
 import { SourceList } from "./Sources";
 
 type TurnCardProps = {
@@ -75,14 +75,7 @@ export function TurnCard({
         <div className="assistant-reply">
           {/* The live feed stays above the answer once it lands, so the work is
               still inspectable after the fact. */}
-          {(running || hasActivity) && <ProgressBar turn={turn} now={now} />}
-
-          {/* The model's thinking, while it is the only thing happening. It is
-              a scratchpad and often blunt, so it reads as provisional and is
-              folded away by default once the answer starts arriving. */}
-          {thinking && (
-            <Thinking text={thinking} live={running && !answer.trim()} />
-          )}
+          {(running || hasActivity || thinking) && <Activity turn={turn} now={now} />}
 
           {answer.trim() && (
             <div className={"reply-text" + (streaming ? " streaming" : "")}>
@@ -142,27 +135,3 @@ export function TurnCard({
   );
 }
 
-// The model's thinking. It opens itself while it is the only thing happening,
-// because that stretch is most of the wait, and closes itself once the answer
-// starts. Either way one click always wins: the moment the reader touches it,
-// their choice is the one that holds for the rest of the turn.
-function Thinking({ text, live }: { text: string; live: boolean }) {
-  const [choice, setChoice] = useState<boolean | null>(null);
-  const shown = choice ?? live;
-  return (
-    <div className="thinking" onClick={(e) => e.stopPropagation()}>
-      <button
-        type="button"
-        className={"thinking-toggle" + (shown ? " open" : "")}
-        onClick={() => setChoice(!shown)}
-        aria-expanded={shown}
-      >
-        <span className="thinking-chevron" aria-hidden="true">
-          {I.chevron}
-        </span>
-        {live ? t.turn.thinkingLive : t.turn.thinkingDone}
-      </button>
-      {shown && <div className="thinking-text">{text}</div>}
-    </div>
-  );
-}
