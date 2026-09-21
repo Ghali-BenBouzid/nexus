@@ -45,8 +45,11 @@ type QueryDetail = {
 };
 
 // The backend bounds a run (research budget, timeouts); this only stops a stream
-// that would otherwise never end, such as a run whose job died unnoticed.
-const MAX_STREAM_MS = 20 * 60_000;
+// that would otherwise never end, such as a run whose job died unnoticed. It has
+// to outlast the longest run there is, which is a deep one: settings.deep_timeout
+// is 35 minutes, and cutting the stream first would read the still-running query
+// row and report a finished run as failed.
+const MAX_STREAM_MS = 40 * 60_000;
 
 export function hasInvite(): boolean {
   try {
@@ -280,6 +283,7 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
 // what a background run points back at when it finishes.
 
 type ConvMessageQuery = {
+  kind: string;
   status: Status;
   title: string | null;
   report: string | null;
@@ -315,7 +319,7 @@ function toOutput(raw: BackendOutput): Output {
     completedAt: raw.completed_at,
   };
 }
-type ConvMessage = {
+export type ConvMessage = {
   id: number;
   role: "user" | "assistant";
   content: string;
@@ -389,12 +393,13 @@ const startTurn = (
   conversationId: number | null,
   documentIds: number[],
   token: string,
+  deep: boolean,
 ) =>
   conversationId == null
-    ? postConvJson(`/conversations`, { prompt, document_ids: documentIds }, token)
+    ? postConvJson(`/conversations`, { prompt, document_ids: documentIds, deep }, token)
     : postConvJson(
         `/conversations/${conversationId}/messages`,
-        { content: prompt, document_ids: documentIds },
+        { content: prompt, document_ids: documentIds, deep },
         token,
       );
 
@@ -412,18 +417,19 @@ export async function runLiveResearch(
   cb: ResearchCallbacks,
   conversationId: number | null,
   documentIds: number[] = [],
+  deep = false,
 ): Promise<ResearchOutcome | null> {
   cb.onStatus("running");
 
   let token = await ensureToken();
   let detail: ConvDetail;
   try {
-    detail = await startTurn(prompt, conversationId, documentIds, token);
+    detail = await startTurn(prompt, conversationId, documentIds, token, deep);
   } catch (err) {
     // One retry after a fresh session, only when the stored token went stale.
     if (!(err instanceof SessionExpiredError)) throw err;
     token = await ensureToken();
-    detail = await startTurn(prompt, conversationId, documentIds, token);
+    detail = await startTurn(prompt, conversationId, documentIds, token, deep);
   }
   cb.onConversation?.(detail.id);
 
@@ -538,7 +544,13 @@ function outcomeOf(detail: QueryDetail): ResearchOutcome {
   }
   return {
     result,
-    outcome: outcomeFor(detail.status, detail.reply ?? "", result.sources.length),
+    // A deep turn answers with a report and no reply, so "produced nothing"
+    // has to look at both or every deep turn reads as empty.
+    outcome: outcomeFor(
+      detail.status,
+      detail.reply || detail.report || "",
+      result.sources.length,
+    ),
     reply: detail.reply ?? "",
     title: detail.title ?? undefined,
   };
@@ -638,6 +650,7 @@ export type LoadedTurn = {
   status: Status;
   error: string | null;
   stopped?: boolean; // the user stopped it: not shown as an error
+  deep?: boolean; // the turn was run as deep research; its report is the answer
   result: Result;
   reply?: string; // the answer, which is what a turn produces
 };
@@ -656,7 +669,20 @@ export async function loadConversation(id: number): Promise<LoadedConversation |
   const res = await authedGet(`/conversations/${id}`);
   if (!res || !res.ok) return null;
   const detail = (await res.json()) as ConvDetail;
+  return {
+    id: detail.id,
+    title: detail.title,
+    turns: turnsFrom(detail.messages),
+    documents: (detail.documents ?? []).map(toDoc),
+    outputs: (detail.artifacts ?? []).map(toOutput),
+  };
+}
 
+// The thread's messages as turns: each assistant message with the user message
+// before it. Exported, and separate from the fetch, so the mapping can be
+// checked on its own: it is where a turn decides what it is and what it said.
+export function turnsFrom(messages: ConvMessage[]): LoadedTurn[] {
+  const detail = { messages };
   const turns: LoadedTurn[] = [];
   let prompt = "";
   let attached: Doc[] = [];
@@ -688,22 +714,18 @@ export async function loadConversation(id: number): Promise<LoadedConversation |
       status: q?.status ?? "complete",
       error: q?.error ?? null,
       stopped: q?.stopped,
+      deep: q?.kind === "deep_research",
       reply: q?.reply ?? m.content,
       result: {
-        report: "",
+        // A deep turn's report is what it said, so it is rehydrated with it.
+        report: q?.report ?? "",
         sources: q?.sources ?? [],
         consulted: [],
         gaps: q?.gaps ?? [],
       },
     });
   }
-  return {
-    id: detail.id,
-    title: detail.title,
-    turns,
-    documents: (detail.documents ?? []).map(toDoc),
-    outputs: (detail.artifacts ?? []).map(toOutput),
-  };
+  return turns;
 }
 
 // --- outputs (deep research reports, fact checks) ----------------------------

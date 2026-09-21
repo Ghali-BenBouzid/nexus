@@ -20,6 +20,9 @@ type ConversationProps = {
   onSubmit: (prompt: string) => void;
   onStop: () => void;
   onExit: () => void;
+  // Deep research mode, owned by App because it decides how a message is sent.
+  deep: boolean;
+  onDeep: ((next: boolean) => void) | undefined;
   // The right-hand panel: what this account has produced, and what it attached.
   outputs: Output[];
   documents: Doc[];
@@ -60,6 +63,8 @@ export function Conversation({
   onSubmit,
   onStop,
   onExit,
+  deep,
+  onDeep,
   outputs,
   documents,
   openOutputId,
@@ -304,6 +309,8 @@ export function Conversation({
                 onAttach={onAttach}
                 onUnstage={onUnstage}
                 attachError={uploadError}
+                deep={deep}
+                onDeep={onDeep}
                 autoFocus
                 placeholder={running ? t.chat.runningPlaceholder : t.chat.idlePlaceholder}
               />

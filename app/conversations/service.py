@@ -83,11 +83,18 @@ async def submit_message(
     backend: SearchBackend,
     background_tasks: BackgroundTasks,
     document_ids: list[int] | None = None,
+    deep: bool = False,
 ) -> Message:
     """Record the user's message and the assistant turn that will answer it, and
     queue the job; no model is called in the request. The turn's query tracks it
     from here: its events feed the live progress, and it ends complete or failed.
-    The caller checks the account's budget first."""
+    The caller checks the account's budget first.
+
+    ``deep`` makes the turn a deep research run instead of a supervisor answer.
+    It is the same run the supervisor can start for itself, started by the user
+    instead, and it is still one turn of this conversation: the report is what
+    the turn produces, the way an answer is on any other turn.
+    """
     user_message = await repository.add_message(
         db, conversation.id, MessageRole.user, content
     )
@@ -105,12 +112,18 @@ async def submit_message(
         db=db,
         user_id=conversation.user_id,
         prompt=content,
-        kind=QueryKind.chat,
+        kind=QueryKind.deep_research if deep else QueryKind.chat,
+        title=title_for(content) if deep else None,
         conversation_id=conversation.id,
     )
     assistant = await repository.add_message(
         db, conversation.id, MessageRole.assistant, content="", query_id=query.id
     )
+    if deep:
+        # Always the worker, never this process: a deep run takes minutes, and
+        # a BackgroundTask would hold a request handler open for all of them.
+        await jobs.spawn(run_deep_research_job, query_id=query.id)
+        return assistant
     await jobs.submit(
         background_tasks,
         route_message,

@@ -25,24 +25,29 @@ A follow-up it can already answer comes back immediately.
 A question that needs one fact gets one search.
 A real question gets a team of researchers working in parallel, and the answer comes back in the conversation with every claim cited to a page that was actually read.
 
-Two things it does not answer inline, because they are documents rather than replies:
+Two kinds of work produce a document rather than a reply:
 
 - **Deep research**, when you want a question properly covered. It runs much wider, takes minutes, and writes its own report. It runs in the background and survives a redeploy, so you can close the chat and come back to it.
 - **A fact check** of a file you upload: it pulls out the claims the document rests on, tests each against the web, and writes a report saying which held up.
 
-Both land in **Outputs**, and you are told when one is ready wherever you happen to be.
+Deep research is a mode you switch the composer into, so asking for it is a choice rather than something the supervisor decides for you.
+A message sent that way is answered by the run itself: the report is that turn's answer, read in the thread where it was asked for.
+
+A run the supervisor starts on its own, while it is busy answering something else, has nowhere in the thread to go.
+Those land in **Outputs**, and you are told when one is ready wherever you happen to be.
 
 ## How it works
 
 ```mermaid
 flowchart LR
     M[Message] --> S[Supervisor]
+    M -. deep mode .-> D
     S --> A[Cited answer]
     S -.-> T1[web_search / fetch_page]
     S -.-> T2[read_document]
     S -.-> T3[research]
     T3 --> P[Plan] --> X[Researchers, in parallel] --> S
-    S -.-> T4[deep_research] --> D[Wide run, checkpointed] --> Out[Report in Outputs]
+    S -.-> T4[deep_research] --> D[Wide run, checkpointed] --> Out[Report]
     S -.-> T5[fact_check] --> F[Claims checked] --> Out
 ```
 

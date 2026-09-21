@@ -35,6 +35,7 @@ def _message_query(query: Query | None) -> MessageQuery | None:
         return None
     result = _load_result(query.result, query.id)
     return MessageQuery(
+        kind=query.kind,
         status=query.status,
         title=query.title,
         report=query.report,
@@ -113,6 +114,7 @@ async def create(
             backend=backend,
             background_tasks=background_tasks,
             document_ids=payload.document_ids,
+            deep=payload.deep,
         )
     return await _detail(db, conversation)
 
@@ -165,5 +167,6 @@ async def add_message(
         backend=backend,
         background_tasks=background_tasks,
         document_ids=payload.document_ids,
+        deep=payload.deep,
     )
     return await _detail(db, conversation)

@@ -229,6 +229,14 @@ const en = {
     open: "Open",
     dismiss: "Dismiss",
   },
+  deepMode: {
+    label: "Deep research",
+    hint: "Search the web in depth and write a cited report. Takes several minutes.",
+    off: "Turn off deep research",
+    note: "A few minutes, and a large share of the demo budget.",
+    placeholder: "What should the report cover?",
+    working: "Researching. This runs for several minutes; you can leave and come back.",
+  },
   history: {
     recent: "Recent",
     loading: "Loading…",
@@ -464,6 +472,15 @@ const fr: Dict = {
     ready: (title: string) => `${title} est prêt.`,
     open: "Ouvrir",
     dismiss: "Ignorer",
+  },
+  deepMode: {
+    label: "Recherche approfondie",
+    hint: "Fouille le web en profondeur et rédige un rapport sourcé. Prend plusieurs minutes.",
+    off: "Désactiver la recherche approfondie",
+    note: "Quelques minutes, et une bonne part du budget de démo.",
+    placeholder: "Sur quoi doit porter le rapport ?",
+    working:
+      "Recherche en cours. Elle dure plusieurs minutes ; vous pouvez revenir plus tard.",
   },
   history: {
     recent: "Récent",

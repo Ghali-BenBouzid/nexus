@@ -54,9 +54,12 @@ export function runResearch(
   cb: ResearchCallbacks,
   conversationId?: number | null,
   documentIds: number[] = [],
+  // Deep research mode. The demo build has no deep run to simulate, so it
+  // answers the way it always does rather than pretending to spend ten minutes.
+  deep = false,
 ): Promise<ResearchOutcome | null> {
   return isLive()
-    ? runLiveResearch(prompt, cb, conversationId ?? null, documentIds)
+    ? runLiveResearch(prompt, cb, conversationId ?? null, documentIds, deep)
     : runSimulated(prompt, cb);
 }
 

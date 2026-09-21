@@ -131,6 +131,10 @@ export default function App() {
   // Files picked in the composer but not sent yet. They are uploaded when the
   // message goes, so a file can be the first thing in a chat.
   const [staged, setStaged] = useState<File[]>([]);
+  // Deep research mode: the next message starts a research run instead of a
+  // chat turn. A mode, so it stays on until it is turned off, and it belongs to
+  // the composer rather than to a chat: it is how the next thing is asked.
+  const [deep, setDeep] = useState(false);
   // Which finished outputs the user has already been told about, so a report is
   // announced once per browser and not again on every reload.
   const announced = useRef<Set<number>>(new Set(storedAnnounced()));
@@ -154,6 +158,7 @@ export default function App() {
       query: lt.query,
       attachments: lt.attachments,
       title: lt.title,
+      deep: lt.deep,
       status: lt.status,
       events: [],
       reply: lt.reply,
@@ -496,9 +501,11 @@ export default function App() {
     // hero submission replaces the workspace, so it is never blocked this way.
     if (!fresh && turns.some((t) => t.status === "running" || t.status === "pending")) return;
     const id = ++turnSeq.current;
+    const deepRun = deep && isLive();
     const turn: Turn = {
       id,
       query: prompt,
+      deep: deepRun,
       status: "running",
       events: [],
       result: null,
@@ -539,6 +546,7 @@ export default function App() {
         callbacksFor(id),
         conversationId,
         attached.map((doc) => doc.id),
+        deepRun,
       );
       if (cancelled.current.has(id)) return;
       applyOutcome(id, res);
@@ -792,6 +800,10 @@ export default function App() {
           onSubmit={startResearch}
           onStop={stopResearch}
           onExit={goHome}
+          deep={deep}
+          // Live only: a demo build has no deep run to start, and offering a
+          // mode that cannot do anything is worse than not offering it.
+          onDeep={live ? setDeep : undefined}
           outputs={conversationOutputs}
           documents={documents}
           openOutputId={openOutputId}

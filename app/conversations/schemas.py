@@ -18,12 +18,17 @@ class ConversationCreate(BaseModel):
     # conversation has to exist before the message that carries it.
     prompt: str = ""
     document_ids: list[int] = []
+    # Send this first message as deep research rather than as a chat turn.
+    deep: bool = False
 
 
 class MessageCreate(BaseModel):
     content: str
     # Files uploaded into this conversation and sent with this message.
     document_ids: list[int] = []
+    # Answer this message with a deep research run instead of the supervisor.
+    # The mode is the user's choice, per message, not the supervisor's judgement.
+    deep: bool = False
 
 
 class ConversationSummary(BaseSchema):
@@ -38,6 +43,7 @@ class ConversationSummary(BaseSchema):
 class MessageQuery(BaseModel):
     """The research run a message carries, rendered for the thread view."""
 
+    kind: str  # chat, deep_research, fact_check: what this turn produced
     status: QueryStatus
     title: str | None = None  # the artifact's title, on a run that makes one
     report: str | None

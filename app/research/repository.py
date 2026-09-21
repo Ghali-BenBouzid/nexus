@@ -4,6 +4,7 @@ from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.schemas import AgentEvent, Report, ResearchResult
+from app.models.conversation import Message
 from app.models.query import Query, QueryEvent, QueryKind, QueryStatus
 
 # A query some job may still act on. The writes that end a job only move a query
@@ -12,6 +13,13 @@ from app.models.query import Query, QueryEvent, QueryKind, QueryStatus
 _IN_FLIGHT = (QueryStatus.pending, QueryStatus.running)
 STOPPED_RESPONDING = "The research stopped responding. Try again."
 STOPPED = "Research was stopped."
+
+
+# A run that answers a message of its own is that turn, and is read in the
+# thread like any other answer. Outputs is for the runs with nowhere else to be:
+# the ones the supervisor started on the side while it was answering something
+# else. Listing a turn there too would show the same report in two places.
+_HAS_NO_TURN = ~select(Message.id).where(Message.query_id == Query.id).exists()
 
 
 def stopped_by_user(query: Query) -> bool:
@@ -94,7 +102,11 @@ async def list_conversation_artifacts(
     what its Outputs panel shows, including the one still running."""
     result = await db.execute(
         select(Query)
-        .where(Query.conversation_id == conversation_id, Query.kind != QueryKind.chat)
+        .where(
+            Query.conversation_id == conversation_id,
+            Query.kind != QueryKind.chat,
+            _HAS_NO_TURN,
+        )
         .order_by(Query.created_at.desc())
     )
     return list(result.scalars().all())
@@ -208,7 +220,7 @@ async def list_artifacts(db: AsyncSession, user_id: int) -> list[Query]:
     conversation."""
     result = await db.execute(
         select(Query)
-        .where(Query.user_id == user_id, Query.kind != QueryKind.chat)
+        .where(Query.user_id == user_id, Query.kind != QueryKind.chat, _HAS_NO_TURN)
         .order_by(Query.created_at.desc())
     )
     return list(result.scalars().all())

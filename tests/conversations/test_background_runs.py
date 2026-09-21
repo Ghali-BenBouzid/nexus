@@ -274,3 +274,57 @@ async def document(client: AsyncClient, auth_headers: dict[str, str], _bucket) -
     )
     assert uploaded.status_code == 201, uploaded.text
     return uploaded.json()
+
+
+async def test_deep_mode_answers_the_turn_instead_of_filing_an_artifact(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    """Deep research the user asked for by name is that turn's answer, not
+    something started on the side. So it never reaches the supervisor, and the
+    report is read in the thread rather than in Outputs."""
+    _use(lambda: _StartsDeepResearch(), monkeypatch=monkeypatch)
+
+    created = await client.post(
+        "/conversations",
+        headers=auth_headers,
+        json={"prompt": "go deep on X", "deep": True},
+    )
+    conversation_id = created.json()["id"]
+    await drain()
+
+    detail = await client.get(f"/conversations/{conversation_id}", headers=auth_headers)
+    turn = detail.json()["messages"][1]["query"]
+    assert turn["kind"] == "deep_research"
+    assert turn["status"] == "complete"
+    assert turn["report"] == "THE DEEP REPORT"
+    # The supervisor never ran, so there is no chat answer in front of the report.
+    assert not turn["reply"]
+
+    # The turn is where it is read, so Outputs does not carry it a second time.
+    assert detail.json()["artifacts"] == []
+    assert (await client.get("/research/artifacts", headers=auth_headers)).json() == []
+
+
+async def test_a_deep_turn_is_stoppable_like_any_other(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    """A deep turn runs for minutes, so the stop button has to reach it: it is
+    an ordinary query, and the thread hands back the id that stops it."""
+    _use(lambda: _StartsDeepResearch(), monkeypatch=monkeypatch)
+
+    created = await client.post(
+        "/conversations",
+        headers=auth_headers,
+        json={"prompt": "go deep on X", "deep": True},
+    )
+    query_id = created.json()["messages"][1]["query_id"]
+    assert query_id is not None
+
+    stopped = await client.post(
+        f"/research/query/{query_id}/cancel", headers=auth_headers
+    )
+    assert stopped.status_code == 204
+    await drain()
+
+    detail = await client.get(f"/research/query/{query_id}", headers=auth_headers)
+    assert detail.json()["stopped"] is True
