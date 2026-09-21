@@ -1,43 +1,167 @@
-import { Children, Fragment, type ReactNode, useRef } from "react";
+import { Children, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
+import { I } from "../icons";
+import { t } from "../lib/i18n";
+import { segments } from "../lib/cites";
 import { resolve, slug } from "../lib/slug";
+import type { Source } from "../types";
 
-type CiteProps = { onCite: (n: number) => void; activeCite: number | null };
+type CiteProps = {
+  onCite: (n: number) => void;
+  activeCite: number | null;
+  // What the numbers point at, so a citation can name its sources where it
+  // stands. Index n - 1 is source [n]; an out-of-range number shows as a bare
+  // number, because code numbers the sources and a stray one points nowhere.
+  sources: Source[];
+};
 
-// Split a string on [n] tokens, rendering each as a clickable superscript that
-// scrolls to (and highlights) its source. Citations are ours, not real markdown:
-// "[1]" has no matching link-reference definition, so remark passes it through as
-// literal text and we turn it into a citation here.
-function citeNodes(str: string, kp: string, { onCite, activeCite }: CiteProps): ReactNode[] {
-  return str.split(/(\[\d+\])/g).map((p, i) => {
-    const m = p.match(/^\[(\d+)\]$/);
-    if (m) {
-      const n = +m[1];
-      return (
-        <sup
-          key={kp + "c" + i}
-          className={"cite" + (activeCite === n ? " active" : "")}
-          role="button"
-          tabIndex={0}
-          aria-label={`Jump to source ${n}`}
-          title={`Jump to source ${n}`}
-          onClick={() => onCite(n)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter" || e.key === " ") {
-              e.preventDefault();
-              onCite(n);
-            }
-          }}
-        >
-          [{n}]
-        </sup>
-      );
-    }
-    return <Fragment key={kp + "t" + i}>{p}</Fragment>;
-  });
+const stripScheme = (url: string) => url.replace(/^https?:\/\//, "").replace(/^www\./, "");
+
+// How wide the open list is allowed to get, and how much room it needs under
+// the chip before it flips above instead.
+const POP_W = 340;
+const POP_MIN_H = 180;
+
+// Adjacent citations are one act of sourcing, so they are read as one: a claim
+// backed by four pages is a claim with four receipts, not four separate marks
+// in the prose. The group collapses to a single chip and opens to the list,
+// which is the only way a reader checks a source they actually doubt.
+function CiteGroup({ ns, sources, onCite, activeCite }: CiteProps & { ns: number[] }) {
+  // Each offset is measured from the edge it is pinned to, so the panel grows
+  // away from the chip rather than back over it.
+  const [at, setAt] = useState<{
+    x: number;
+    y: number;
+    fromRight: boolean;
+    fromBottom: boolean;
+  } | null>(null);
+  const chip = useRef<HTMLButtonElement>(null);
+  const open = at !== null;
+
+  // In a portal, positioned against the viewport, because the list has to
+  // escape whatever is around it: a report body scrolls and a wide table
+  // scrolls sideways, and both would clip a panel drawn inside them.
+  useEffect(() => {
+    if (!open) return;
+    const close = () => setAt(null);
+    const away = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (!chip.current?.contains(target) && !(target as HTMLElement).closest?.(".cites-pop")) {
+        close();
+      }
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") close();
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", key);
+    // Fixed to the viewport, so it cannot follow the text it belongs to: it
+    // closes rather than drifting away from the sentence it came from.
+    window.addEventListener("scroll", close, true);
+    window.addEventListener("resize", close);
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", key);
+      window.removeEventListener("scroll", close, true);
+      window.removeEventListener("resize", close);
+    };
+  }, [open]);
+
+  const toggle = () => {
+    if (open) return setAt(null);
+    const box = chip.current?.getBoundingClientRect();
+    if (!box) return;
+    // Hung from whichever side keeps it on screen. A citation sits at the end
+    // of its sentence, so the right edge is the usual case, not the rare one.
+    const fromRight = box.left + POP_W > window.innerWidth - 12;
+    // Below unless there is no room, in which case it opens upward from the
+    // chip's top edge rather than down off the bottom of the window.
+    const fromBottom = window.innerHeight - box.bottom < POP_MIN_H;
+    setAt({
+      x: fromRight ? window.innerWidth - box.right : box.left,
+      y: fromBottom ? window.innerHeight - box.top + 6 : box.bottom + 6,
+      fromRight,
+      fromBottom,
+    });
+  };
+
+  const lit = ns.some((n) => n === activeCite);
+  const label = t.cites.label(ns.length);
+
+  return (
+    <>
+      <button
+        ref={chip}
+        type="button"
+        className={"cites-chip" + (open || lit ? " active" : "")}
+        onClick={toggle}
+        aria-expanded={open}
+        aria-label={label}
+        title={label}
+      >
+        {ns[0]}
+        {ns.length > 1 && <span className="cites-more">+{ns.length - 1}</span>}
+      </button>
+      {at &&
+        createPortal(
+          <div
+            className="cites-pop"
+            style={{
+              [at.fromRight ? "right" : "left"]: at.x,
+              [at.fromBottom ? "bottom" : "top"]: at.y,
+            }}
+          >
+            <div className="cites-pop-head">{label}</div>
+            {ns.map((n) => {
+              const source = sources[n - 1];
+              return source ? (
+                <a
+                  key={n}
+                  className="cites-row"
+                  href={source.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => {
+                    onCite(n);
+                    setAt(null);
+                  }}
+                >
+                  <span className="cites-n">{n}</span>
+                  <span className="cites-main">
+                    <span className="cites-title">{source.title}</span>
+                    <span className="cites-url">{stripScheme(source.url)}{I.ext}</span>
+                  </span>
+                </a>
+              ) : (
+                <span key={n} className="cites-row missing">
+                  <span className="cites-n">{n}</span>
+                  <span className="cites-main">{t.cites.missing}</span>
+                </span>
+              );
+            })}
+          </div>,
+          document.body,
+        )}
+    </>
+  );
+}
+
+// Split a string into prose and citation groups, rendering each group as one
+// chip. Citations are ours, not real markdown: "[1]" has no matching link
+// definition, so remark passes it through as literal text and it is turned
+// into a citation here.
+function citeNodes(str: string, kp: string, cp: CiteProps): ReactNode[] {
+  return segments(str).map((part, i) =>
+    "ns" in part ? (
+      <CiteGroup key={kp + "c" + i} ns={part.ns} {...cp} />
+    ) : (
+      <Fragment key={kp + "t" + i}>{part.text}</Fragment>
+    ),
+  );
 }
 
 // Walk an element's children and turn citation tokens inside any string child
@@ -81,14 +205,19 @@ function jumpTo(target: string, root: HTMLElement | null): void {
   }
 }
 
-type MarkdownProps = { text: string; onCite: (n: number) => void; activeCite: number | null };
+type MarkdownProps = {
+  text: string;
+  onCite: (n: number) => void;
+  activeCite: number | null;
+  sources?: Source[];
+};
 
 // Full Markdown via react-markdown + GFM (tables, lists, code, etc.), with our
 // [n] citations layered on top. Tables get a scroll wrapper so a wide comparison
 // never overflows the report column.
-export function Markdown({ text, onCite, activeCite }: MarkdownProps) {
+export function Markdown({ text, onCite, activeCite, sources = [] }: MarkdownProps) {
   const doc = useRef<HTMLDivElement>(null);
-  const cp: CiteProps = { onCite, activeCite };
+  const cp: CiteProps = { onCite, activeCite, sources };
   const kids = (children: ReactNode) => withCites(children, cp);
 
   const components: Components = {

@@ -229,6 +229,17 @@ const en = {
     open: "Open",
     dismiss: "Dismiss",
   },
+  cites: {
+    label: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
+    missing: "This source is no longer listed.",
+  },
+  deepMode: {
+    label: "Deep research",
+    hint: "Search the web in depth and write a cited report. Takes several minutes.",
+    off: "Turn off deep research",
+    note: "A few minutes, and a large share of the demo budget.",
+    placeholder: "What should the report cover?",
+  },
   history: {
     recent: "Recent",
     loading: "Loading…",
@@ -464,6 +475,17 @@ const fr: Dict = {
     ready: (title: string) => `${title} est prêt.`,
     open: "Ouvrir",
     dismiss: "Ignorer",
+  },
+  cites: {
+    label: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
+    missing: "Cette source n'est plus répertoriée.",
+  },
+  deepMode: {
+    label: "Recherche approfondie",
+    hint: "Fouille le web en profondeur et rédige un rapport sourcé. Prend plusieurs minutes.",
+    off: "Désactiver la recherche approfondie",
+    note: "Quelques minutes, et une bonne part du budget de démo.",
+    placeholder: "Sur quoi doit porter le rapport ?",
   },
   history: {
     recent: "Récent",

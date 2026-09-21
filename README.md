@@ -25,10 +25,13 @@ A follow-up it can already answer comes back immediately.
 A question that needs one fact gets one search.
 A real question gets a team of researchers working in parallel, and the answer comes back in the conversation with every claim cited to a page that was actually read.
 
-Two things it does not answer inline, because they are documents rather than replies:
+Two kinds of work produce a document rather than a reply:
 
 - **Deep research**, when you want a question properly covered. It runs much wider, takes minutes, and writes its own report. It runs in the background and survives a redeploy, so you can close the chat and come back to it.
 - **A fact check** of a file you upload: it pulls out the claims the document rests on, tests each against the web, and writes a report saying which held up.
+
+Deep research is also a mode you can switch the composer into, so asking for it is a choice rather than something the supervisor decides for you.
+Either way the run is the same, and so is where it ends up.
 
 Both land in **Outputs**, and you are told when one is ready wherever you happen to be.
 
@@ -37,6 +40,7 @@ Both land in **Outputs**, and you are told when one is ready wherever you happen
 ```mermaid
 flowchart LR
     M[Message] --> S[Supervisor]
+    M -. deep mode .-> D
     S --> A[Cited answer]
     S -.-> T1[web_search / fetch_page]
     S -.-> T2[read_document]

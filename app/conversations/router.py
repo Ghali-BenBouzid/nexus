@@ -113,6 +113,7 @@ async def create(
             backend=backend,
             background_tasks=background_tasks,
             document_ids=payload.document_ids,
+            deep=payload.deep,
         )
     return await _detail(db, conversation)
 
@@ -165,5 +166,6 @@ async def add_message(
         backend=backend,
         background_tasks=background_tasks,
         document_ids=payload.document_ids,
+        deep=payload.deep,
     )
     return await _detail(db, conversation)

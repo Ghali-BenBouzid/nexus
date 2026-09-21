@@ -704,12 +704,42 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .report .doc a.jump:hover { text-decoration: underline; color: var(--accent-text); }
 /* A jumped-to heading lands clear of the panel's top edge, not glued to it. */
 .report .doc h2, .report .doc h3 { scroll-margin-top: 18px; }
-.cite {
-  font-family: var(--font-mono); font-size: 0.72em; font-weight: 600;
-  color: var(--accent-text); cursor: pointer; vertical-align: super;
-  padding: 0 1px; border-radius: 3px; transition: background 0.2s;
-}
-.cite:hover, .cite.active { background: var(--accent); color: var(--accent-ink); }
+/* One claim's sources, as one mark in the prose. A reader checks a source when
+   they doubt the sentence it sits on, so the sources live on the sentence and
+   stay folded until then: a paragraph carrying eight bare numbers is noise for
+   everyone who was never going to click one. */
+.cites-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px;
+  vertical-align: super; margin: 0 1px;
+  border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2);
+  font-family: var(--font-mono); font-size: 0.68em; font-weight: 600; line-height: 1.5;
+  color: var(--accent-text); cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
+.cites-chip:hover { border-color: var(--accent); }
+.cites-chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.cites-more { opacity: 0.75; }
+
+/* The list, drawn at the top of the page against the viewport: a report body
+   scrolls and a wide table scrolls sideways, and a panel drawn inside either of
+   them would be cut off at its edge. Placed by the chip that opened it. */
+.cites-pop { position: fixed; z-index: 60;
+  display: flex; flex-direction: column; width: max-content; max-width: min(340px, 78vw);
+  padding: 6px; border: 1px solid var(--line); border-radius: 12px;
+  background: var(--surface-solid); box-shadow: var(--shadow);
+  font-family: var(--font-sans); font-size: 13px; line-height: 1.4;
+  text-align: left; white-space: normal; }
+.cites-pop-head { padding: 4px 8px 6px; color: var(--faint); font-size: 11px;
+  font-family: var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; }
+.cites-row { display: flex; gap: 8px; padding: 6px 8px; border-radius: 8px;
+  color: var(--fg); text-decoration: none; }
+.cites-row:hover { background: var(--surface-2); }
+.cites-n { flex: none; min-width: 16px; font-family: var(--font-mono); font-size: 11px;
+  font-weight: 600; color: var(--faint); padding-top: 1px; }
+.cites-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cites-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.cites-url { display: flex; align-items: center; gap: 4px; color: var(--faint); font-size: 11.5px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cites-url svg { width: 10px; height: 10px; flex: none; }
+.cites-row.missing { color: var(--faint); font-style: italic; }
 
 .report-foot { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--line); display: flex; gap: 12px; flex-wrap: wrap; }
 
@@ -758,6 +788,36 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 /* The hero's bar is taller, so its attach button matches its send button. */
 .prompt .cinput-attach { width: 38px; height: 38px; }
 .prompt .cinput-attach svg { width: 19px; height: 19px; }
+
+/* Deep research mode. The button is the paperclip's twin so the two read as one
+   row of controls; only its lit state tells them apart. */
+.cinput-mode { display: grid; place-items: center; width: 32px; height: 32px; flex: none;
+  border: none; background: none; border-radius: 9px; color: var(--faint); cursor: pointer;
+  transition: background 0.15s, color 0.15s; }
+.cinput-mode:hover { background: var(--surface-2); color: var(--fg); }
+.cinput-mode svg { width: 17px; height: 17px; }
+.cinput-mode.on { background: var(--accent-soft); color: var(--accent-text); }
+
+/* What the bar carries above the text: the mode it will send in, and the files
+   it will send with. Stacked, because each is a full line of its own. */
+.cinput-top { display: flex; flex-direction: column; gap: 8px; }
+/* Announced in words, because the lit icon alone is not enough warning for a
+   mode that costs minutes and a real share of the budget. */
+.mode-chip { display: flex; align-items: center; gap: 8px; align-self: flex-start;
+  max-width: 100%; padding: 5px 5px 5px 11px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent-text); font-size: 12.5px; }
+.mode-chip-icon { display: grid; place-items: center; flex: none; }
+.mode-chip-icon svg { width: 14px; height: 14px; }
+.mode-chip-label { font-weight: 600; white-space: nowrap; }
+.mode-chip-note { color: var(--muted); min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; }
+.mode-chip-x { display: grid; place-items: center; width: 20px; height: 20px; flex: none;
+  border: none; background: none; border-radius: 50%; color: inherit; cursor: pointer; opacity: 0.6; }
+.mode-chip-x:hover { opacity: 1; background: var(--surface-2); }
+.mode-chip-x svg { width: 12px; height: 12px; }
+/* The note is the first thing to go when the bar is narrow: the label and the
+   way out of the mode matter more than the warning's second half. */
+@media (max-width: 560px) { .mode-chip-note { display: none; } }
 
 /* The same files, above the bubble they were sent with. */
 .bubble-files { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 82%; }

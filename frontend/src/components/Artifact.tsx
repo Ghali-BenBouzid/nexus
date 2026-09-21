@@ -182,7 +182,7 @@ export function Artifact({
       </div>
       <div className="art-body">
         <article className="report">
-          <Markdown text={result.report} onCite={onCite} activeCite={activeCite} />
+          <Markdown text={result.report} onCite={onCite} activeCite={activeCite} sources={result.sources} />
         </article>
         <Sources
           result={result}

@@ -120,8 +120,9 @@ export default function App() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [demoOpen, setDemoOpen] = useState(false);
 
-  // The right-hand panel. Outputs are account-wide, because a background run
-  // outlives the conversation that started it; documents belong to the open one.
+  // Every report this account has. The list is account-wide because a background
+  // run outlives the turn that started it and has to be announced wherever the
+  // user went; the panel only ever shows the open conversation's share of it.
   const [outputs, setOutputs] = useState<Output[]>([]);
   const [documents, setDocuments] = useState<Doc[]>([]);
   const [openOutputId, setOpenOutputId] = useState<number | null>(null);
@@ -130,6 +131,12 @@ export default function App() {
   // Files picked in the composer but not sent yet. They are uploaded when the
   // message goes, so a file can be the first thing in a chat.
   const [staged, setStaged] = useState<File[]>([]);
+  // Deep research mode: the next message starts a research run instead of a
+  // chat turn. It belongs to the chat it was switched on in, and is dropped on
+  // the way to any other one: it spends minutes and real money, so it is only
+  // ever on because the user just said so, never because they said so earlier
+  // somewhere else.
+  const [deep, setDeep] = useState(false);
   // Which finished outputs the user has already been told about, so a report is
   // announced once per browser and not again on every reload.
   const announced = useRef<Set<number>>(new Set(storedAnnounced()));
@@ -495,6 +502,10 @@ export default function App() {
     // hero submission replaces the workspace, so it is never blocked this way.
     if (!fresh && turns.some((t) => t.status === "running" || t.status === "pending")) return;
     const id = ++turnSeq.current;
+    // A fresh submission from the hero starts a new chat, and the hero has no
+    // mode control: whatever the last chat was switched into does not follow
+    // the user here, any more than it follows them into an existing one.
+    const deepRun = deep && !fresh && isLive();
     const turn: Turn = {
       id,
       query: prompt,
@@ -514,6 +525,7 @@ export default function App() {
       setFocusedId(null);
       setLayout("thread");
       setTurns([turn]);
+      setDeep(false);
     } else {
       setTurns((prev) => [...prev, turn]);
     }
@@ -538,6 +550,7 @@ export default function App() {
         callbacksFor(id),
         conversationId,
         attached.map((doc) => doc.id),
+        deepRun,
       );
       if (cancelled.current.has(id)) return;
       applyOutcome(id, res);
@@ -590,6 +603,13 @@ export default function App() {
     // the credits line follows the same poll rather than waiting for a reload.
     getAccount().then(setAccount).catch(() => {});
   };
+
+  // What the panel shows: this chat's reports and no others. A report belongs to
+  // the conversation that asked for it, the same way its documents do, so
+  // switching chats must not carry the last one's outputs along.
+  const conversationOutputs = outputs.filter(
+    (output) => output.conversationId === activeConversationId,
+  );
 
   // Open one report in the panel, loading its body on demand.
   async function showOutput(id: number | null) {
@@ -685,6 +705,7 @@ export default function App() {
     setActiveConversation(conv.id);
     setDocuments(conv.documents);
     setStaged([]);
+    setDeep(false); // the mode was switched on for another chat, not this one
     setUploadError(null);
     refreshOutputs();
     setFocusedId(null);
@@ -699,6 +720,7 @@ export default function App() {
     setTurns([]);
     setDocuments([]); // documents belong to a conversation, not to the account
     setStaged([]);
+    setDeep(false); // a new chat starts in the ordinary mode, like every other
     setUploadError(null);
     setFocusedId(null);
     setOpenOutputId(null);
@@ -784,7 +806,11 @@ export default function App() {
           onSubmit={startResearch}
           onStop={stopResearch}
           onExit={goHome}
-          outputs={outputs}
+          deep={deep}
+          // Live only: a demo build has no deep run to start, and offering a
+          // mode that cannot do anything is worse than not offering it.
+          onDeep={live ? setDeep : undefined}
+          outputs={conversationOutputs}
           documents={documents}
           openOutputId={openOutputId}
           openOutputResult={openOutputResult}
@@ -818,8 +844,17 @@ export default function App() {
             <Toast
               key={output.id}
               title={output.title}
-              onOpen={() => {
+              onOpen={async () => {
                 dismiss(output.id);
+                // The run may have finished while the user was in another chat,
+                // and the panel only holds the open one's reports. Go to the
+                // chat that asked for it first, then open it there.
+                if (
+                  output.conversationId != null &&
+                  output.conversationId !== activeConversationId
+                ) {
+                  await openHistory(output.conversationId);
+                }
                 setView("chat");
                 showOutput(output.id);
               }}

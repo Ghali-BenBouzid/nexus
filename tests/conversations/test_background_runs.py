@@ -274,3 +274,80 @@ async def document(client: AsyncClient, auth_headers: dict[str, str], _bucket) -
     )
     assert uploaded.status_code == 201, uploaded.text
     return uploaded.json()
+
+
+async def test_deep_mode_files_an_artifact_and_says_so_in_the_thread(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    """Deep research the user asked for by name skips the supervisor: there is
+    nothing left to decide, and a model call to produce one predictable sentence
+    is waste. The run still ends where every other one does."""
+    _use(lambda: _StartsDeepResearch(), monkeypatch=monkeypatch)
+
+    created = await client.post(
+        "/conversations",
+        headers=auth_headers,
+        json={"prompt": "go deep on X", "deep": True},
+    )
+    conversation_id = created.json()["id"]
+
+    # The thread answers at once, and has no run of its own to wait on.
+    answer = created.json()["messages"][1]
+    assert answer["query_id"] is None
+    assert "Outputs" in answer["content"]
+
+    await drain()
+
+    artifacts = await client.get("/research/artifacts", headers=auth_headers)
+    [artifact] = artifacts.json()
+    assert artifact["kind"] == "deep_research"
+    assert artifact["conversation_id"] == conversation_id
+    assert artifact["status"] == "complete"
+
+    report = await client.get(f"/research/query/{artifact['id']}", headers=auth_headers)
+    assert report.json()["report"] == "THE DEEP REPORT"
+
+
+async def test_the_supervisor_is_not_asked_when_the_user_already_chose(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    """The announcement is written by the application, not generated: a deep
+    message must not cost a supervisor turn before the run even starts."""
+    model = _StartsDeepResearch()
+    _use(lambda: model, monkeypatch=monkeypatch)
+
+    await client.post(
+        "/conversations",
+        headers=auth_headers,
+        json={"prompt": "go deep on X", "deep": True},
+    )
+
+    # Before the run is drained, nothing has called a model at all: the turn was
+    # answered by the sentence the application already had.
+    assert model.started is False
+
+
+async def test_a_deep_run_started_by_hand_is_stoppable(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    """A deep run costs minutes and money, so the user has to be able to call it
+    off. It is an ordinary query, and Outputs is where its id is found."""
+    _use(lambda: _StartsDeepResearch(), monkeypatch=monkeypatch)
+
+    await client.post(
+        "/conversations",
+        headers=auth_headers,
+        json={"prompt": "go deep on X", "deep": True},
+    )
+    [artifact] = (await client.get("/research/artifacts", headers=auth_headers)).json()
+
+    stopped = await client.post(
+        f"/research/query/{artifact['id']}/cancel", headers=auth_headers
+    )
+    assert stopped.status_code == 204
+    await drain()
+
+    detail = await client.get(
+        f"/research/query/{artifact['id']}", headers=auth_headers
+    )
+    assert detail.json()["stopped"] is True

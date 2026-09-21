@@ -84,7 +84,7 @@ export function TurnCard({
 
           {answer.trim() && (
             <div className={"reply-text" + (streaming ? " streaming" : "")}>
-              <Markdown text={answer} onCite={onCite} activeCite={activeCite} />
+              <Markdown text={answer} onCite={onCite} activeCite={activeCite} sources={sources} />
             </div>
           )}
 
