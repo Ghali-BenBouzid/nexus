@@ -3,6 +3,7 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import { useQueryHistory } from "../lib/history";
+import { FileTile } from "./FileTile";
 
 type PromptBarProps = {
   onSubmit: (prompt: string) => void;
@@ -146,22 +147,17 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
 
   const active = !!running || val.trim().length > 0;
 
-  // The staged files, above the input: what is about to be sent with the message.
+  // The staged files, inside the bar and above the input: what is about to be
+  // sent with the message, sitting where it will be sent from.
   const chips = onAttach && (attachments.length > 0 || attachError) && (
     <div className="staged">
       {attachments.map((file, i) => (
-        <span key={file.name + i} className="staged-chip">
-          {I.doc}
-          <span className="staged-name">{file.name}</span>
-          <button
-            className="staged-x"
-            onClick={() => onUnstage?.(i)}
-            aria-label={t.uploads.remove}
-            title={t.uploads.remove}
-          >
-            {I.close}
-          </button>
-        </span>
+        <FileTile
+          key={file.name + i}
+          name={file.name}
+          bytes={file.size}
+          onRemove={() => onUnstage?.(i)}
+        />
       ))}
       {attachError && <span className="staged-error">{attachError}</span>}
     </div>
@@ -201,6 +197,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
         }}
       >
         {chips}
+        <div className="cinput-row">
         <textarea
           ref={taRef}
           rows={1}
@@ -223,14 +220,16 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
             {running ? I.stop : I.arrowUp}
           </button>
         </div>
+        </div>
       </div>
     );
   }
 
   return (
     <div className="prompt-wrap">
-      {chips}
-      <div className="prompt">
+      <div className={"prompt" + (chips ? " with-staged" : "")}>
+        {chips}
+        <div className="prompt-row">
         {attachButton}
         <textarea
           ref={taRef}
@@ -250,6 +249,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
             {I.arrowUp}
           </button>
         )}
+        </div>
       </div>
     </div>
   );

@@ -4,6 +4,7 @@ import type { View } from "../types";
 // routes, the landing page and a chat, so this stays lighter than pulling in a
 // router dependency. The URL is the source of truth for which view is shown:
 //   /            -> home (hero + sections)
+//   /how         -> the technical deep dive
 //   /chat        -> a fresh, unsaved chat (no conversation id yet)
 //   /chat/:id    -> an existing conversation
 //   /invite/:tok -> an invite link: redeemed on load, then lands on /chat
@@ -20,6 +21,7 @@ export function getRoute(): Route {
   const match = path.match(/^\/chat\/(\d+)\/?$/);
   if (match) return { view: "chat", conversationId: Number(match[1]) };
   if (path === "/chat" || path === "/chat/") return { view: "chat", conversationId: null };
+  if (path === "/how" || path === "/how/") return { view: "how", conversationId: null };
   // An invite link opens the landing page: a visitor arriving from it should see
   // what Nexus is before its chat. The token is redeemed on mount either way.
   if (INVITE_PATH.test(path)) return { view: "home", conversationId: null };

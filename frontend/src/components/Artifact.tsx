@@ -4,69 +4,85 @@ import { I } from "../icons";
 import { t } from "../lib/i18n";
 import type { Result, Status } from "../types";
 import { Markdown } from "./Markdown";
+import { useScrollToCite } from "./Sources";
 
 const stripScheme = (url: string) => url.replace(/^https?:\/\//, "").replace(/^www\./, "");
 
-// The redesigned sources block: a calm, numbered list that reads as part of the
-// report rather than a panel bolted on. Citation numbers double as anchors the
-// in-report [n] markers scroll to and highlight.
+// The sources behind a report. Folded away by default: the report is what the
+// reader came for, and a citation opens this on its own when one is clicked.
+// A flat, numbered list rather than a stack of cards, so it reads as the back
+// matter of a document instead of as a separate widget.
 function Sources({
   result,
   activeCite,
   onPick,
+  open,
+  onToggle,
   listRef,
 }: {
   result: Result;
   activeCite: number | null;
   onPick: (n: number) => void;
+  open: boolean;
+  onToggle: () => void;
   listRef: React.RefObject<HTMLDivElement>;
 }) {
-  const [prov, setProv] = useState(false);
-  if (result.sources.length === 0 && result.consulted.length === 0) return null;
+  // Everything the run opened, not just what survived into the report.
+  const [all, setAll] = useState(false);
+  const consulted = result.consulted.length;
+  const total = result.sources.length + consulted;
+  if (result.sources.length === 0 && consulted === 0) return null;
 
   return (
-    <section className="art-sources">
+    <section className={"art-sources" + (open ? " open" : "")}>
       <div className="art-sources-head">
-        <h3>{t.artifact.sourcesHead}</h3>
-        <span className="art-sources-cnt">{t.artifact.cited(result.sources.length)}</span>
-      </div>
-      <div className="art-src-list" ref={listRef}>
-        {result.sources.map((s, i) => {
-          const n = i + 1;
-          return (
-            <a
-              key={n}
-              className={"art-src" + (activeCite === n ? " active" : "")}
-              data-n={n}
-              href={s.url}
-              target="_blank"
-              rel="noreferrer"
-              onClick={() => onPick(n)}
-            >
-              <span className="art-src-n">{n}</span>
-              <span className="art-src-main">
-                <span className="art-src-title">{s.title}</span>
-                <span className="art-src-url">{stripScheme(s.url)}{I.ext}</span>
-              </span>
-            </a>
-          );
-        })}
-        {prov &&
-          result.consulted.map((s, i) => (
-            <a key={"c" + i} className="art-src consulted" href={s.url} target="_blank" rel="noreferrer">
-              <span className="art-src-n">·</span>
-              <span className="art-src-main">
-                <span className="art-src-title">{s.title}</span>
-                <span className="art-src-url">{stripScheme(s.url)}</span>
-              </span>
-            </a>
-          ))}
-      </div>
-      {result.consulted.length > 0 && (
-        <button className="art-prov" onClick={() => setProv((p) => !p)}>
-          <span className={"switch" + (prov ? " on" : "")} />
-          {t.artifact.showConsulted(result.consulted.length)}
+        <button type="button" className="src-toggle" onClick={onToggle} aria-expanded={open}>
+          <span className="src-chev" aria-hidden="true">{I.chevron}</span>
+          <span className="src-label">{t.artifact.sourcesHead}</span>
+          <span className="src-cnt">{t.artifact.cited(result.sources.length)}</span>
         </button>
+        {/* The scope control sits in the header, so widening the list never
+            moves the control that widened it. */}
+        {open && consulted > 0 && (
+          <button type="button" className="art-scope" onClick={() => setAll((a) => !a)}>
+            {all ? t.artifact.onlyCited(result.sources.length) : t.artifact.allConsulted(total)}
+          </button>
+        )}
+      </div>
+
+      {open && (
+        <div className="src-list" ref={listRef}>
+          {result.sources.map((s, i) => {
+            const n = i + 1;
+            return (
+              <a
+                key={n}
+                className={"src-row" + (activeCite === n ? " active" : "")}
+                data-n={n}
+                href={s.url}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => onPick(n)}
+              >
+                <span className="src-n">{n}</span>
+                <span className="src-main">
+                  <span className="src-title">{s.title}</span>
+                  <span className="src-url">{stripScheme(s.url)}{I.ext}</span>
+                </span>
+              </a>
+            );
+          })}
+          {all &&
+            result.consulted.map((s, i) => (
+              <a key={"c" + i} className="src-row consulted" href={s.url} target="_blank" rel="noreferrer">
+                <span className="src-n" aria-hidden="true">·</span>
+                <span className="src-main">
+                  <span className="src-title">{s.title}</span>
+                  <span className="src-url">{stripScheme(s.url)}{I.ext}</span>
+                </span>
+              </a>
+            ))}
+        </div>
       )}
     </section>
   );
@@ -97,15 +113,17 @@ export function Artifact({
   isMobile,
 }: ArtifactProps) {
   const [activeCite, setActiveCite] = useState<number | null>(null);
+  // Folded away until asked for, either by the header or by a citation.
+  const [sourcesOpen, setSourcesOpen] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
 
+  const [citeSeq, setCiteSeq] = useState(0);
   const onCite = (n: number) => {
     setActiveCite(n);
-    // The source list isn't its own scroll container (the report body is), so
-    // scrollIntoView is what actually moves the source into view.
-    const el = listRef.current?.querySelector<HTMLElement>(`[data-n="${n}"]`);
-    el?.scrollIntoView({ behavior: "smooth", block: "center" });
+    setSourcesOpen(true);
+    setCiteSeq((k) => k + 1);
   };
+  useScrollToCite(listRef, sourcesOpen ? activeCite : null, citeSeq);
 
   if (!result || (!result.report.trim() && result.sources.length === 0)) {
     const msg =
@@ -166,7 +184,14 @@ export function Artifact({
         <article className="report">
           <Markdown text={result.report} onCite={onCite} activeCite={activeCite} />
         </article>
-        <Sources result={result} activeCite={activeCite} onPick={onCite} listRef={listRef} />
+        <Sources
+          result={result}
+          activeCite={activeCite}
+          onPick={onCite}
+          open={sourcesOpen}
+          onToggle={() => setSourcesOpen((o) => !o)}
+          listRef={listRef}
+        />
         {result.gaps.length > 0 && (
           <section className="art-gaps">
             <h3>{I.warn}{t.artifact.unanswered(result.gaps.length)}</h3>

@@ -12,6 +12,8 @@ type OutputsPanelProps = {
   openId: number | null; // which report is open in the reader (null = the list)
   openResult: Result | null; // its body, once loaded
   onOpen: (id: number | null) => void;
+  unread: Set<number>; // finished reports not opened since they last changed
+
   onClose: () => void; // collapse the whole panel
   onRefresh: (id: number) => void;
   onUpload: (file: File) => void;
@@ -52,6 +54,7 @@ export function OutputsPanel({
   openId,
   openResult,
   onOpen,
+  unread,
   onClose,
   onRefresh,
   onUpload,
@@ -104,17 +107,23 @@ export function OutputsPanel({
         {outputs.length === 0 && <div className="drawer-empty">{t.artifact.noReports}</div>}
         {outputs.map((output) => {
           const ready = output.status === "complete";
+          const isNew = unread.has(output.id);
           return (
             <button
               key={output.id}
-              className="hist-item with-dot"
+              className={"hist-item with-dot" + (isNew ? " unread" : "")}
               onClick={() => ready && onOpen(output.id)}
               disabled={!ready}
             >
-              <span className={"hist-dot " + output.status} />
+              {/* The dot means one thing only: there is something here you have
+                  not read. How the run went is said in words underneath. */}
+              <span className="hist-dot" aria-hidden="true" />
               <div className="hist-main">
                 <div className="hist-q">{output.title}</div>
-                <div className="hist-meta">{outputMeta(output)}</div>
+                <div className={"hist-meta " + output.status}>
+                  {!ready && output.status !== "failed" && <span className="spin" />}
+                  {outputMeta(output)}
+                </div>
               </div>
             </button>
           );

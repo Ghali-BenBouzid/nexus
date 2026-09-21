@@ -3,7 +3,7 @@
 // AgentEvents while running.
 
 export type Theme = "dark" | "light";
-export type View = "home" | "chat";
+export type View = "home" | "chat" | "how";
 // How the conversation workspace is laid out: a single-column chat thread, or a
 // split workspace (conversation on the left, the focused run's activity on the
 // right, the slot the future parallel-agent graph will live in).

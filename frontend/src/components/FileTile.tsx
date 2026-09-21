@@ -1,0 +1,61 @@
+import { I } from "../icons";
+import { t } from "../lib/i18n";
+
+// The extension, as the badge every file manager puts on a document. Falls back
+// to "FILE" for something without one, rather than showing an empty badge.
+function kindOf(filename: string): string {
+  const dot = filename.lastIndexOf(".");
+  const ext = dot > 0 ? filename.slice(dot + 1) : "";
+  return (ext || "file").toUpperCase().slice(0, 4);
+}
+
+const kb = (bytes: number) =>
+  bytes >= 1024 * 1024
+    ? `${(bytes / 1024 / 1024).toFixed(1)} MB`
+    : `${Math.max(1, Math.round(bytes / 1024))} KB`;
+
+// An attached document, as a tile rather than as a chip. A file is a thing with
+// a shape, so it gets one: a page, a format badge and its name. We render no
+// thumbnail because nothing here has ever opened the file to make one, and a
+// fake preview would claim more than we know. The ruled lines say "a document"
+// without pretending to show its contents.
+export function FileTile({
+  name,
+  bytes,
+  meta,
+  onRemove,
+}: {
+  name: string;
+  bytes?: number;
+  // Anything already known about the file (pages, OCR, truncation). Falls back
+  // to the size when there is nothing more interesting to say.
+  meta?: string;
+  onRemove?: () => void;
+}) {
+  return (
+    <div className="ftile" title={name}>
+      <div className="ftile-page" aria-hidden="true">
+        <span className="ftile-lines" />
+        <span className="ftile-kind">{kindOf(name)}</span>
+      </div>
+      <div className="ftile-foot">
+        <span className="ftile-name">{name}</span>
+        <span className="ftile-meta">{meta ?? (bytes != null ? kb(bytes) : "")}</span>
+      </div>
+      {onRemove && (
+        <button
+          type="button"
+          className="ftile-x"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRemove();
+          }}
+          aria-label={t.uploads.remove}
+          title={t.uploads.remove}
+        >
+          {I.close}
+        </button>
+      )}
+    </div>
+  );
+}
