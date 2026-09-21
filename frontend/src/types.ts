@@ -67,8 +67,12 @@ export type Turn = {
   // The assistant's answer, rendered in the thread. Every turn has one now: a
   // report is a separate output, not what a turn produces.
   reply?: string;
-  // Follow-up questions offered under the answer, as chips.
-  suggestions?: string[];
+  // The reply as it streams in, before the finished one lands. Kept apart from
+  // `reply` so the answer the user keeps is always the one the server stored.
+  streamed?: string;
+  // The model's thinking as it streams in: a scratchpad, shown as provisional
+  // and folded away once the answer starts.
+  thinking?: string;
   // The sources the answer cites, and nothing else: a turn produces no report.
   result: Result | null;
   outcome: Outcome;

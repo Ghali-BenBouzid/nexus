@@ -16,6 +16,7 @@ from langchain_core.outputs import ChatGeneration, ChatResult
 
 from app import jobs
 from app.agents.tools import SearchHit
+from app.core.config import settings
 from app.documents import storage
 from app.research import service as research_service
 from app.research.dependencies import get_model, get_search_backend
@@ -45,6 +46,7 @@ class _StartsDeepResearch(ScriptedModel):
 
     started: bool = False
     cost_usd: float = 0.0
+    claims_each: int = 1
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
         names = {
@@ -53,10 +55,17 @@ class _StartsDeepResearch(ScriptedModel):
         }
         if "SubmitPlanArgs" in names:
             reply = call("SubmitPlanArgs", sub_questions=["q1", "q2"])
+        elif "SubmitSelectionArgs" in names:
+            # One call over every researcher's claims at once, numbered straight
+            # through: 1-3 came from the first, 4-6 from the second.
+            reply = call("SubmitSelectionArgs", keep=[1, 4])
         elif "SubmitFindingArgs" in names:
             reply = call(
                 "SubmitFindingArgs",
-                claims=[{"text": "a deep finding", "cited_source_ids": []}],
+                claims=[
+                    {"text": f"a deep finding {n}", "cited_source_ids": []}
+                    for n in range(self.claims_each)
+                ],
                 found_info=True,
             )
         elif "deep_research" in names and not self.started:
@@ -136,6 +145,32 @@ async def test_a_deep_run_becomes_its_own_artifact(
     # and the conversation that started it lists it
     after = await client.get(f"/conversations/{conversation_id}", headers=auth_headers)
     assert [a["title"] for a in after.json()["artifacts"]] == ["All of X"]
+
+
+async def test_a_deep_report_is_written_from_curated_findings(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    """Researchers never see each other's work, so a deep run chooses what the
+    report is built from before it writes a word. Under the cap there is nothing
+    to choose, so the cap is lowered here to put the step in the way."""
+    monkeypatch.setattr(settings, "deep_claim_cap", 1)
+    _use(lambda: _StartsDeepResearch(claims_each=3), monkeypatch=monkeypatch)
+
+    created = await client.post(
+        "/conversations", headers=auth_headers, json={"prompt": "go deep on X"}
+    )
+    await drain()
+
+    artifacts = await client.get("/research/artifacts", headers=auth_headers)
+    [artifact] = artifacts.json()
+    events = await client.get(
+        f"/research/query/{artifact['id']}/events", headers=auth_headers
+    )
+    curated = [e for e in events.json() if e["type"] == "curated"]
+    assert curated, "the run wrote its report without choosing what went into it"
+    # Two researchers, three claims each, curated in one pass over all six.
+    assert curated[0]["data"] == {"kept": 2, "total": 6}
+    assert created.status_code == 201
 
 
 async def test_a_run_is_not_started_with_nothing_left_to_spend(

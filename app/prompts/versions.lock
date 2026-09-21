@@ -1,7 +1,7 @@
 {
   "supervisor": {
-    "version": 6,
-    "sha256": "9657050f97389caafb7f1a55e40eb4ea21e4cb29ed4d6f93b71205e140d73727"
+    "version": 7,
+    "sha256": "86100c1d2b964a3b75796102a805cad19331fe4fa4c1c00087384b54b962a8b0"
   },
   "planner": {
     "version": 6,
@@ -20,7 +20,11 @@
     "sha256": "cf5a3546d3381107747d92e8ae26ea50e96a2c897b67358a25c468812069819d"
   },
   "fact_check": {
-    "version": 1,
-    "sha256": "373c85bbcc8e0c26f5d30f0be50390a6d0f9298ac964fbe68f79fe795454859c"
+    "version": 2,
+    "sha256": "d42fb009f8b9176e86c3eb0d2cc11e83a11dfa9ad3a218287644888c6a1b705a"
+  },
+  "curate": {
+    "version": 2,
+    "sha256": "317e55ce2666c131e6b4131b47722b1a264458edafa0310e97000fa6f07008ac"
   }
 }

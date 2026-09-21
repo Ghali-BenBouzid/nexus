@@ -44,7 +44,6 @@ class MessageQuery(BaseModel):
     reply: str | None = None  # the supervisor's answer, on a chat turn
     error: str | None
     stopped: bool = False  # failed because the user stopped it, not broken
-    suggestions: list[str] = []  # follow-ups offered under the answer
     sources: list[Source]
     gaps: list[str]
 

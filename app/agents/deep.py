@@ -31,6 +31,7 @@ from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
 from langgraph.types import Send
 
+from app.agents.curate import curate
 from app.agents.planner import plan
 from app.agents.report import write_report
 from app.agents.research import Limits, Middleware, consolidate, research_task
@@ -158,11 +159,20 @@ async def write_node(state: DeepState, runtime: Runtime[Deps]) -> dict:
     # finding brought its own sources, so the numbering is a pure function of
     # the findings and comes out the same on a resume.
     result = consolidate([outcome["finding"] for outcome in outcomes], Sources())
+    # Choose before writing. Researchers never saw each other's work, so what
+    # they hand over overlaps, and the writer is the wrong agent to prune it.
+    result = await curate(
+        result,
+        model=deps.model,
+        emit=deps.emit,
+        cap=settings.deep_claim_cap,
+        timeout=settings.deep_curate_timeout,
+    )
     report = await write_report(
         result,
         model=deps.model,
         emit=deps.emit,
-        timeout=settings.writer_timeout,
+        timeout=settings.deep_writer_timeout,
     )
     return {"result": result, "report": report}
 

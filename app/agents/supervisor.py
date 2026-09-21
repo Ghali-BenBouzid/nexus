@@ -14,19 +14,24 @@ than a stitched-together pipeline.
 """
 
 import logging
-import re
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import ModelCallLimitMiddleware
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import (
+    AIMessage,
+    AIMessageChunk,
+    BaseMessage,
+    HumanMessage,
+)
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
 from app.agents.citations import finalize
 from app.agents.language import detect_language
+from app.agents.model import REASONING, STAGE_KEY
 from app.agents.report import text_of
 from app.agents.research import Limits, Middleware, render_findings, run_research
 from app.agents.schemas import AgentEvent, ResearchResult, Source, Turn
@@ -39,13 +44,6 @@ from app.prompts.supervisor import PROMPT
 logger = logging.getLogger(__name__)
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
-
-# The supervisor's reply ends with its follow-up suggestions on one line. Parsed
-# out by code, so the chips are structured without a second model call and a
-# model that forgets the line simply produces no chips.
-_SUGGEST = re.compile(r"<suggest>(.*?)</suggest>\s*$", re.IGNORECASE | re.DOTALL)
-_MAX_SUGGESTIONS = 3
-
 
 @dataclass
 class Document:
@@ -68,12 +66,11 @@ class Output:
 
 @dataclass
 class Answer:
-    """What one turn produced: the reply as the user sees it, the sources it
-    cites, and the follow-ups offered under it."""
+    """What one turn produced: the reply as the user sees it and the sources it
+    cites."""
 
     text: str
     sources: list[Source] = field(default_factory=list)
-    suggestions: list[str] = field(default_factory=list)
 
 
 class ResearchArgs(BaseModel):
@@ -165,8 +162,47 @@ async def respond(
             ModelCallLimitMiddleware(run_limit=max_iters, exit_behavior="end"),
         ],
     )
-    state = await agent.ainvoke({"messages": _conversation(history, message)})
+    state = await _stream(agent, _conversation(history, message), emit)
     return _answer(_last_text(state.get("messages", [])), sources)
+
+
+# The supervisor's own stage. A sub-agent called through a tool runs under its
+# own stage, so this is what separates the supervisor's thinking from a
+# researcher's: both run create_agent graphs whose model node is called "model",
+# and their chunks would otherwise interleave into the user's reply.
+_OWN_STAGE = "supervisor"
+
+
+async def _stream(agent, messages: list[BaseMessage], emit: Emit) -> dict:
+    """Run the agent, emitting its thinking and its reply as they are produced.
+
+    Two stream modes at once: ``messages`` for the chunks, ``values`` for the
+    state we return, which is the same state ``ainvoke`` would have given us.
+    The caller is unchanged; only the timing of what the user sees is.
+    """
+    state: dict = {}
+    async for mode, payload in agent.astream(
+        {"messages": messages}, stream_mode=["messages", "values"]
+    ):
+        if mode == "values":
+            state = payload
+            continue
+        chunk, _ = payload
+        # Two things are not the answer being written. A tool's result, which
+        # this stream carries alongside the model's own chunks; and a sub-agent's
+        # chunks, which look identical because a sub-agent is a create_agent
+        # graph too, with a model node called "model" just the same.
+        if not isinstance(chunk, AIMessageChunk):
+            continue
+        extra = chunk.additional_kwargs or {}
+        if extra.get(STAGE_KEY, _OWN_STAGE) != _OWN_STAGE:
+            continue
+        thought = extra.get(REASONING)
+        if thought:
+            await emit(AgentEvent(type="thought", message=thought))
+        elif chunk.text:
+            await emit(AgentEvent(type="token", message=chunk.text))
+    return state
 
 
 def _system_prompt(
@@ -370,24 +406,15 @@ def _last_text(messages: list) -> str:
     return ""
 
 
-def _answer(written: str, sources: Sources) -> Answer:
-    """The reply as the user sees it: suggestions split off, invented citations
-    dropped, and only the sources it really cites kept."""
-    text, suggestions = _split_suggestions(written)
+def _answer(text: str, sources: Sources) -> Answer:
+    """The reply as the user sees it: invented citations dropped, and only the
+    sources it really cites kept."""
     if not text.strip():
         logger.warning("the supervisor produced no reply")
-        return Answer(text="", sources=[], suggestions=suggestions)
+        return Answer(text="", sources=[])
     # keep_uncited=False: an answer that cites nothing should not drag a source
     # list behind it, unlike a report, whose sources are half the point.
     content, cited, stripped = finalize(text, sources.all, keep_uncited=False)
     if stripped:
         logger.warning("stripped unbacked citation markers %s", stripped)
-    return Answer(text=content.strip(), sources=cited, suggestions=suggestions)
-
-
-def _split_suggestions(written: str) -> tuple[str, list[str]]:
-    match = _SUGGEST.search(written)
-    if match is None:
-        return written, []
-    offered = [part.strip() for part in match.group(1).split("|")]
-    return written[: match.start()], [s for s in offered if s][:_MAX_SUGGESTIONS]
+    return Answer(text=content.strip(), sources=cited)

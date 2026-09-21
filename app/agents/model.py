@@ -45,6 +45,7 @@ from langgraph.types import Command
 from app.agents.provider import ProviderCreditsError, ProviderError
 from app.agents.retry import is_transient
 from app.agents.schemas import AgentEvent
+from app.observability import STAGE
 
 logger = logging.getLogger(__name__)
 
@@ -52,6 +53,16 @@ Emit = Callable[[AgentEvent], Awaitable[None]]
 ShouldCancel = Callable[[], bool]
 
 OUT_OF_CREDITS = "The model credits behind this demo have run out."
+
+# Where a streamed chunk carries the model's thinking, on the message and in the
+# provider's delta. OpenRouter's name for it; not part of the OpenAI schema.
+REASONING = "reasoning"
+# Which agent produced a streamed chunk, stamped on it as it is decoded. The
+# graph's own metadata cannot say: a sub-agent is its own ``create_agent`` graph
+# and its model node is called "model" too, so a researcher's chunks look
+# exactly like the supervisor's. The stage is set around the call itself and a
+# chunk is decoded inside that call, so it is the one label that travels.
+STAGE_KEY = "nexus_stage"
 
 # Rough token accounting for pacing only: the real count comes back with the
 # response and is billed exactly. Paired with a TPM safety margin.
@@ -83,6 +94,47 @@ class PacedChatOpenAI(ChatOpenAI):
             await self.pacing.acquire(_estimate_call(messages, kwargs.get("tools")))
         return await super()._agenerate(messages, stop, run_manager, **kwargs)
 
+    async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
+        if self.pacing is not None:
+            await self.pacing.acquire(_estimate_call(messages, kwargs.get("tools")))
+        async for chunk in super()._astream(messages, stop, run_manager, **kwargs):
+            yield chunk
+
+    def _convert_chunk_to_generation_chunk(
+        self, chunk: dict, default_chunk_class: type, base_generation_info: dict | None
+    ):
+        """Keep the model's reasoning and what the call cost, both of which the
+        base class drops on a streamed response.
+
+        A reasoning model spends most of a turn thinking before it writes a
+        word: the first ``reasoning`` delta arrives seconds before the first
+        ``content`` one. That thinking is what the live feed shows while the
+        answer is still being formed, so a stream without it is a stream that
+        starts at the end.
+
+        Cost rides the stream's final usage block, but only its token counts
+        are carried through; ``token_usage`` is where a non-streamed call keeps
+        the raw block, and it is where billing reads the dollar figure from. An
+        account whose budget stops going down is worse than a slow one.
+
+        ``langchain-openai`` reads ``delta.content`` and the counts only, and
+        says as much in its own docstring: provider extras like these want a
+        provider-specific subclass. This is that subclass.
+        """
+        generation = super()._convert_chunk_to_generation_chunk(
+            chunk, default_chunk_class, base_generation_info
+        )
+        if generation is None:
+            return None
+        generation.message.additional_kwargs[STAGE_KEY] = STAGE.get()
+        thought = _reasoning_of(chunk)
+        if thought:
+            generation.message.additional_kwargs[REASONING] = thought
+        usage = chunk.get("usage")
+        if usage:
+            generation.message.response_metadata["token_usage"] = usage
+        return generation
+
 
 def build_model(
     *, model: str, base_url: str, api_key: str, **kwargs: Any
@@ -94,6 +146,11 @@ def build_model(
         base_url=base_url,
         api_key=api_key,
         max_retries=0,  # ModelRetryMiddleware owns retrying, with our predicate
+        # A streamed call reports its tokens and cost only when asked to, and
+        # langchain-openai asks by default only against OpenAI's own base URL.
+        # Every provider here is a different one, so without this a streamed
+        # turn is billed nothing and a demo budget never runs down.
+        stream_usage=True,
         **kwargs,
     )
 
@@ -304,6 +361,16 @@ def _usage_of(response: ModelResponse | AIMessage) -> dict[str, Any] | None:
         "cost_usd": raw.get("cost"),
         "model": (message.response_metadata or {}).get("model_name"),
     }
+
+
+def _reasoning_of(chunk: dict) -> str:
+    """The thinking in one raw streamed chunk, if the provider sent any."""
+    choices = chunk.get("choices") or []
+    if not choices:
+        return ""
+    delta = choices[0].get("delta") or {}
+    thought = delta.get(REASONING)
+    return thought if isinstance(thought, str) else ""
 
 
 def _message_of(response: ModelResponse | AIMessage) -> AIMessage | None:

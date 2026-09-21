@@ -186,7 +186,6 @@ async def route_message(
                 query_id,
                 answer.text,
                 result=result,
-                suggestions=answer.suggestions,
             )
             await repository.set_content(db, message_id, answer.text)
 

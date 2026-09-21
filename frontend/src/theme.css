@@ -701,6 +701,14 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .report .doc th, .report .doc td { padding: 10px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
 .report .doc th { font-weight: 600; background: var(--surface); white-space: nowrap; }
 .report .doc tr:last-child td { border-bottom: none; }
+/* A verdict reads as one thing, so it never wraps mid-phrase. */
+.report .doc td:last-child { white-space: nowrap; color: var(--muted); }
+/* A link into this same report is navigation, not a way out of it: quiet until
+   you reach for it. */
+.report .doc a.jump { text-decoration: none; color: var(--fg); }
+.report .doc a.jump:hover { text-decoration: underline; color: var(--accent-text); }
+/* A jumped-to heading lands clear of the panel's top edge, not glued to it. */
+.report .doc h2, .report .doc h3 { scroll-margin-top: 18px; }
 .cite {
   font-family: var(--font-mono); font-size: 0.72em; font-weight: 600;
   color: var(--accent-text); cursor: pointer; vertical-align: super;
@@ -900,7 +908,33 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .reply-text .doc h2 { font-size: 18px; margin: 18px 0 8px; }
 .reply-text .doc h3 { font-size: 16px; margin: 14px 0 6px; }
 .reply-text .doc p { margin: 0 0 10px; }
-/* Human-in-the-loop: the proposed plan with confirm / revise actions. */
+/* The model's thinking while it works. Inline in the thread, not boxed: it is
+   part of the same conversation, and a box around it would read as a different
+   kind of thing. Quieter than the answer, because it is working-out. */
+.thinking { margin: 2px 0 10px; }
+.thinking-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 0; border: 0; background: none; color: var(--faint); font-family: inherit;
+  font-size: 13px; transition: color 0.2s; }
+.thinking-toggle:hover { color: var(--muted); }
+/* Same chevron convention as the progress bar: points right when closed, down
+   when open, so the two disclosures in a turn read as one control. */
+.thinking-chevron { flex: none; display: inline-flex; width: 13px; height: 13px;
+  transform: rotate(-90deg); transition: transform 0.18s ease; }
+.thinking-toggle.open .thinking-chevron { transform: none; }
+.thinking-text { margin-top: 6px; padding-left: 13px; border-left: 1px solid var(--line);
+  font-size: 13.5px; line-height: 1.6; color: var(--faint); white-space: pre-wrap; }
+
+/* A reply still arriving carries a caret on its last line, so a pause in the
+   stream reads as the model thinking rather than the app having stalled. */
+.reply-text.streaming > .doc > :last-child::after { content: ""; display: inline-block;
+  width: 7px; height: 1em; margin-left: 2px; vertical-align: text-bottom;
+  background: var(--accent); animation: caret 1.1s steps(2, start) infinite; }
+@keyframes caret { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .reply-text.streaming > .doc > :last-child::after { animation: none; }
+  .thinking-chevron { transition: none; }
+}
+
 /* The sources behind an answer: folded away by default, because the answer is
    what the reader came for, and one tap from a citation. */
 .reply-sources { margin-top: 2px; }
@@ -915,11 +949,6 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 
 /* Follow-ups: offers, not instructions, so they read as quiet chips under the
    answer rather than as a row of calls to action. */
-.suggestions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
-.suggestion { cursor: pointer; padding: 7px 13px; border-radius: 999px; font-family: inherit;
-  font-size: 13px; color: var(--muted); background: transparent; border: 1px dashed var(--line);
-  transition: border-color 0.2s, color 0.2s, background 0.2s; text-align: left; }
-.suggestion:hover { border-style: solid; border-color: var(--accent); color: var(--fg); background: var(--surface-2); }
 
 .reply-note { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; color: var(--muted); font-size: 14px; }
 .linkish { background: none; border: none; color: var(--accent); font-size: 13.5px; font-family: inherit; cursor: pointer; padding: 0; }

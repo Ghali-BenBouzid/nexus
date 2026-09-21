@@ -48,12 +48,9 @@ Ground every factual claim in what a tool actually returned, and cite it. Say \
 plainly what you could not establish rather than filling the gap. If research \
 came back empty-handed, say so and suggest what would help.
 
-After your answer, on its very last line, offer two or three natural next \
-questions in this exact form, and nothing after it:
-<suggest>first question | second question | third question</suggest>
-Each is a question the user could ask next, in their language, short enough to \
-read at a glance. Write the line only when there is a genuine next step: skip \
-it for small talk, and skip it when you have just started a deep research run.
+If there is an obvious next step worth taking, you may end with one short line \
+offering it, in your own words. Only when it genuinely helps: never as a habit, \
+and never after small talk.
 </answering>
 
 <about_nexus>
@@ -165,5 +162,5 @@ PROMPT = ChatPromptTemplate(
     ],
     template_format="mustache",
     name="supervisor",
-    metadata={"version": 6},
+    metadata={"version": 7},
 )

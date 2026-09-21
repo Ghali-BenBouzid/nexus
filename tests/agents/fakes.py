@@ -9,16 +9,28 @@ from collections.abc import Callable, Sequence
 from typing import Any
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage
-from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.messages import AIMessage, AIMessageChunk, BaseMessage
+from langchain_core.outputs import ChatGeneration, ChatGenerationChunk, ChatResult
 from langchain_core.utils.function_calling import convert_to_openai_tool
+
+from app.agents.model import STAGE_KEY
+from app.observability import STAGE
 
 Reply = Callable[[list[BaseMessage], list[str]], AIMessage]
 
 
-def call(name: str, **args: Any) -> AIMessage:
-    """An assistant turn that calls one tool."""
-    return AIMessage(content="", tool_calls=[{"name": name, "args": args, "id": name}])
+def call(name: str, *, thought: str = "", **args: Any) -> AIMessage:
+    """An assistant turn that calls one tool, having thought about it first."""
+    return AIMessage(
+        content="",
+        tool_calls=[{"name": name, "args": args, "id": name}],
+        additional_kwargs={"reasoning": thought} if thought else {},
+    )
+
+
+def thinks(thought: str, text: str) -> AIMessage:
+    """An assistant turn that thought before it answered."""
+    return AIMessage(text, additional_kwargs={"reasoning": thought})
 
 
 def says(text: str, *, usage: tuple[int, int] | None = None) -> AIMessage:
@@ -85,3 +97,51 @@ class ScriptedModel(BaseChatModel):
         self, messages, stop=None, run_manager=None, **kwargs
     ) -> ChatResult:
         return self._generate(messages, stop, run_manager, **kwargs)
+
+    async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
+        """The scripted reply a word at a time, so a test can watch a turn
+        arrive the way the browser does. Thinking comes first when the reply
+        carries any, because that is the order a reasoning model sends it in,
+        and usage rides the last chunk, as a provider sends it: a streamed call
+        that reports none is a call nobody is billed for.
+
+        Every chunk is stamped with the stage that produced it, as the real
+        model stamps its own, because that is how a caller tells its own chunks
+        from a sub-agent's."""
+        result = self._generate(messages, stop, run_manager, **kwargs)
+        message = result.generations[0].message
+        here = {STAGE_KEY: STAGE.get()}
+        for thought in (message.additional_kwargs or {}).get("reasoning", "").split():
+            yield ChatGenerationChunk(
+                message=AIMessageChunk(
+                    content="",
+                    additional_kwargs={"reasoning": thought + " ", **here},
+                )
+            )
+        text = message.text if isinstance(message.content, str) else ""
+        if text:
+            for word in text.split(" ")[:-1]:
+                yield ChatGenerationChunk(
+                    message=AIMessageChunk(content=word + " ", additional_kwargs=here)
+                )
+            yield ChatGenerationChunk(
+                message=AIMessageChunk(
+                    content=text.split(" ")[-1], additional_kwargs=here
+                )
+            )
+        else:
+            yield ChatGenerationChunk(
+                message=AIMessageChunk(
+                    content=message.content,
+                    tool_calls=message.tool_calls,
+                    additional_kwargs=here,
+                )
+            )
+        yield ChatGenerationChunk(
+            message=AIMessageChunk(
+                content="",
+                additional_kwargs=here,
+                usage_metadata=message.usage_metadata,
+                response_metadata=message.response_metadata,
+            )
+        )

@@ -41,7 +41,6 @@ def _message_query(query: Query | None) -> MessageQuery | None:
         reply=query.reply,
         error=query.error,
         stopped=stopped_by_user(query),
-        suggestions=query.suggestions or [],
         sources=result.sources if result else [],
         gaps=result.gaps if result else [],
     )

@@ -1,7 +1,9 @@
-import { Children, Fragment, type ReactNode } from "react";
+import { Children, Fragment, type ReactNode, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
+
+import { resolve, slug } from "../lib/slug";
 
 type CiteProps = { onCite: (n: number) => void; activeCite: number | null };
 
@@ -47,21 +49,55 @@ function withCites(children: ReactNode, cp: CiteProps): ReactNode {
   );
 }
 
+// A heading's anchor, from whatever nodes make up its text.
+function anchor(node: ReactNode): string {
+  return slug(text(node));
+}
+
+function text(node: ReactNode): string {
+  return Children.toArray(node)
+    .map((child) => {
+      if (typeof child === "string" || typeof child === "number") return String(child);
+      if (child && typeof child === "object" && "props" in child) {
+        return text((child.props as { children?: ReactNode }).children);
+      }
+      return "";
+    })
+    .join("");
+}
+
+// Jump to a section of this document. A link that resolves to nothing does
+// nothing, rather than scrolling somewhere arbitrary.
+// ponytail: scoped to the first .doc on the page, which is the one report or
+// answer a jump link can appear in.
+function jumpTo(target: string, root: HTMLElement | null): void {
+  const headings = Array.from(root?.querySelectorAll<HTMLElement>("[id]") ?? []);
+  const id = resolve(target, headings.map((h) => h.id));
+  if (id) {
+    headings.find((h) => h.id === id)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }
+}
+
 type MarkdownProps = { text: string; onCite: (n: number) => void; activeCite: number | null };
 
 // Full Markdown via react-markdown + GFM (tables, lists, code, etc.), with our
 // [n] citations layered on top. Tables get a scroll wrapper so a wide comparison
 // never overflows the report column.
 export function Markdown({ text, onCite, activeCite }: MarkdownProps) {
+  const doc = useRef<HTMLDivElement>(null);
   const cp: CiteProps = { onCite, activeCite };
   const kids = (children: ReactNode) => withCites(children, cp);
 
   const components: Components = {
     // Reports start at ## in the data; demote any stray h1 so the hierarchy holds.
-    h1: ({ children }) => <h2>{kids(children)}</h2>,
-    h2: ({ children }) => <h2>{kids(children)}</h2>,
-    h3: ({ children }) => <h3>{kids(children)}</h3>,
-    h4: ({ children }) => <h4>{kids(children)}</h4>,
+    // Every heading carries its anchor, so a report can link to its own sections.
+    h1: ({ children }) => <h2 id={anchor(children)}>{kids(children)}</h2>,
+    h2: ({ children }) => <h2 id={anchor(children)}>{kids(children)}</h2>,
+    h3: ({ children }) => <h3 id={anchor(children)}>{kids(children)}</h3>,
+    h4: ({ children }) => <h4 id={anchor(children)}>{kids(children)}</h4>,
     p: ({ children }) => <p>{kids(children)}</p>,
     li: ({ children }) => <li>{kids(children)}</li>,
     strong: ({ children }) => <strong>{kids(children)}</strong>,
@@ -69,11 +105,24 @@ export function Markdown({ text, onCite, activeCite }: MarkdownProps) {
     blockquote: ({ children }) => <blockquote>{kids(children)}</blockquote>,
     th: ({ children }) => <th>{kids(children)}</th>,
     td: ({ children }) => <td>{kids(children)}</td>,
-    a: ({ href, children }) => (
-      <a href={href} target="_blank" rel="noreferrer">
-        {kids(children)}
-      </a>
-    ),
+    // A link into this same document scrolls; only a real one leaves the page.
+    a: ({ href, children }) =>
+      href?.startsWith("#") ? (
+        <a
+          href={href}
+          className="jump"
+          onClick={(e) => {
+            e.preventDefault();
+            jumpTo(href, doc.current);
+          }}
+        >
+          {kids(children)}
+        </a>
+      ) : (
+        <a href={href} target="_blank" rel="noreferrer">
+          {kids(children)}
+        </a>
+      ),
     // Code is verbatim: never reinterpret tokens inside it as citations.
     table: ({ children }) => (
       <div className="md-table">
@@ -83,7 +132,7 @@ export function Markdown({ text, onCite, activeCite }: MarkdownProps) {
   };
 
   return (
-    <div className="doc">
+    <div className="doc" ref={doc}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {text}
       </ReactMarkdown>

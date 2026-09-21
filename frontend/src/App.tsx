@@ -151,7 +151,6 @@ export default function App() {
       status: lt.status,
       events: [],
       reply: lt.reply,
-      suggestions: lt.suggestions,
       result: lt.result,
       outcome: outcomeFor(lt.status, lt.reply ?? "", lt.result.sources.length),
       error: lt.error,
@@ -364,9 +363,16 @@ export default function App() {
   // The live callbacks for a turn, shared by a fresh run and a resumed poll.
   const callbacksFor = (id: number): ResearchCallbacks => ({
     onEvent: (e) => {
+      if (cancelled.current.has(id)) return;
       // Stamp the arrival time: the progress bar times each step from it.
-      if (!cancelled.current.has(id))
-        patchTurn(id, (t) => ({ ...t, events: [...t.events, { ...e, at: performance.now() }] }));
+      patchTurn(id, (t) => ({
+        ...t,
+        events: [...t.events, { ...e, at: performance.now() }],
+        // A new model call replaces whatever the last one streamed. That is
+        // what makes a retry safe: the failed attempt's half-written answer
+        // does not stay on screen next to the real one.
+        ...(e.kind === "thinking" ? { streamed: undefined, thinking: undefined } : {}),
+      }));
     },
     onHeartbeat: (secondsSince) => {
       if (!cancelled.current.has(id))
@@ -374,6 +380,14 @@ export default function App() {
     },
     onStatus: (s) => {
       if (!cancelled.current.has(id)) patchTurn(id, (t) => ({ ...t, status: s }));
+    },
+    onToken: (text) => {
+      if (!cancelled.current.has(id))
+        patchTurn(id, (t) => ({ ...t, streamed: (t.streamed ?? "") + text }));
+    },
+    onThought: (text) => {
+      if (!cancelled.current.has(id))
+        patchTurn(id, (t) => ({ ...t, thinking: (t.thinking ?? "") + text }));
     },
     isCancelled: () => cancelled.current.has(id),
     onQueryId: (qid) => patchTurn(id, (t) => ({ ...t, queryId: qid })),
@@ -399,7 +413,9 @@ export default function App() {
     patchTurn(id, (t) => ({
       ...t,
       reply: res.reply ?? t.reply,
-      suggestions: res.suggestions ?? t.suggestions,
+      // The stored reply replaces what was streamed; a retried call can have
+      // streamed text that no longer exists.
+      streamed: undefined,
       result: res.result,
       outcome: res.outcome,
       title: res.title ?? t.title,
