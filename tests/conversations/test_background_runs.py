@@ -321,9 +321,11 @@ async def test_the_supervisor_is_not_asked_when_the_user_already_chose(
         headers=auth_headers,
         json={"prompt": "go deep on X", "deep": True},
     )
+    await drain()
 
-    # Before the run is drained, nothing has called a model at all: the turn was
-    # answered by the sentence the application already had.
+    # ``started`` is set when the supervisor reaches for its deep_research tool.
+    # The run itself never sees that tool, so this stays false for the whole
+    # run: the turn was answered by the sentence the application already had.
     assert model.started is False
 
 
