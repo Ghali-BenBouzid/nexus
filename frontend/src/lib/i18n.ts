@@ -174,7 +174,10 @@ const en = {
     refresh: "Refresh report",
     sourcesHead: "Sources",
     cited: (n: number) => `${n} cited`,
-    showConsulted: (n: number) => `Show everything consulted · ${n}`,
+    // The count is everything the run opened, cited or not, which is what
+    // "consulted" means: the old label counted only the uncited leftovers.
+    allConsulted: (n: number) => `All ${n} consulted`,
+    onlyCited: (n: number) => `Only the ${n} cited`,
     unanswered: (n: number) => `Unanswered · ${n}`,
     emptyFailed: "This run didn't produce a report.",
     emptyNoCite: "No report: the agents found nothing to cite for this question.",
@@ -386,7 +389,8 @@ const fr: Dict = {
     refresh: "Actualiser le rapport",
     sourcesHead: "Sources",
     cited: (n: number) => `${n} citée${n > 1 ? "s" : ""}`,
-    showConsulted: (n: number) => `Tout ce qui a été consulté · ${n}`,
+    allConsulted: (n: number) => `Les ${n} consultées`,
+    onlyCited: (n: number) => `Les ${n} citées seulement`,
     unanswered: (n: number) => `Sans réponse · ${n}`,
     emptyFailed: "Cette recherche n'a pas produit de rapport.",
     emptyNoCite: "Pas de rapport : les agents n'ont rien trouvé à citer pour cette question.",
