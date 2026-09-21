@@ -1,3 +1,4 @@
+import { I } from "../icons";
 import { t } from "../lib/i18n";
 import { NexusLockup } from "./NexusLogo";
 
@@ -52,11 +53,17 @@ export function HowItWorks({ onDeepDive }: { onDeepDive: () => void }) {
           <h2>{t.hiw.title}</h2>
           <p>{t.hiw.body}</p>
         </div>
-        <div className="about-links">
-          <button className="btn btn-ghost" onClick={onDeepDive}>
-            {t.hiw.cta}
-          </button>
-        </div>
+        {/* The way through to the long version. A pill would read as one more
+            link in a page full of them, so it is a card that shows what it
+            opens: a document, its subject, and somewhere to go. */}
+        <button className="hiw-cta" onClick={onDeepDive}>
+          <span className="hiw-cta-ic" aria-hidden="true">{I.doc}</span>
+          <span className="hiw-cta-main">
+            <span className="hiw-cta-title">{t.hiw.cta}</span>
+            <span className="hiw-cta-sub">{t.hiw.ctaSub}</span>
+          </span>
+          <span className="hiw-cta-go" aria-hidden="true">{I.arrowRight}</span>
+        </button>
       </div>
     </section>
   );

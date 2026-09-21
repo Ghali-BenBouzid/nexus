@@ -29,7 +29,7 @@ function AgentDiagram() {
   return (
     <svg className="dd-svg" viewBox="0 0 900 430" role="img" aria-label={t.deep.agentAria}>
       <defs>
-        <marker id="dd-a" markerWidth="8" markerHeight="8" refX="5.5" refY="3" orient="auto">
+        <marker id="dd-a" markerWidth="8" markerHeight="8" refX="5.5" refY="3" orient="auto-start-reverse">
           <path d="M0,0 L6,3 L0,6" className="dd-arrowhead" />
         </marker>
       </defs>
@@ -48,11 +48,14 @@ function AgentDiagram() {
       </g>
 
       {/* Tools: reached for as needed, any number of times, so they hang off the
-          supervisor rather than sitting on the path. */}
-      <text className="dd-lane" x="308" y="116" textAnchor="middle">{A.tools}</text>
-      <path className="dd-edge dash" d="M308,92 V128 H150 V150" markerEnd="url(#dd-a)" />
-      <path className="dd-edge dash" d="M308,92 V128 H308 V150" markerEnd="url(#dd-a)" />
-      <path className="dd-edge dash" d="M308,92 V128 H492 V150" markerEnd="url(#dd-a)" />
+          supervisor rather than sitting on the path. The first three point both
+          ways, because a tool call comes back: the supervisor asks and reads the
+          answer. The background pair is one way, because those hand the work off
+          and write their own report instead of replying. */}
+      <text className="dd-lane" x="318" y="112" textAnchor="start">{A.tools}</text>
+      <path className="dd-edge dash" d="M308,92 V128 H150 V150" markerStart="url(#dd-a)" markerEnd="url(#dd-a)" />
+      <path className="dd-edge dash" d="M308,92 V128 H308 V150" markerStart="url(#dd-a)" markerEnd="url(#dd-a)" />
+      <path className="dd-edge dash" d="M308,92 V128 H492 V150" markerStart="url(#dd-a)" markerEnd="url(#dd-a)" />
       <path className="dd-edge dash" d="M308,92 V128 H700 V150" markerEnd="url(#dd-a)" />
 
       <g className="dd-node">
@@ -77,8 +80,6 @@ function AgentDiagram() {
         <text className="dd-t xs" x="604" y="203" textAnchor="middle">{A.researchers}</text>
       </g>
       <text className="dd-r" x="604" y="236" textAnchor="middle">{A.parallel}</text>
-      {/* Findings go back to the supervisor: it writes the answer, not the graph. */}
-      <path className="dd-edge" d="M424,252 H360 C 330,252 326,252 322,120 V92" markerEnd="url(#dd-a)" />
 
       {/* The two background runs: they leave the conversation and write documents. */}
       <rect className="dd-group bg" x="676" y="152" width="200" height="176" rx="14" />
