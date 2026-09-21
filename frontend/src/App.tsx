@@ -2,6 +2,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { flushSync } from "react-dom";
 
 import { Conversation } from "./components/Conversation";
+import { DeepDive } from "./components/DeepDive";
 import { DemoDialog } from "./components/DemoDialog";
 import { Hero } from "./components/Hero";
 import { History } from "./components/History";
@@ -248,6 +249,8 @@ export default function App() {
 
   // Body stage dims the fluid behind dense content.
   useEffect(() => {
+    // The fluid background belongs to the landing page; the deep dive reads like
+    // a document, so it gets the chat's quiet backdrop.
     document.body.dataset.stage = view === "home" ? "home" : "chat";
   }, [view]);
 
@@ -317,6 +320,11 @@ export default function App() {
   // gesture). A ref holds the latest handler so the listener is registered once
   // but always reads current state.
   const syncRoute = (route: Route) => {
+    if (route.view === "how") {
+      setView("how");
+      window.scrollTo({ top: 0 });
+      return;
+    }
     if (route.view === "home") {
       setView("home");
       window.scrollTo({ top: 0 });
@@ -648,6 +656,14 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  // The long version of "how it works", on its own page so the landing page can
+  // stay one screen of what Nexus is.
+  function showDeepDive() {
+    navigate("/how");
+    setView("how");
+    window.scrollTo({ top: 0 });
+  }
+
   // Open a past conversation from the sidebar: load its whole thread and make it
   // the active conversation. Anything running in the current chat is cancelled.
   async function openHistory(conversationId: number) {
@@ -750,10 +766,12 @@ export default function App() {
             attachError={uploadError}
           />
           <About />
-          <HowItWorks />
+          <HowItWorks onDeepDive={showDeepDive} />
           <Footer />
         </Fragment>
       )}
+
+      {view === "how" && <DeepDive onBack={goHome} />}
 
       {view === "chat" && (
         <Conversation
