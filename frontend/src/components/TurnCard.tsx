@@ -5,6 +5,7 @@ import { t } from "../lib/i18n";
 import type { Turn } from "../types";
 import { Markdown } from "./Markdown";
 import { Activity } from "./Activity";
+import { FileTile } from "./FileTile";
 import { SourceList, useScrollToCite } from "./Sources";
 
 type TurnCardProps = {
@@ -59,22 +60,20 @@ export function TurnCard({
       className={"msg-turn" + (focused && inSplit ? " focused" : "")}
       onClick={inSplit ? onSelect : undefined}
     >
-      <div className="msg-row user">
-        <div className="bubble-user">
-          {/* The files sent with this message, above the words they came with,
-              so the thread reads the way it looked when it was sent. */}
-          {(turn.attachments?.length ?? 0) > 0 && (
-            <div className="bubble-files">
-              {turn.attachments!.map((doc) => (
-                <span key={doc.id} className="bubble-file">
-                  {I.doc}
-                  {doc.filename}
-                </span>
-              ))}
-            </div>
-          )}
-          {turn.query}
+      {/* The files sent with this message, above the words they came with and
+          outside the bubble: they were attached to the message, not said in it,
+          and the thread should read the way the composer looked when it was sent. */}
+      {(turn.attachments?.length ?? 0) > 0 && (
+        <div className="msg-row user">
+          <div className="bubble-files">
+            {turn.attachments!.map((doc) => (
+              <FileTile key={doc.id} name={doc.filename} bytes={doc.sizeBytes} />
+            ))}
+          </div>
         </div>
+      )}
+      <div className="msg-row user">
+        <div className="bubble-user">{turn.query}</div>
       </div>
 
       <div className="msg-row assistant">
