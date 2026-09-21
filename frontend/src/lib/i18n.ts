@@ -229,6 +229,10 @@ const en = {
     open: "Open",
     dismiss: "Dismiss",
   },
+  cites: {
+    label: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
+    missing: "This source is no longer listed.",
+  },
   deepMode: {
     label: "Deep research",
     hint: "Search the web in depth and write a cited report. Takes several minutes.",
@@ -472,6 +476,10 @@ const fr: Dict = {
     ready: (title: string) => `${title} est prêt.`,
     open: "Ouvrir",
     dismiss: "Ignorer",
+  },
+  cites: {
+    label: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
+    missing: "Cette source n'est plus répertoriée.",
   },
   deepMode: {
     label: "Recherche approfondie",

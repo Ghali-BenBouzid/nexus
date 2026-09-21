@@ -111,12 +111,12 @@ export function TurnCard({
 
           {report ? (
             <ReportSheet title={turn.title || turn.query} text={report}>
-              <Markdown text={report} onCite={onCite} activeCite={activeCite} />
+              <Markdown text={report} onCite={onCite} activeCite={activeCite} sources={sources} />
             </ReportSheet>
           ) : (
             answer.trim() && (
               <div className={"reply-text" + (streaming ? " streaming" : "")}>
-                <Markdown text={answer} onCite={onCite} activeCite={activeCite} />
+                <Markdown text={answer} onCite={onCite} activeCite={activeCite} sources={sources} />
               </div>
             )
           )}
