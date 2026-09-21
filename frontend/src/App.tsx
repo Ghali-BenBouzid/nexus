@@ -120,8 +120,9 @@ export default function App() {
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [demoOpen, setDemoOpen] = useState(false);
 
-  // The right-hand panel. Outputs are account-wide, because a background run
-  // outlives the conversation that started it; documents belong to the open one.
+  // Every report this account has. The list is account-wide because a background
+  // run outlives the turn that started it and has to be announced wherever the
+  // user went; the panel only ever shows the open conversation's share of it.
   const [outputs, setOutputs] = useState<Output[]>([]);
   const [documents, setDocuments] = useState<Doc[]>([]);
   const [openOutputId, setOpenOutputId] = useState<number | null>(null);
@@ -591,6 +592,13 @@ export default function App() {
     getAccount().then(setAccount).catch(() => {});
   };
 
+  // What the panel shows: this chat's reports and no others. A report belongs to
+  // the conversation that asked for it, the same way its documents do, so
+  // switching chats must not carry the last one's outputs along.
+  const conversationOutputs = outputs.filter(
+    (output) => output.conversationId === activeConversationId,
+  );
+
   // Open one report in the panel, loading its body on demand.
   async function showOutput(id: number | null) {
     setOpenOutputId(id);
@@ -784,7 +792,7 @@ export default function App() {
           onSubmit={startResearch}
           onStop={stopResearch}
           onExit={goHome}
-          outputs={outputs}
+          outputs={conversationOutputs}
           documents={documents}
           openOutputId={openOutputId}
           openOutputResult={openOutputResult}
@@ -818,8 +826,17 @@ export default function App() {
             <Toast
               key={output.id}
               title={output.title}
-              onOpen={() => {
+              onOpen={async () => {
                 dismiss(output.id);
+                // The run may have finished while the user was in another chat,
+                // and the panel only holds the open one's reports. Go to the
+                // chat that asked for it first, then open it there.
+                if (
+                  output.conversationId != null &&
+                  output.conversationId !== activeConversationId
+                ) {
+                  await openHistory(output.conversationId);
+                }
                 setView("chat");
                 showOutput(output.id);
               }}
