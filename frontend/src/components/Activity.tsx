@@ -15,8 +15,9 @@ import {
 } from "../lib/progress";
 import type { Turn } from "../types";
 
-// Seconds without a heartbeat before the row warns that the run may be stuck. The
-// job beats every 10 s, so this tolerates a few slow or missed beats.
+// Seconds without a single frame from the run before the row warns that it may
+// be stuck. The job beats every 5 s and the stream sends a keep-alive after 15 s
+// of quiet, so silence this long means nothing is on the other end.
 const STALE_AFTER = 45;
 
 const clock = (seconds: number) => {

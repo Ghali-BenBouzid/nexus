@@ -367,6 +367,13 @@ export default function App() {
   const patchTurn = (id: number, fn: (t: Turn) => Turn) =>
     setTurns((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
 
+  // Anything arriving from a run is proof it is alive, so it resets the clock
+  // that decides whether the run looks stuck. The server only sends a heartbeat
+  // frame when the stream has been quiet (bus.IDLE_SECONDS), so a run streaming
+  // its thinking or its answer sends no heartbeats at all: without this, the
+  // busiest part of a run is exactly when it would be called stuck.
+  const alive = () => ({ heartbeatAge: 0, heartbeatSeenAt: performance.now() });
+
   // The live callbacks for a turn, shared by a fresh run and a resumed poll.
   const callbacksFor = (id: number): ResearchCallbacks => ({
     onEvent: (e) => {
@@ -374,6 +381,7 @@ export default function App() {
       // Stamp the arrival time: the progress bar times each step from it.
       patchTurn(id, (t) => ({
         ...t,
+        ...alive(),
         events: [...t.events, { ...e, at: performance.now() }],
         // A new model call replaces whatever the last one streamed. That is
         // what makes a retry safe: the failed attempt's half-written answer
@@ -390,11 +398,19 @@ export default function App() {
     },
     onToken: (text) => {
       if (!cancelled.current.has(id))
-        patchTurn(id, (t) => ({ ...t, streamed: (t.streamed ?? "") + text }));
+        patchTurn(id, (t) => ({
+          ...t,
+          ...alive(),
+          streamed: (t.streamed ?? "") + text,
+        }));
     },
     onThought: (text) => {
       if (!cancelled.current.has(id))
-        patchTurn(id, (t) => ({ ...t, thinking: (t.thinking ?? "") + text }));
+        patchTurn(id, (t) => ({
+          ...t,
+          ...alive(),
+          thinking: (t.thinking ?? "") + text,
+        }));
     },
     isCancelled: () => cancelled.current.has(id),
     onQueryId: (qid) => patchTurn(id, (t) => ({ ...t, queryId: qid })),
