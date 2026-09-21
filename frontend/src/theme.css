@@ -201,17 +201,22 @@ a { color: inherit; text-decoration: none; }
 .nav-start-icon { display: none; }
 .nav-start-icon svg { width: 17px; height: 17px; }
 .nav-left { display: flex; align-items: center; gap: 14px; }
-/* Icon-only rail toggle, opening the history drawer. It sits in the nav's own
-   left gutter with the brand, not pinned to the viewport edge: against the glass
-   it read as something stuck to the side of the screen rather than part of the
-   bar. The small negative margin is optical, putting the icon's edge on the
-   gutter rather than the button's padding. */
+/* Icon-only rail toggle, opening the history drawer. It keeps to the far left of
+   the screen, away from the brand, because that is where the drawer comes from.
+   It just needs a margin: at two pixels it read as stuck to the window rather
+   than placed in it. */
 .nav-rail { display: inline-flex; align-items: center; justify-content: center; width: 30px; height: 34px;
-  color: var(--muted); background: none; border: none; padding: 0; margin-left: -5px;
+  color: var(--muted); background: none; border: none; padding: 0; margin-left: -14px;
   border-radius: 9px; cursor: pointer; transition: color 0.2s, background 0.2s; }
 .nav-rail:hover { color: var(--fg); background: var(--surface-2); }
 .nav-rail:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .nav-rail svg { width: 19px; height: 19px; }
+/* Once the centred nav has real side gutters, the toggle leaves the flow and
+   takes the screen's own left margin, clear of the brand. Absolute resolves
+   against the fixed, full-width .nav. */
+@media (min-width: 1220px) {
+  .nav-rail { position: absolute; left: 28px; top: 50%; transform: translateY(-50%); margin-left: 0; }
+}
 .nav-right { display: flex; align-items: center; gap: 14px; }
 
 /* Theme toggle */
