@@ -67,7 +67,8 @@ What each piece is used for:
 | LangChain | The agents themselves, their tools and their prompts |
 | Postgres (SQLAlchemy, Alembic) | Conversations, runs, progress events, the usage ledger, and deep-run checkpoints |
 | OpenRouter | The language models, through one OpenAI-compatible endpoint |
-| Tavily | Web search and reading pages |
+| SearXNG | Web search: a metasearch proxy we run ourselves, so searching costs nothing |
+| Crawl4AI | Reading a page: fetches it in a real browser and returns pruned markdown |
 | DeepEval | Scoring the evaluation runs |
 | LangSmith | Optional tracing of every agent step |
 | React + TypeScript + Vite | The chat interface and the report panel |
@@ -248,17 +249,24 @@ I reviewed and tested what it wrote, and the calls about what to build, and what
 
 ## Run it locally
 
-You need [uv](https://docs.astral.sh/uv/), Postgres, Redis and Node.
+You need [uv](https://docs.astral.sh/uv/), Postgres, Redis, Docker and Node.
 
 ```bash
 uv sync
-cp .env.example .env                  # fill in DATABASE_URL, SECRET_KEY, OPENROUTER_API_KEY, TAVILY_API_KEY
+cp .env.example .env                  # fill in DATABASE_URL, SECRET_KEY, OPENROUTER_API_KEY
+docker compose -f docker-compose.search.yml up -d   # SearXNG + Crawl4AI
 uv run alembic upgrade head
 uv run uvicorn main:app --reload      # the API, on http://localhost:8000
 uv run arq app.worker.WorkerSettings  # the worker, in a second terminal
 ```
 
 Without Redis, set `JOB_QUEUE=inline` and the jobs run inside the API process.
+
+The two search services have to be your own: SearXNG ships with JSON output
+switched off, so public instances answer an API call with a 403. The settings
+file in `deploy/searxng/` turns it on, and nothing in that stack needs to face
+the internet. If you would rather not run them, leave `SEARXNG_URL` unset and
+set `TAVILY_API_KEY` instead; the app picks whichever is configured.
 
 Create an account and its invite link (there is no signup page):
 
@@ -295,7 +303,10 @@ Nexus is set up to run on Railway (API, worker and Redis), Neon (Postgres) and C
 2. **Railway, Redis:** add a Redis service; its private URL is `REDIS_URL`.
 3. **Railway, API:** deploy from the root `Dockerfile`, which runs the migrations and starts the API. Set the variables from `.env.example`, and give the OpenRouter key a hard credit limit.
 4. **Railway, worker:** a second service from the same repository and `Dockerfile`, with the same variables, the start command `arq app.worker.WorkerSettings` and no public domain.
-5. **Cloudflare:** build the `frontend` folder with `npm run build`, serve `dist`, and set `VITE_API_BASE_URL` and `VITE_LIVE_MODE=true`. Then set `CORS_ORIGINS` on the API to the frontend's address.
+5. **Railway, SearXNG:** a service from this repository with the root directory `deploy/searxng`, which builds `searxng/searxng` with our settings file inside it. JSON output has no environment variable, so the file has to travel in the image. Set `SEARXNG_SECRET` to any long random string. No public domain.
+6. **Railway, Crawl4AI:** a service from the public image `unclecode/crawl4ai`. Set `CRAWL4AI_API_TOKEN`, because the server asks for a credential once it is reachable from anywhere but localhost. No public domain. Give it about 2GB: it runs a real browser.
+7. **Point the API and the worker at them:** `SEARXNG_URL=http://searxng.railway.internal:8080`, `CRAWL4AI_URL=http://crawl4ai.railway.internal:11235`, and `CRAWL4AI_TOKEN` matching the token above. Both variables have to be set, on both services, or the app falls back to Tavily.
+8. **Cloudflare:** build the `frontend` folder with `npm run build`, serve `dist`, and set `VITE_API_BASE_URL` and `VITE_LIVE_MODE=true`. Then set `CORS_ORIGINS` on the API to the frontend's address.
 
 ## Where things are
 

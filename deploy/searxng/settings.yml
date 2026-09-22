@@ -1,0 +1,18 @@
+# Only what differs from SearXNG's own defaults: use_default_settings inherits
+# the rest, so this file stays readable and does not drift as SearXNG changes.
+use_default_settings: true
+
+server:
+  # Overridden by SEARXNG_SECRET at run time; this placeholder only exists so a
+  # bare `docker compose up` works without a .env.
+  secret_key: "change-me-in-the-environment"
+  limiter: false  # no bot filtering: the only client is our own worker
+  image_proxy: false
+
+search:
+  # The whole point of this instance. JSON output is off in SearXNG's defaults,
+  # which is why public instances answer our API calls with 403 and why this
+  # has to be self-hosted rather than pointed at someone else's.
+  formats:
+    - html
+    - json
