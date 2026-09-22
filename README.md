@@ -27,10 +27,11 @@ A real question gets a team of researchers working in parallel, and the answer c
 
 Two kinds of work produce a document rather than a reply:
 
-- **Deep research**, when you want a question properly covered. It runs much wider, takes minutes, and writes its own report. It runs in the background and survives a redeploy, so you can close the chat and come back to it.
+- **Deep research**, when you want a question properly covered. A lead agent sends researchers out in rounds, reads what comes back, and goes back for the gaps, the disagreements and the angles nobody took, until it judges the subject covered. Then it writes its own report. It runs in the background and survives a redeploy, so you can close the chat and come back to it.
 - **A fact check** of a file you upload: it pulls out the claims the document rests on, tests each against the web, and writes a report saying which held up.
 
-Deep research is also a mode you can switch the composer into, so asking for it is a choice rather than something the supervisor decides for you.
+Both are also modes you can switch the composer into.
+A mode tells the supervisor what you are after, and the supervisor still reads the message: "hi" in deep mode gets a reply, not a ten-minute run.
 Either way the run is the same, and so is where it ends up.
 
 Both land in **Outputs**, and you are told when one is ready wherever you happen to be.
@@ -40,13 +41,12 @@ Both land in **Outputs**, and you are told when one is ready wherever you happen
 ```mermaid
 flowchart LR
     M[Message] --> S[Supervisor]
-    M -. deep mode .-> D
     S --> A[Cited answer]
     S -.-> T1[web_search / fetch_page]
     S -.-> T2[read_document]
     S -.-> T3[research]
     T3 --> P[Plan] --> X[Researchers, in parallel] --> S
-    S -.-> T4[deep_research] --> D[Wide run, checkpointed] --> Out[Report in Outputs]
+    S -.-> T4[deep_research] --> D[Lead and rounds of researchers, checkpointed] --> Out[Report in Outputs]
     S -.-> T5[fact_check] --> F[Claims checked] --> Out
 ```
 
@@ -77,7 +77,7 @@ What each piece is used for:
 Each agent is a LangChain agent: a prompt, a set of tools and the loop that runs them.
 
 - The **supervisor** is the one you talk to. It answers, and when answering well needs work it has not done yet, it does that work first.
-- The **planner** splits a research question into self-contained sub-questions, as many as it genuinely needs: a plain fact gets one or two, a three-way comparison gets six. A deep run has its own planner prompt and goes up to twelve.
+- The **planner** splits a research question into self-contained sub-questions, as many as it genuinely needs: a plain fact gets one or two, a three-way comparison gets six. A deep run is led instead: its lead plans the first round, up to twelve sub-questions, and decides every round after that from what the last one found.
 - Each **researcher** searches the web and reads pages in a loop, then submits claims with the sources behind them.
 - The **fact checker** reads a document, picks the claims it rests on, and tests them against independent sources.
 - Writing a report is not an agent: by then there is nothing to decide, so it is one model call in the same house style the chat answers in.
@@ -117,7 +117,7 @@ The supervisor decides what work a message needs and does it; if a question dese
 
 **LangGraph only where a run is long enough to be interrupted.**
 A normal research run is one fan-out, which `asyncio` already expresses, so it is plain code.
-Deep research takes minutes, which is long enough that a deploy will land in the middle of one, so it is a graph over a Postgres checkpointer: every node lands in a checkpoint, and a worker that picks the run back up starts from the last step that finished rather than re-planning and re-paying for researchers that already came back.
+Deep research takes minutes, which is long enough that a deploy will land in the middle of one, so it is a graph over a Postgres checkpointer: every node lands in a checkpoint, and a worker that picks the run back up starts from the last step that finished rather than re-paying for the rounds and researchers that already came back.
 The reaper hands a stalled deep run back to a worker; everything else it fails, because restarting those would only re-bill work already paid for.
 The downside is that the checkpointer keeps its own tables outside my migrations.
 
