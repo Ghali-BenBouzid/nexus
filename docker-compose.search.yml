@@ -37,8 +37,11 @@ services:
     # crash: a host that cannot set shm_size (Railway) is fine without it.
     shm_size: 1gb
     environment:
-      # The server binds 0.0.0.0 so another service can reach it, and Crawl4AI
-      # asks for a credential when it is not just on localhost. The app sends
-      # this as a bearer token (CRAWL4AI_TOKEN on our side).
-      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-}
+      # Not optional, and not only about auth: without a token Crawl4AI binds
+      # 127.0.0.1 *inside* the container, so the published port reaches nothing
+      # and every request dies on connect. Its healthcheck runs on that same
+      # loopback, so the container reports healthy the whole time. Setting a
+      # token is what moves it to 0.0.0.0. The app sends the same value as a
+      # bearer token, under CRAWL4AI_TOKEN.
+      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-dev-only-not-a-real-token}
     restart: unless-stopped

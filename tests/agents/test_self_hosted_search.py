@@ -177,3 +177,26 @@ async def test_opening_and_closing_it_manages_one_client() -> None:
     ) as backend:
         assert backend._client is not None
     assert backend._client is None
+
+
+async def test_the_pair_is_refused_without_a_reader_token() -> None:
+    """Crawl4AI binds loopback inside its own container until it has a token,
+    so it reports itself healthy while being unreachable. Saying so once at
+    startup beats every page read failing to connect."""
+    from fastapi import HTTPException
+
+    from app.core.config import settings
+    from app.research.dependencies import get_search_backend
+
+    was = (settings.searxng_url, settings.crawl4ai_url, settings.crawl4ai_token)
+    settings.searxng_url, settings.crawl4ai_url, settings.crawl4ai_token = (
+        SEARXNG,
+        CRAWL4AI,
+        None,
+    )
+    try:
+        with pytest.raises(HTTPException) as caught:
+            get_search_backend()
+        assert "CRAWL4AI_TOKEN" in caught.value.detail
+    finally:
+        settings.searxng_url, settings.crawl4ai_url, settings.crawl4ai_token = was

@@ -9,6 +9,7 @@ Two rules hold for every tool here, whichever agent calls it:
   real retrieval produced.
 """
 
+import logging
 from collections.abc import Awaitable, Callable
 from typing import Any, Protocol
 
@@ -17,6 +18,8 @@ from pydantic import BaseModel, Field
 
 from app.agents.schemas import AgentEvent, Source
 from app.agents.sources import Sources
+
+logger = logging.getLogger(__name__)
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
 _Retrieving = Callable[[], Awaitable["RetrievalResult"]]
@@ -181,6 +184,13 @@ def retrieval_tools(
         try:
             result = await retrieving()
         except Exception as exc:  # noqa: BLE001 -- a failed tool is not a failed run
+            # The agent and the feed are told only that the tool failed, on
+            # purpose: the chained cause can carry a key or an internal
+            # address. But it is also the only thing that says *why* (a 403
+            # from a search instance with JSON off, a 401 from a missing
+            # token, a timeout against a private address), so it goes to the
+            # log. Without this a deployment cannot be diagnosed at all.
+            logger.warning("%s failed for %s", what, agent, exc_info=exc)
             await emit(
                 AgentEvent(
                     type="tool_error",
