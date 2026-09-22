@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 
 from pydantic import BaseModel
 
@@ -9,6 +10,11 @@ from app.models.query import QueryStatus
 from app.research.schemas import ArtifactSummary
 from app.schemas.base import BaseSchema
 
+# What the user switched the composer to for this message. Never an order: it
+# tells the supervisor what they are after, and the supervisor decides what the
+# message actually calls for.
+Mode = Literal["answer", "deep", "factcheck"]
+
 
 class ConversationCreate(BaseModel):
     # The first user message; creating a conversation and posting its first
@@ -18,17 +24,14 @@ class ConversationCreate(BaseModel):
     # conversation has to exist before the message that carries it.
     prompt: str = ""
     document_ids: list[int] = []
-    # Send this first message as deep research rather than as a chat turn.
-    deep: bool = False
+    mode: Mode = "answer"
 
 
 class MessageCreate(BaseModel):
     content: str
     # Files uploaded into this conversation and sent with this message.
     document_ids: list[int] = []
-    # Answer this message with a deep research run instead of the supervisor.
-    # The mode is the user's choice, per message, not the supervisor's judgement.
-    deep: bool = False
+    mode: Mode = "answer"
 
 
 class ConversationSummary(BaseSchema):

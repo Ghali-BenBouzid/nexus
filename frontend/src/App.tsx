@@ -14,7 +14,6 @@ import {
   cancelQuery,
   createConversation,
   deleteDocument,
-  factCheckDocument,
   getAccount,
   listDocuments,
   listOutputs,
@@ -528,7 +527,7 @@ export default function App() {
     startResearch(prompt, { fresh: true });
   }
 
-  async function startResearch(prompt: string, opts?: { fresh?: boolean }) {
+  async function startResearch(prompt: string, opts?: { fresh?: boolean; mode?: Mode }) {
     if (askForDemoAccount()) return;
     const fresh = opts?.fresh ?? false;
     // One run at a time: ignore a follow-up while another is in flight. A fresh
@@ -538,10 +537,10 @@ export default function App() {
     // A fresh submission from the hero starts a new chat, and the hero has no
     // mode control: whatever the last chat was switched into does not follow
     // the user here, any more than it follows them into an existing one.
-    const deepRun = mode === "deep" && !fresh && isLive();
-    // Fact check is not a turn: it reads a file and writes its own report. The
-    // message is only what to focus on, so the send path forks here.
-    const checking = mode === "factcheck" && !fresh && isLive() && staged.length > 0;
+    // Every mode is a message to the supervisor, which decides what it calls
+    // for and answers in the thread: the mode says what the user is after, it
+    // never starts a run behind the supervisor's back.
+    const runMode: Mode = fresh || !isLive() ? "answer" : (opts?.mode ?? mode);
     const turn: Turn = {
       id,
       query: prompt,
@@ -581,25 +580,14 @@ export default function App() {
         attached = await uploadStaged(conversationId);
         patchTurn(id, (t) => ({ ...t, attachments: attached }));
       }
-      if (checking) {
-        // The report is the output; the thread just records that it started, so
-        // the turn resolves immediately rather than sitting on a spinner while
-        // a background run it does not own works for minutes.
-        for (const doc of attached) await startFactCheck(doc);
-        applyOutcome(id, {
-          reply: t.modes.factcheck.started(attached.map((d) => d.filename).join(", ")),
-          result: { report: "", sources: [], consulted: [], gaps: [] },
-          outcome: "ok",
-        });
-        setMode("answer");
-        return;
-      }
+      // A fact check is one document's; the next message is back to normal.
+      if (runMode === "factcheck") setMode("answer");
       const res = await runResearch(
         prompt,
         callbacksFor(id),
         conversationId,
         attached.map((doc) => doc.id),
-        deepRun,
+        runMode,
       );
       if (cancelled.current.has(id)) return;
       applyOutcome(id, res);
@@ -705,20 +693,11 @@ export default function App() {
     await deleteDocument(doc.id);
   }
 
-  // Fact-check a document from the panel: the same sub-agent the supervisor
-  // calls, started from the file itself. It lands in Outputs like any other run.
-  async function startFactCheck(doc: Doc) {
-    const output = await factCheckDocument(doc.id);
-    setOutputs((current) => [output, ...current]);
-  }
-
-  async function factCheck(doc: Doc) {
-    try {
-      await startFactCheck(doc);
-      setLayout("split");
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : t.uploads.failed);
-    }
+  // Fact-check a document from the panel. It is a message like any other, so
+  // the request and the supervisor's answer sit in the thread where the user
+  // can see what was asked and what happened.
+  function factCheck(doc: Doc) {
+    startResearch(t.modes.factcheck.request(doc.filename), { mode: "factcheck" });
   }
 
   const chooseLayout = (m: LayoutMode) => setLayout(m);

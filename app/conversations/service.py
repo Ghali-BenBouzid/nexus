@@ -19,6 +19,7 @@ from app.agents.supervisor import Document, Output, respond
 from app.agents.tools import SearchBackend
 from app.billing.service import has_budget
 from app.conversations import repository
+from app.conversations.schemas import Mode
 from app.core.config import settings
 from app.db import session as db_session
 from app.documents import repository as documents_repository
@@ -83,18 +84,18 @@ async def submit_message(
     backend: SearchBackend,
     background_tasks: BackgroundTasks,
     document_ids: list[int] | None = None,
-    deep: bool = False,
+    mode: Mode = "answer",
 ) -> Message:
     """Record the user's message and the assistant turn that will answer it, and
     queue the job; no model is called in the request. The turn's query tracks it
     from here: its events feed the live progress, and it ends complete or failed.
     The caller checks the account's budget first.
 
-    ``deep`` says the user switched the composer to deep research. It does not
-    start a run: it tells the supervisor, which decides whether this message is
-    one. A mode that fired on anything the user typed started ten-minute runs on
-    "hi" and on "don't start a deep research"; judging the message is exactly
-    what the supervisor is for.
+    ``mode`` says what the user switched the composer to. It never starts a run
+    itself: it tells the supervisor, which decides what this message calls for.
+    A mode that fired on anything the user typed started ten-minute runs on "hi"
+    and on "don't start a deep research"; judging the message is exactly what
+    the supervisor is for, and the thread stays the supervisor's either way.
     """
     user_message = await repository.add_message(
         db, conversation.id, MessageRole.user, content
@@ -143,7 +144,7 @@ async def submit_message(
         query_id=query.id,
         conversation_id=conversation.id,
         message_id=assistant.id,
-        deep=deep,
+        mode=mode,
     )
     return assistant
 
@@ -155,8 +156,7 @@ async def route_message(
     *,
     model: BaseChatModel | None = None,
     backend: SearchBackend | None = None,
-    # Defaults to off so a job queued before this argument existed still runs.
-    deep: bool = False,
+    mode: Mode = "answer",
 ) -> None:
     """The job for a new message: the supervisor answers it, using whatever
     tools the answer needs. Every model call is billed to the thread's owner."""
@@ -200,7 +200,7 @@ async def route_message(
             middleware=run.middleware,
             emit=run.emit,
             max_iters=settings.supervisor_max_iters,
-            deep=deep,
+            mode=mode,
         )
         result = ResearchResult(
             points=[],

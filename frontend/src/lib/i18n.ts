@@ -267,14 +267,14 @@ const en = {
       label: "Fact check",
       note: "Tests a document's claims against the web.",
       needsFile: "Attach a document first",
-      started: (files: string) => `Checking ${files}. The report lands in Outputs when it is done.`,
+      request: (file: string) => `Fact-check ${file}`,
     },
   },
   // What the bar asks for once a mode changes what sending means.
   modePlaceholder: {
     answer: "",
     deep: "What should the report cover?",
-    factcheck: "Anything to focus the check on? Optional.",
+    factcheck: "Which document, and what should the check focus on?",
   } as Record<string, string>,
   cites: {
     label: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
@@ -556,13 +556,13 @@ const fr: Dict = {
       label: "Vérification",
       note: "Confronte au web ce qu'affirme un document.",
       needsFile: "Joignez d'abord un document",
-      started: (files: string) => `Vérification de ${files}. Le rapport arrivera dans Sorties une fois terminé.`,
+      request: (file: string) => `Vérifie ${file}`,
     },
   },
   modePlaceholder: {
     answer: "",
     deep: "Que doit couvrir le rapport ?",
-    factcheck: "Un point sur lequel concentrer la vérification ? Facultatif.",
+    factcheck: "Quel document, et sur quoi concentrer la vérification ?",
   } as Record<string, string>,
   cites: {
     label: (n: number) => (n === 1 ? "1 source" : `${n} sources`),

@@ -3,11 +3,12 @@
 Deep research and a fact check are not answers: they are work the supervisor
 kicks off and reports back on later. What these pin is that the turn does not
 wait for them, that each becomes an artifact of its own with its own live feed,
-that an account with nothing left to spend cannot start one, and that a document
-can start a fact check without any conversation at all.
+that an account with nothing left to spend cannot start one, and that the
+composer's mode never starts one behind the supervisor's back.
 """
 
 import asyncio
+import re
 
 import pytest
 import pytest_asyncio
@@ -216,41 +217,61 @@ class _SourceBackend(FakeBackend):
         return [SearchHit(title="A source", url="https://s.example", content="no")]
 
 
-async def test_a_document_can_be_fact_checked_from_its_own_button(
+class _ChecksInThread(_FactChecker):
+    """A supervisor that starts a fact check on the attached file, plus the
+    fact checker it starts. The supervisor is the one offered fact_check."""
+
+    started: bool = False
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        names = {
+            tool.get("function", {}).get("name") or tool.get("name", "")
+            for tool in (kwargs.get("tools") or [])
+        }
+        if "fact_check" not in names:
+            return super()._generate(messages, stop, run_manager, **kwargs)
+        if not self.started:
+            self.started = True
+            document_id = int(
+                re.search(r"id (\d+)", str(messages[0].content)).group(1)  # type: ignore[union-attr]
+            )
+            reply = call("fact_check", document_id=document_id, focus="the numbers")
+        else:
+            reply = says("I have started a fact check; it will appear in Outputs.")
+        return ChatResult(generations=[ChatGeneration(message=reply)])
+
+
+async def test_fact_check_mode_is_the_supervisors_to_answer(
     client: AsyncClient, auth_headers: dict[str, str], document, monkeypatch
 ) -> None:
-    _use(lambda: _FactChecker(), _SourceBackend, monkeypatch=monkeypatch)
+    """Fact check mode used to skip the thread: the browser started the check
+    itself and wrote a canned line where the answer goes. The supervisor now
+    holds the thread in every mode, so it is the one that starts the check and
+    says so."""
+    _use(lambda: _ChecksInThread(), _SourceBackend, monkeypatch=monkeypatch)
 
-    started = await client.post(
-        f"/documents/{document['id']}/fact-check",
+    sent = await client.post(
+        f"/conversations/{document['conversation_id']}/messages",
         headers=auth_headers,
-        json={"focus": "the numbers"},
+        json={"content": "check the numbers", "mode": "factcheck"},
     )
-
-    assert started.status_code == 202
-    assert started.json()["kind"] == "fact_check"
+    assert sent.status_code == 200, sent.text
     await drain()
 
-    report = await client.get(
-        f"/research/query/{started.json()['id']}", headers=auth_headers
+    detail = await client.get(
+        f"/conversations/{document['conversation_id']}", headers=auth_headers
     )
-    body = report.json()
+    reply = detail.json()["messages"][-1]["query"]["reply"]
+    assert reply.startswith("I have started a fact check")
+    [artifact] = (await client.get("/research/artifacts", headers=auth_headers)).json()
+    assert artifact["kind"] == "fact_check"
+    body = (
+        await client.get(f"/research/query/{artifact['id']}", headers=auth_headers)
+    ).json()
     assert body["status"] == "complete"
     assert "Contradicted" in body["report"]
     # the sources it cited are the ones it really retrieved
     assert [s["url"] for s in body["sources"]] == ["https://s.example"]
-
-
-async def test_someone_elses_document_cannot_be_fact_checked(
-    client: AsyncClient, document
-) -> None:
-    other = await login_as(client, "not-the-owner@test.com")
-
-    response = await client.post(
-        f"/documents/{document['id']}/fact-check", headers=other
-    )
-
-    assert response.status_code == 404
 
 
 @pytest.fixture
@@ -282,7 +303,7 @@ async def document(client: AsyncClient, auth_headers: dict[str, str], _bucket) -
         headers=auth_headers,
     )
     assert uploaded.status_code == 201, uploaded.text
-    return uploaded.json()
+    return {**uploaded.json(), "conversation_id": conversation.json()["id"]}
 
 
 class _JustGreets(ScriptedModel):
@@ -312,7 +333,7 @@ async def test_deep_mode_lets_the_supervisor_start_the_run(
     created = await client.post(
         "/conversations",
         headers=auth_headers,
-        json={"prompt": "go deep on X", "deep": True},
+        json={"prompt": "go deep on X", "mode": "deep"},
     )
     conversation_id = created.json()["id"]
     await drain()
@@ -339,7 +360,7 @@ async def test_a_greeting_in_deep_mode_starts_nothing(
     _use(lambda: model, monkeypatch=monkeypatch)
 
     created = await client.post(
-        "/conversations", headers=auth_headers, json={"prompt": "hi", "deep": True}
+        "/conversations", headers=auth_headers, json={"prompt": "hi", "mode": "deep"}
     )
     await drain()
 
@@ -352,15 +373,17 @@ async def test_a_greeting_in_deep_mode_starts_nothing(
     assert detail.json()["messages"][1]["query"]["reply"].startswith("Hi.")
 
 
-def test_deep_mode_is_told_to_the_supervisor_and_nothing_else_is() -> None:
+def test_the_mode_is_told_to_the_supervisor_and_nothing_else_is() -> None:
     """The mode reaches the agent as context, beside the attachments, and only
     when it is on: an ordinary turn must read exactly as it did before."""
     from app.agents.supervisor import _system_prompt
 
-    on = _system_prompt("anything", [], [], deep=True)
+    deep = _system_prompt("anything", [], [], mode="deep")
+    check = _system_prompt("anything", [], [], mode="factcheck")
     off = _system_prompt("anything", [], [])
 
-    assert "<mode>" in on and "deep research mode" in on
+    assert "<mode>" in deep and "deep research mode" in deep
+    assert "<mode>" in check and "fact check mode" in check
     assert "<mode>" not in off
 
 
@@ -375,7 +398,7 @@ async def test_a_deep_run_from_deep_mode_is_stoppable(
     await client.post(
         "/conversations",
         headers=auth_headers,
-        json={"prompt": "go deep on X", "deep": True},
+        json={"prompt": "go deep on X", "mode": "deep"},
     )
     [artifact] = (await client.get("/research/artifacts", headers=auth_headers)).json()
 
@@ -385,9 +408,7 @@ async def test_a_deep_run_from_deep_mode_is_stoppable(
     assert stopped.status_code == 204
     await drain()
 
-    detail = await client.get(
-        f"/research/query/{artifact['id']}", headers=auth_headers
-    )
+    detail = await client.get(f"/research/query/{artifact['id']}", headers=auth_headers)
     assert detail.json()["stopped"] is True
 
 

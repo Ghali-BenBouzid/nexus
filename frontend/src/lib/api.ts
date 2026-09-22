@@ -7,6 +7,7 @@
 import type {
   AgentEvent,
   Doc,
+  Mode,
   Output,
   OutputKind,
   Result,
@@ -151,30 +152,6 @@ async function authedGet(path: string): Promise<Response | null> {
     res = await fetch(`${BASE}${path}`, { headers: { Authorization: `Bearer ${token}` } });
   }
   if (res.status === 403) forgetAccess(); // the account expired
-  return res;
-}
-
-// Authenticated POST with the same 401 self-heal as authedGet, and it throws on a
-// non-OK response so callers can't silently proceed against a request that never
-// took effect (e.g. a 409 confirm/revise on a query no longer awaiting a plan).
-async function authedPost(path: string, body?: object): Promise<Response> {
-  const init = (token: string): RequestInit => ({
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
-  let token = await ensureToken();
-  let res = await fetch(`${BASE}${path}`, init(token));
-  if (res.status === 401) {
-    localStorage.removeItem(TOKEN_KEY);
-    token = await ensureToken();
-    res = await fetch(`${BASE}${path}`, init(token));
-  }
-  if (res.status === 403) forgetAccess(); // the account expired
-  if (!res.ok) throw new Error(await errorMessage(res, `Request failed (${res.status}).`));
   return res;
 }
 
@@ -392,13 +369,13 @@ const startTurn = (
   conversationId: number | null,
   documentIds: number[],
   token: string,
-  deep: boolean,
+  mode: Mode,
 ) =>
   conversationId == null
-    ? postConvJson(`/conversations`, { prompt, document_ids: documentIds, deep }, token)
+    ? postConvJson(`/conversations`, { prompt, document_ids: documentIds, mode }, token)
     : postConvJson(
         `/conversations/${conversationId}/messages`,
-        { content: prompt, document_ids: documentIds, deep },
+        { content: prompt, document_ids: documentIds, mode },
         token,
       );
 
@@ -416,19 +393,19 @@ export async function runLiveResearch(
   cb: ResearchCallbacks,
   conversationId: number | null,
   documentIds: number[] = [],
-  deep = false,
+  mode: Mode = "answer",
 ): Promise<ResearchOutcome | null> {
   cb.onStatus("running");
 
   let token = await ensureToken();
   let detail: ConvDetail;
   try {
-    detail = await startTurn(prompt, conversationId, documentIds, token, deep);
+    detail = await startTurn(prompt, conversationId, documentIds, token, mode);
   } catch (err) {
     // One retry after a fresh session, only when the stored token went stale.
     if (!(err instanceof SessionExpiredError)) throw err;
     token = await ensureToken();
-    detail = await startTurn(prompt, conversationId, documentIds, token, deep);
+    detail = await startTurn(prompt, conversationId, documentIds, token, mode);
   }
   cb.onConversation?.(detail.id);
 
@@ -763,11 +740,4 @@ export async function deleteDocument(id: number): Promise<void> {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
-}
-
-// Start a fact check from the document itself, rather than by asking for one in
-// the conversation. The same sub-agent either way; this one just skips the turn.
-export async function factCheckDocument(id: number): Promise<Output> {
-  const res = await authedPost(`/documents/${id}/fact-check`, { focus: "" });
-  return toOutput((await res.json()) as BackendOutput);
 }

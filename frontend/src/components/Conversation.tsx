@@ -317,6 +317,7 @@ export function Conversation({
                 attachError={uploadError}
                 mode={mode}
                 onMode={onMode}
+                hasDocuments={documents.length > 0}
                 autoFocus
                 placeholder={running ? t.chat.runningPlaceholder : t.chat.idlePlaceholder}
               />

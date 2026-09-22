@@ -30,6 +30,9 @@ type PromptBarProps = {
   // what the demo build does: there is no background run to start without a key.
   mode?: Mode;
   onMode?: (next: Mode) => void;
+  // The conversation already holds a document, so there is something to check
+  // even with nothing staged.
+  hasDocuments?: boolean;
 };
 
 // The query input, shared by the landing hero and the conversation composer.
@@ -53,6 +56,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
     attachError,
     mode = "answer",
     onMode,
+    hasDocuments,
   },
   ref,
 ) {
@@ -212,7 +216,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
   );
 
   const modeButton = onMode && (
-    <ModePicker mode={mode} onMode={onMode} canFactCheck={attachments.length > 0} />
+    <ModePicker mode={mode} onMode={onMode} canFactCheck={attachments.length > 0 || !!hasDocuments} />
   );
 
   const attachButton = onAttach && (

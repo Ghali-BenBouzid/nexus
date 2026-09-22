@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 
 Emit = Callable[[AgentEvent], Awaitable[None]]
 
+
 @dataclass
 class Document:
     """An uploaded file, as the supervisor can read it."""
@@ -130,7 +131,7 @@ async def respond(
     middleware: Middleware = _no_middleware,
     emit: Emit = _noop,
     max_iters: int = 8,
-    deep: bool = False,
+    mode: str = "answer",
 ) -> Answer:
     """Answer the latest message, doing whatever work that needs first.
 
@@ -156,7 +157,7 @@ async def respond(
             start_fact_check=start_fact_check,
             on_research=on_research,
         ),
-        system_prompt=_system_prompt(message, documents, outputs, deep=deep),
+        system_prompt=_system_prompt(message, documents, outputs, mode=mode),
         middleware=[
             *middleware("supervisor", emit),
             # Out of rounds means answer with what it has, not fail the turn.
@@ -211,7 +212,7 @@ def _system_prompt(
     documents: list[Document],
     outputs: list[Output],
     *,
-    deep: bool = False,
+    mode: str = "answer",
 ) -> str:
     rendered = render(
         PROMPT,
@@ -222,8 +223,8 @@ def _system_prompt(
     )
     prompt = rendered[0].content or ""
     parts = [prompt, _attachments(documents), _outputs(outputs)]
-    if deep:
-        parts.append(_DEEP_MODE)
+    if mode in _MODES:
+        parts.append(_MODES[mode])
     return "\n\n".join(parts)
 
 
@@ -249,6 +250,27 @@ When it is worth researching but too vague to research well, ask one short \
 question to pin it down before starting: a deep run takes several minutes, and \
 a report built on a guess about what they meant wastes all of them.
 </mode>"""
+
+# The same principle for fact checking: the mode says what the user is after,
+# and the thread is still this agent's to answer.
+_FACTCHECK_MODE = """\
+<mode>
+The user has switched to fact check mode for this message. They want a \
+document checked against the web. Start fact_check on the document they mean: \
+the one sent with this message, or the one they name. When several are \
+attached and the message does not say which, check the ones sent with it, or \
+ask which when none were. Whatever the message says about what to look at \
+goes in as the focus.
+
+When no document is attached, do not start anything: say that a fact check \
+works on an uploaded file and ask them to attach the one to check.
+
+When this message is not asking for a check (a greeting, small talk, a \
+question about Nexus, or a request not to check), answer it as you normally \
+would, and say in a sentence what fact check mode is for.
+</mode>"""
+
+_MODES = {"deep": _DEEP_MODE, "factcheck": _FACTCHECK_MODE}
 
 
 def _attachments(documents: list[Document]) -> str:
