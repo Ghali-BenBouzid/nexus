@@ -460,6 +460,77 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 }
 
 /* ============================================================
+   Quick tour
+   ============================================================ */
+
+.tour { position: fixed; inset: 0; z-index: 90; }
+/* The dim is one huge spread shadow cast by the hole, not a sheet drawn over
+   the page: the lit control keeps its own colour instead of being tinted by an
+   overlay sitting on top of it. With no target the mask itself carries the dim. */
+.tour-mask { position: absolute; inset: 0; background: rgb(0 0 0 / 0.55);
+  animation: tourFade 0.28s var(--ease); }
+.tour-mask.lit { background: transparent; }
+.tour-hole { position: absolute; border-radius: 14px;
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.62), 0 0 0 1px var(--accent) inset;
+  transition: top 0.32s var(--ease), left 0.32s var(--ease),
+              width 0.32s var(--ease), height 0.32s var(--ease); }
+
+/* The card reads as hovering above the page rather than printed on it: a warm
+   rim, a tight contact shadow and a wide soft one, and it arrives with a slight
+   tilt that settles. Flat panels are what make a tour feel like a cookie banner. */
+.tour-card { position: fixed; z-index: 91; width: 320px; max-width: calc(100vw - 24px);
+  padding: 16px 18px 14px; border-radius: var(--r-md);
+  border: 1px solid var(--line-strong); background: var(--surface-solid);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.28), 0 28px 60px -18px rgb(0 0 0 / 0.7),
+              0 0 0 1px rgb(255 255 255 / 0.04) inset;
+  animation: tourRise 0.34s cubic-bezier(0.16, 1, 0.3, 1); }
+@keyframes tourFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tourRise {
+  from { opacity: 0; transform: perspective(700px) rotateX(7deg) translateY(10px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+/* A small notch pointing back at what is lit, so the card is clearly about it. */
+.tour-card::before { content: ""; position: absolute; width: 12px; height: 12px;
+  background: var(--surface-solid); border: 1px solid var(--line-strong);
+  transform: rotate(45deg); }
+.tour-card.arrow-up::before { top: -7px; left: 50%; margin-left: -6px;
+  border-right: none; border-bottom: none; }
+.tour-card.arrow-down::before { bottom: -7px; left: 50%; margin-left: -6px;
+  border-left: none; border-top: none; }
+
+.tour-card-head { display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 8px; }
+.tour-step { font-family: var(--font-mono); font-size: 11px; color: var(--faint);
+  letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
+.tour-skip { border: none; background: none; padding: 0; cursor: pointer;
+  font-family: inherit; font-size: 12px; color: var(--faint); transition: color 0.15s; }
+.tour-skip:hover { color: var(--fg); }
+.tour-card h3 { font-family: var(--font-display); font-size: 16px; font-weight: 600;
+  margin: 0 0 6px; }
+.tour-card p { margin: 0 0 14px; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
+
+.tour-nav { display: flex; align-items: center; gap: 10px; }
+.tour-dots { display: flex; gap: 5px; margin-right: auto; }
+.tour-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--line-strong);
+  transition: background 0.2s, transform 0.2s; }
+.tour-dots i.on { background: var(--accent); transform: scale(1.25); }
+.tour-back { border: none; background: none; padding: 6px 4px; cursor: pointer;
+  font-family: inherit; font-size: 13px; color: var(--faint); transition: color 0.15s; }
+.tour-back:hover { color: var(--fg); }
+.tour-next { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+  padding: 7px 13px; border: none; border-radius: 999px; font-family: inherit;
+  font-size: 13px; font-weight: 600; background: var(--accent); color: var(--accent-ink);
+  transition: transform 0.15s, box-shadow 0.2s; }
+.tour-next:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -8px var(--accent); }
+.tour-next svg { width: 14px; height: 14px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-mask, .tour-card { animation: none; }
+  .tour-hole { transition: none; }
+  .tour-next:hover { transform: none; }
+}
+
+/* ============================================================
    Technical deep dive (/how)
    ============================================================ */
 

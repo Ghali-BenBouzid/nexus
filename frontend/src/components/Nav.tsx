@@ -12,16 +12,17 @@ type NavProps = {
   scrolled: boolean;
   onStart: () => void;
   onHistory?: () => void;
+  onTour: () => void;
 };
 
 // The landing page's nav. The chat has none: its left column carries the brand.
-export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory }: NavProps) {
+export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory, onTour }: NavProps) {
   return (
     <nav className={"nav" + (scrolled ? " scrolled" : "")}>
       <div className="wrap">
         <div className="nav-left">
           {onHistory && (
-            <button className="nav-rail" onClick={onHistory} aria-label={t.nav.recent} title={t.nav.recent}>
+            <button className="nav-rail" data-tour="history" onClick={onHistory} aria-label={t.nav.recent} title={t.nav.recent}>
               {I.sidebar}
             </button>
           )}
@@ -35,7 +36,9 @@ export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory }
         </div>
         <div className="nav-links">
           <a className="nav-link" href="#about">{t.nav.about}</a>
-          <a className="nav-link" href="#how">{t.nav.how}</a>        </div>
+          <a className="nav-link" href="#how">{t.nav.how}</a>
+          {/* Replay, for anyone who skipped it or wants it again. */}
+          <button className="nav-link nav-lang" onClick={onTour}>{t.tour.start}</button>        </div>
         <div className="nav-right">
           <button
             className="nav-link nav-lang"

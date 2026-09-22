@@ -299,7 +299,7 @@ export function Conversation({
           )}
 
           <div className="composer">
-            <div className="composer-inner">
+            <div className="composer-inner" data-tour="composer">
               <PromptBar
                 variant="composer"
                 onSubmit={submit}
@@ -346,6 +346,7 @@ export function Conversation({
           !isMobile && (
             <button
               className="artifact-fab"
+              data-tour="outputs"
               onClick={() => {
                 onOpenOutput(null); // land on the Outputs list, never a stale report
                 onLayout("split");

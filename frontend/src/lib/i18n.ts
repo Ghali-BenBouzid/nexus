@@ -229,6 +229,38 @@ const en = {
     open: "Open",
     dismiss: "Dismiss",
   },
+  tour: {
+    title: "A quick tour of Nexus",
+    start: "Take the tour",
+    skip: "Skip",
+    back: "Back",
+    next: "Next",
+    done: "Start asking",
+    ask: {
+      title: "Ask it anything",
+      body: "Nexus reads the web and answers here, with every claim linked to the page it came from.",
+    },
+    history: {
+      title: "Your chats are kept",
+      body: "Everything you ask stays here, so you can reopen a thread and carry on.",
+    },
+    composer: {
+      title: "The same bar, inside a chat",
+      body: "Follow-ups land in the conversation. It only searches again when it has to.",
+    },
+    deep: {
+      title: "Deep research",
+      body: "Switch modes here. Deep research sends out a team of agents and writes a full cited report. It takes minutes and runs in the background.",
+    },
+    attach: {
+      title: "Fact check a document",
+      body: "Attach a PDF, then pick Fact check. It pulls out what the document claims and tests each one against the web.",
+    },
+    outputs: {
+      title: "Reports land here",
+      body: "Deep research and fact checks arrive in Outputs, and you are told wherever you are when one is ready.",
+    },
+  },
   modes: {
     pick: "Mode",
     off: "Back to a normal answer",
@@ -494,6 +526,38 @@ const fr: Dict = {
     ready: (title: string) => `${title} est prêt.`,
     open: "Ouvrir",
     dismiss: "Ignorer",
+  },
+  tour: {
+    title: "Nexus en bref",
+    start: "Faire le tour",
+    skip: "Passer",
+    back: "Retour",
+    next: "Suivant",
+    done: "Poser une question",
+    ask: {
+      title: "Posez n'importe quelle question",
+      body: "Nexus lit le web et répond ici, chaque affirmation renvoyant à la page dont elle vient.",
+    },
+    history: {
+      title: "Vos conversations sont gardées",
+      body: "Tout ce que vous demandez reste ici : rouvrez un fil et reprenez où vous en étiez.",
+    },
+    composer: {
+      title: "La même barre, dans la conversation",
+      body: "Les questions de suivi arrivent dans le fil. Il ne cherche à nouveau que si c'est nécessaire.",
+    },
+    deep: {
+      title: "Recherche approfondie",
+      body: "Changez de mode ici. La recherche approfondie envoie une équipe d'agents et rédige un rapport complet et sourcé. Elle prend quelques minutes et tourne en arrière-plan.",
+    },
+    attach: {
+      title: "Vérifier un document",
+      body: "Joignez un PDF, puis choisissez Vérification. Nexus en extrait les affirmations et confronte chacune au web.",
+    },
+    outputs: {
+      title: "Les rapports arrivent ici",
+      body: "Recherches approfondies et vérifications atterrissent dans Sorties, et vous êtes prévenu où que vous soyez.",
+    },
   },
   modes: {
     pick: "Mode",

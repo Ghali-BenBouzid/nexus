@@ -49,7 +49,7 @@ export function Hero({
         </h1>
         <p className="hero-sub">{t.hero.sub}</p>
 
-        <div className="prompt-wrap-outer">
+        <div className="prompt-wrap-outer" data-tour="hero-bar">
           <PromptBar
             ref={barRef}
             onSubmit={onSubmit}

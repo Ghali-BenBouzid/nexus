@@ -227,6 +227,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
       />
       <button
         className="cinput-attach"
+        data-tour="attach"
         onClick={() => fileRef.current?.click()}
         aria-label={t.uploads.add}
         title={t.uploads.add}

@@ -8,6 +8,7 @@ import { Hero } from "./components/Hero";
 import { History } from "./components/History";
 import { Nav } from "./components/Nav";
 import { Toast } from "./components/Toast";
+import { Tour } from "./components/Tour";
 import { About, Footer, HowItWorks } from "./components/Sections";
 import {
   cancelQuery,
@@ -40,6 +41,7 @@ import {
 } from "./lib/design";
 import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
 import { isLive, LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
+import { tourSeen } from "./lib/tour";
 import { isUnread, loadSeen, markSeen, saveSeen, type Seen } from "./lib/unread";
 import type { Doc, LayoutMode, Mode, Output, Result, Theme, Turn, View } from "./types";
 
@@ -137,6 +139,10 @@ export default function App() {
   // ever on because the user just said so, never because they said so earlier
   // somewhere else.
   const [mode, setMode] = useState<Mode>("answer");
+  // The quick tour, for someone handed a demo account who would otherwise never
+  // find deep research or fact check. Auto once per browser, replayable from the
+  // nav. It waits a beat so it lands on a settled page, not a half-painted one.
+  const [tour, setTour] = useState(false);
   // Which finished outputs the user has already been told about, so a report is
   // announced once per browser and not again on every reload.
   const announced = useRef<Set<number>>(new Set(storedAnnounced()));
@@ -690,6 +696,23 @@ export default function App() {
 
   const chooseLayout = (m: LayoutMode) => setLayout(m);
 
+  useEffect(() => {
+    if (tourSeen()) return;
+    const id = setTimeout(() => setTour(true), 900);
+    return () => clearTimeout(id);
+  }, []);
+
+  // The tour walks from the landing page into a chat, because half of what it
+  // has to show does not exist on the landing page. It opens the chat itself
+  // rather than asking the user to find it.
+  const tourView = (next: "home" | "chat") => {
+    setView((current) => {
+      if (current === next) return current;
+      navigate(next === "home" ? "/" : "/chat");
+      return next;
+    });
+  };
+
   function goHome() {
     navigate("/");
     setView("home");
@@ -790,6 +813,7 @@ export default function App() {
           scrolled={scrolled}
           onHistory={live ? () => setHistoryOpen(true) : undefined}
           onStart={() => document.querySelector<HTMLTextAreaElement>(".prompt textarea")?.focus()}
+          onTour={() => setTour(true)}
         />
       )}
 
@@ -812,6 +836,8 @@ export default function App() {
           <Footer />
         </Fragment>
       )}
+
+      {tour && <Tour onView={tourView} onFinish={() => setTour(false)} />}
 
       {view === "how" && <DeepDive onBack={goHome} />}
 
