@@ -303,8 +303,10 @@ Nexus is set up to run on Railway (API, worker and Redis), Neon (Postgres) and C
 2. **Railway, Redis:** add a Redis service; its private URL is `REDIS_URL`.
 3. **Railway, API:** deploy from the root `Dockerfile`, which runs the migrations and starts the API. Set the variables from `.env.example`, and give the OpenRouter key a hard credit limit.
 4. **Railway, worker:** a second service from the same repository and `Dockerfile`, with the same variables, the start command `arq app.worker.WorkerSettings` and no public domain.
-5. **Railway, search:** two more services, from the public images `searxng/searxng` and `unclecode/crawl4ai`, neither with a public domain. Mount `deploy/searxng/settings.yml` on the first and set `SEARXNG_SECRET`; give the second room for a browser. Point the API and the worker at their private addresses with `SEARXNG_URL` and `CRAWL4AI_URL`.
-6. **Cloudflare:** build the `frontend` folder with `npm run build`, serve `dist`, and set `VITE_API_BASE_URL` and `VITE_LIVE_MODE=true`. Then set `CORS_ORIGINS` on the API to the frontend's address.
+5. **Railway, SearXNG:** a service from this repository with the root directory `deploy/searxng`, which builds `searxng/searxng` with our settings file inside it. JSON output has no environment variable, so the file has to travel in the image. Set `SEARXNG_SECRET` to any long random string. No public domain.
+6. **Railway, Crawl4AI:** a service from the public image `unclecode/crawl4ai`. Set `CRAWL4AI_API_TOKEN`, because the server asks for a credential once it is reachable from anywhere but localhost. No public domain. Give it about 2GB: it runs a real browser.
+7. **Point the API and the worker at them:** `SEARXNG_URL=http://searxng.railway.internal:8080`, `CRAWL4AI_URL=http://crawl4ai.railway.internal:11235`, and `CRAWL4AI_TOKEN` matching the token above. Both variables have to be set, on both services, or the app falls back to Tavily.
+8. **Cloudflare:** build the `frontend` folder with `npm run build`, serve `dist`, and set `VITE_API_BASE_URL` and `VITE_LIVE_MODE=true`. Then set `CORS_ORIGINS` on the API to the frontend's address.
 
 ## Where things are
 

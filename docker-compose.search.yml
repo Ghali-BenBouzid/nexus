@@ -12,11 +12,12 @@ services:
   # The index. A metasearch proxy: it forwards a query to Google, Bing,
   # DuckDuckGo and friends and normalises the results into one list.
   searxng:
-    image: searxng/searxng:latest
+    # Built, not pulled, because the settings file has to be inside the image:
+    # JSON output has no environment variable, and this is the same image the
+    # deployment uses, so local and production cannot drift.
+    build: ./deploy/searxng
     ports:
       - "8080:8080"
-    volumes:
-      - ./deploy/searxng/settings.yml:/etc/searxng/settings.yml:ro
     environment:
       # Signs SearXNG's own tokens. Any long random string; it is not a secret
       # shared with anyone.
@@ -30,7 +31,14 @@ services:
     image: unclecode/crawl4ai:latest
     ports:
       - "11235:11235"
-    # Chromium needs more shared memory than Docker's 64MB default, or pages
-    # crash on load rather than failing honestly.
+    # Crawl4AI already launches Chromium with --disable-dev-shm-usage, so it
+    # writes to /tmp rather than the 64MB /dev/shm Docker gives a container.
+    # This is headroom for a page heavy enough to need it, not a fix for a
+    # crash: a host that cannot set shm_size (Railway) is fine without it.
     shm_size: 1gb
+    environment:
+      # The server binds 0.0.0.0 so another service can reach it, and Crawl4AI
+      # asks for a credential when it is not just on localhost. The app sends
+      # this as a bearer token (CRAWL4AI_TOKEN on our side).
+      CRAWL4AI_API_TOKEN: ${CRAWL4AI_API_TOKEN:-}
     restart: unless-stopped
