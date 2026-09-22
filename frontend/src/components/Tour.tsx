@@ -12,13 +12,13 @@ const CARD_W = 320;
 
 type Box = { top: number; left: number; width: number; height: number };
 
-function find(target: string | null): Box | null {
+function find(target: string | null, pad = PAD): Box | null {
   if (!target) return null;
   const el = document.querySelector<HTMLElement>(`[data-tour="${target}"]`);
   if (!el) return null;
   const r = el.getBoundingClientRect();
   if (r.width === 0 && r.height === 0) return null; // rendered but hidden
-  return { top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 };
+  return { top: r.top - pad, left: r.left - pad, width: r.width + pad * 2, height: r.height + pad * 2 };
 }
 
 // Where the card goes relative to the lit area. Four placements, then a clamp,
@@ -117,7 +117,7 @@ export function Tour({
   useLayoutEffect(() => {
     if (!step) return;
     let raf = 0;
-    const measure = () => setBox(find(step.target));
+    const measure = () => setBox(find(step.target, step.pad));
     // A frame later: a step that just changed view is pointing at something
     // React has not committed yet.
     raf = requestAnimationFrame(() => {
