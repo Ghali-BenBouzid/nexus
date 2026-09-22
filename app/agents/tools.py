@@ -136,8 +136,10 @@ class SubmitFindingClaim(BaseModel):
 
 
 class SubmitFindingArgs(BaseModel):
+    # Required, not defaulted to empty: a default makes it optional in the
+    # schema the model sees, and after a long read a model will leave it out
+    # and send only found_info=true, throwing away every page it read.
     claims: list[SubmitFindingClaim] = Field(
-        default_factory=list,
         description="the answer broken into individual claims, each with the "
         "source numbers that support it; empty if no relevant info was found",
     )

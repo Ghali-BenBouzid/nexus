@@ -20,10 +20,12 @@ from langchain.agents import create_agent
 from langchain.agents.middleware import AgentMiddleware, ModelCallLimitMiddleware
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import HumanMessage
 from pydantic import ValidationError
 
 from app.agents.language import detect_language
 from app.agents.model import Deadline
+from app.agents.planner import feed_back
 from app.agents.schemas import AgentEvent, Claim, Finding
 from app.agents.sources import Sources
 from app.agents.tools import SearchBackend, SubmitFindingArgs, retrieval_tools
@@ -98,25 +100,43 @@ def _system_prompt(sub_question: str) -> str:
     return messages[0].content or ""
 
 
-async def _forced_finish(model: BaseChatModel, messages: list[Any]) -> Any:
+async def _forced_finish(
+    model: BaseChatModel, messages: list[Any], attempts: int = 2
+) -> Any:
     """Ask once more, with the schema forced, so a researcher that ran out of
-    rounds still reports what it read instead of returning nothing."""
+    rounds still reports what it read instead of returning nothing.
+
+    A submission that is malformed, or says it found something but lists no
+    claims, is fed back to be fixed. Measured on broad sub-questions: after
+    reading a dozen pages the model sent only found_info=true three times in
+    three, and taking that at its word threw the whole read away.
+    """
     bound = model.bind_tools([SubmitFindingArgs], tool_choice="any")
-    reply = await bound.ainvoke(
-        [
-            *messages,
-            (
-                "user",
-                "Submit what you found now with submit_finding, from what you have "
-                "already read. Set found_info=false if you found nothing relevant.",
-            ),
-        ]
-    )
-    for call in reply.tool_calls or []:
-        try:
-            return SubmitFindingArgs(**call["args"])
-        except ValidationError:
-            continue
+    conversation: list[Any] = [
+        *messages,
+        HumanMessage(
+            "Submit what you found now with submit_finding, from what you have "
+            "already read. Set found_info=false if you found nothing relevant."
+        ),
+    ]
+    for _ in range(attempts):
+        reply = await bound.ainvoke(conversation)
+        why = "Call submit_finding with your claims."
+        for call in reply.tool_calls or []:
+            try:
+                submission = SubmitFindingArgs(**call["args"])
+            except ValidationError as exc:
+                why = f"submit_finding arguments were invalid: {exc}. Call it again."
+                continue
+            if submission.found_info and not submission.claims:
+                why = (
+                    "You set found_info=true but listed no claims. Call "
+                    "submit_finding again with what you found as claims, each with "
+                    "the numbers of the sources behind it."
+                )
+                continue
+            return submission
+        feed_back(conversation, reply, why)
     return None
 
 

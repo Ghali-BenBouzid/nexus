@@ -188,6 +188,34 @@ async def test_running_out_of_rounds_still_submits_what_was_read() -> None:
     assert [e.type for e in events] == ["researcher_forced"]
 
 
+async def test_a_forced_finish_that_forgets_its_claims_is_asked_again() -> None:
+    """After a long read the model sent {"found_info": true} and nothing else,
+    three times in three, and every page it read was lost. It is told so and
+    asked again."""
+    forced: list[int] = []
+
+    def respond(messages, tools):
+        if tools != [SUBMIT]:
+            return _search()
+        forced.append(1)
+        if len(forced) == 1:
+            return _submit(found_info=True)
+        return _submit(
+            claims=[{"text": "read", "cited_source_ids": [1]}], found_info=True
+        )
+
+    finding = await research_one(
+        "sub q",
+        model=ScriptedModel(respond=respond),
+        backend=FakeSearchBackend(),
+        max_iters=2,
+    )
+
+    assert len(forced) == 2
+    assert finding.answer == "read"
+    assert cited(finding) == ["http://a"]
+
+
 async def test_out_of_time_is_reported_as_the_reason() -> None:
     events: list[AgentEvent] = []
 
