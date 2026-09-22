@@ -528,7 +528,7 @@ const fr: Dict = {
     done: "Poser une question",
     deep: {
       title: "Recherche approfondie",
-      body: "Nexus envoie une petite équipe d'agents et vous rend un rapport complet et sourcé. Il travaille en arrière-plan, vous pouvez donc passer à autre chose pendant ce temps.",
+      body: "Nexus envoie une petite équipe d'agents et vous rend un rapport complet, avec les sources consultées. Il travaille en arrière-plan, vous pouvez donc passer à autre chose pendant ce temps.",
     },
     attach: {
       title: "Vérifier un document",
@@ -552,7 +552,7 @@ const fr: Dict = {
     },
     deep: {
       label: "Recherche approfondie",
-      note: "Un rapport complet et sourcé. Plusieurs minutes.",
+      note: "Un rapport complet, avec les sources consultées. Plusieurs minutes.",
     },
     factcheck: {
       label: "Vérification",
