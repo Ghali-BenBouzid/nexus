@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
@@ -21,18 +21,35 @@ function find(target: string | null): Box | null {
   return { top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 };
 }
 
-// Where the card goes relative to the lit area: below it when there is room,
-// above it otherwise, and centred on screen when nothing is lit.
-function place(box: Box | null): React.CSSProperties {
-  if (!box) return { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
-  const below = window.innerHeight - (box.top + box.height) > 190;
-  const left = Math.min(
-    Math.max(12, box.left + box.width / 2 - CARD_W / 2),
-    window.innerWidth - CARD_W - 12,
-  );
-  return below
-    ? { top: box.top + box.height + GAP, left }
-    : { bottom: window.innerHeight - box.top + GAP, left };
+// Where the card goes relative to the lit area. Four placements, then a clamp,
+// because two were not enough: a full-height target like the Outputs panel has
+// no room below it and no room above it either, and the old code answered that
+// by placing the card off the top of the screen.
+function place(box: Box | null, cardH: number): React.CSSProperties {
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  if (!box) return { top: Math.max(12, vh / 2 - cardH / 2), left: vw / 2 - CARD_W / 2 };
+
+  let top: number;
+  let left: number;
+  if (box.top + box.height + GAP + cardH < vh) {
+    top = box.top + box.height + GAP;
+    left = box.left + box.width / 2 - CARD_W / 2;
+  } else if (box.top - GAP - cardH > 0) {
+    top = box.top - GAP - cardH;
+    left = box.left + box.width / 2 - CARD_W / 2;
+  } else if (box.left + box.width + GAP + CARD_W < vw) {
+    left = box.left + box.width + GAP;
+    top = box.top + box.height / 2 - cardH / 2;
+  } else {
+    left = box.left - GAP - CARD_W;
+    top = box.top + box.height / 2 - cardH / 2;
+  }
+  // Whatever the placement decided, the card has to be on screen.
+  return {
+    top: Math.min(Math.max(12, top), Math.max(12, vh - 12 - cardH)),
+    left: Math.min(Math.max(12, left), Math.max(12, vw - 12 - CARD_W)),
+  };
 }
 
 // A quick tour of what Nexus does, for someone handed a demo account who would
@@ -52,6 +69,10 @@ export function Tour({
   const [steps] = useState(tourSteps);
   const [i, setI] = useState(0);
   const [box, setBox] = useState<Box | null>(null);
+  // Measured, not assumed: the placement has to know how tall the card actually
+  // is before it can tell whether it fits above or below the target.
+  const [cardH, setCardH] = useState(190);
+  const cardRef = useRef<HTMLDivElement>(null);
   const step: TourStep | undefined = steps[i];
 
   const close = () => {
@@ -82,6 +103,14 @@ export function Tour({
     });
     return () => cancelAnimationFrame(id);
   }, [i, step]);
+
+  // The card's own height, read back after it renders. Two steps with different
+  // amounts of text are different heights, and a placement that guesses will put
+  // one of them half off the screen.
+  useLayoutEffect(() => {
+    const h = cardRef.current?.getBoundingClientRect().height;
+    if (h && Math.abs(h - cardH) > 1) setCardH(h);
+  });
 
   // Measure after the DOM has settled on the new view, and keep measuring while
   // the window moves under it.
@@ -122,7 +151,7 @@ export function Tour({
   }, [i, steps.length]);
 
   if (!step) return null;
-  const style = place(box);
+  const style = place(box, cardH);
   const last = i === steps.length - 1;
 
   return (
@@ -139,7 +168,7 @@ export function Tour({
         )}
       </div>
 
-      <div className="tour-card" style={style}>
+      <div className="tour-card" ref={cardRef} style={style}>
         <div className="tour-card-head">
           <h3>{step.title}</h3>
           <button type="button" className="tour-x" onClick={close} aria-label={t.tour.skip}>
