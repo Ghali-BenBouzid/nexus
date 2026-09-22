@@ -1,6 +1,8 @@
 import { useEffect, type RefObject } from "react";
 
 import { I } from "../icons";
+import { domainOf } from "../lib/favicon";
+import { Favicon } from "./Favicon";
 import type { Source } from "../types";
 
 const stripScheme = (url: string) => url.replace(/^https?:\/\//, "").replace(/^www\./, "");
@@ -53,6 +55,10 @@ export function SourceList({
           >
             <span className="src-n">{n}</span>
             <span className="src-main">
+              <span className="src-where">
+                <Favicon url={source.url} size={14} />
+                {domainOf(source.url)}
+              </span>
               <span className="src-title">{source.title}</span>
               <span className="src-url">{stripScheme(source.url)}{I.ext}</span>
             </span>

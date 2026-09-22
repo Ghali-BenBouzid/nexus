@@ -3,6 +3,8 @@ import { useRef, useState } from "react";
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import type { Result, Status } from "../types";
+import { domainOf } from "../lib/favicon";
+import { Favicon } from "./Favicon";
 import { Markdown } from "./Markdown";
 import { useScrollToCite } from "./Sources";
 
@@ -66,6 +68,10 @@ function Sources({
               >
                 <span className="src-n">{n}</span>
                 <span className="src-main">
+                  <span className="src-where">
+                    <Favicon url={s.url} size={14} />
+                    {domainOf(s.url)}
+                  </span>
                   <span className="src-title">{s.title}</span>
                   <span className="src-url">{stripScheme(s.url)}{I.ext}</span>
                 </span>
@@ -77,6 +83,10 @@ function Sources({
               <a key={"c" + i} className="src-row consulted" href={s.url} target="_blank" rel="noreferrer">
                 <span className="src-n" aria-hidden="true">·</span>
                 <span className="src-main">
+                  <span className="src-where">
+                    <Favicon url={s.url} size={14} />
+                    {domainOf(s.url)}
+                  </span>
                   <span className="src-title">{s.title}</span>
                   <span className="src-url">{stripScheme(s.url)}{I.ext}</span>
                 </span>

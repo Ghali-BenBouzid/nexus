@@ -1,3 +1,4 @@
+import asyncio
 from collections.abc import AsyncGenerator
 
 import pytest
@@ -10,6 +11,7 @@ from sqlalchemy.ext.asyncio import (
 )
 from sqlalchemy.pool import NullPool
 
+from app import jobs
 from app.core.config import settings
 from app.db import session as db_session
 from app.db.base import Base
@@ -59,6 +61,15 @@ async def client(tmp_path) -> AsyncGenerator[AsyncClient]:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
         yield ac
+
+    # A test can leave a background run going: the engine and the deep graph are
+    # torn down below and the job needs both, so it has to be stopped first.
+    # Left alone it does not fail, it hangs, which in CI looks like nothing at
+    # all until the job times out.
+    for task in list(jobs._spawned):
+        task.cancel()
+    if jobs._spawned:
+        await asyncio.gather(*jobs._spawned, return_exceptions=True)
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)  # cleaning up

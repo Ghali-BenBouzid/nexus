@@ -460,6 +460,91 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 }
 
 /* ============================================================
+   Quick tour
+   ============================================================ */
+
+.tour { position: fixed; inset: 0; z-index: 90; }
+.tour-mask { position: absolute; inset: 0; background: rgb(2 2 4 / 0.82);
+  animation: tourFade 0.2s var(--ease); }
+.tour-mask.lit { background: transparent; }
+/* The dim is cast by the hole, not painted over the page: one enormous spread
+   shadow darkens everything outside it, so the lit control keeps its own colour
+   instead of being tinted by a sheet lying on top of it. The rings are what make
+   it read as lifted rather than merely uncovered. */
+.tour-hole { position: absolute; border-radius: 12px;
+  /* A dark page needs a much deeper dim than a light one before the eye reads
+     the hole as lit: at 0.62 over near-black there is barely a difference to
+     see, and only the thin ring says anything is happening. The soft accent
+     halo is what actually pulls the eye, since the dim alone cannot. */
+  box-shadow: 0 0 0 9999px rgb(2 2 4 / 0.82),
+              0 0 0 1px rgb(255 255 255 / 0.3),
+              0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent),
+              0 10px 44px rgb(0 0 0 / 0.6);
+  outline: none;
+  /* A spring, without the library: overshoot and settle. */
+  transition: top 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
+              left 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
+              width 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
+              height 0.42s cubic-bezier(0.22, 1.4, 0.36, 1); }
+html[data-theme="light"] .tour-mask { background: rgb(17 17 20 / 0.48); }
+html[data-theme="light"] .tour-mask.lit { background: transparent; }
+/* A light page already contrasts hard with a dim, so it needs far less of one. */
+html[data-theme="light"] .tour-hole {
+  box-shadow: 0 0 0 9999px rgb(17 17 20 / 0.5),
+              0 0 0 1px rgb(255 255 255 / 0.9),
+              0 0 0 5px color-mix(in srgb, var(--accent) 26%, transparent),
+              0 10px 40px rgb(0 0 0 / 0.22); }
+
+.tour-card { position: fixed; z-index: 91; width: 320px; max-width: calc(100vw - 24px);
+  padding: 15px 16px 13px; border-radius: var(--r-md);
+  border: 1px solid var(--line-strong); background: var(--surface-solid);
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.28), 0 28px 60px -18px rgb(0 0 0 / 0.7);
+  animation: tourRise 0.34s cubic-bezier(0.22, 1.4, 0.36, 1);
+  transition: top 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
+              left 0.42s cubic-bezier(0.22, 1.4, 0.36, 1); }
+@keyframes tourFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes tourRise { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
+
+.tour-card-head { display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; margin-bottom: 6px; }
+.tour-card h3 { font-family: var(--font-display); font-size: 14.5px; font-weight: 600;
+  line-height: 1.35; margin: 0; }
+.tour-x { display: grid; place-items: center; width: 24px; height: 24px; flex: none;
+  margin: -3px -4px 0 0; border: none; background: none; border-radius: 7px;
+  color: var(--faint); cursor: pointer; transition: color 0.15s, background 0.15s; }
+.tour-x:hover { color: var(--fg); background: var(--surface-2); }
+.tour-x svg { width: 15px; height: 15px; }
+.tour-card p { margin: 0 0 15px; font-size: 13px; line-height: 1.6; color: var(--muted); }
+
+.tour-nav { display: flex; align-items: center; gap: 6px; }
+/* The step you are on widens into a bar; the others stay dots. Position without
+   a counter to read. */
+.tour-dots { display: flex; align-items: center; gap: 5px; margin-right: auto; }
+.tour-dots i { width: 6px; height: 6px; border-radius: 999px; background: var(--line-strong);
+  transition: width 0.3s var(--ease), background 0.3s; }
+.tour-dots i.on { width: 17px; background: var(--accent); }
+.tour-skip { border: none; background: none; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+  font-family: inherit; font-size: 12.5px; color: var(--faint); transition: color 0.15s, background 0.15s; }
+.tour-skip:hover { color: var(--fg); background: var(--surface-2); }
+.tour-back { display: inline-flex; align-items: center; gap: 5px; border: none; background: none;
+  padding: 6px 9px; border-radius: 9px; cursor: pointer; font-family: inherit; font-size: 12.5px;
+  font-weight: 500; color: var(--faint); transition: color 0.15s, background 0.15s; }
+.tour-back:hover { color: var(--fg); background: var(--surface-2); }
+.tour-next { display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  padding: 6px 12px; border: none; border-radius: 9px; font-family: inherit;
+  font-size: 12.5px; font-weight: 600; background: var(--accent); color: var(--accent-ink);
+  transition: transform 0.15s, box-shadow 0.2s; }
+.tour-next:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -8px var(--accent); }
+.tour-next:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tour-next svg { width: 13px; height: 13px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .tour-mask, .tour-card { animation: none; }
+  .tour-hole, .tour-card, .tour-dots i { transition: none; }
+  .tour-next:hover { transform: none; }
+}
+
+/* ============================================================
    Technical deep dive (/how)
    ============================================================ */
 
@@ -704,42 +789,72 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .report .doc a.jump:hover { text-decoration: underline; color: var(--accent-text); }
 /* A jumped-to heading lands clear of the panel's top edge, not glued to it. */
 .report .doc h2, .report .doc h3 { scroll-margin-top: 18px; }
+/* A source's mark. The monogram is not a failure state: a fair share of domains
+   have no usable favicon, so the letter is drawn to belong beside the real ones. */
+.fav { flex: none; border-radius: 4px; object-fit: contain; }
+.fav-mono { display: inline-grid; place-items: center; color: #fff;
+  font-family: var(--font-sans); font-weight: 700; line-height: 1; }
+
 /* One claim's sources, as one mark in the prose. A reader checks a source when
    they doubt the sentence it sits on, so the sources live on the sentence and
-   stay folded until then: a paragraph carrying eight bare numbers is noise for
-   everyone who was never going to click one. */
-.cites-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px;
-  vertical-align: super; margin: 0 1px;
-  border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2);
-  font-family: var(--font-mono); font-size: 0.68em; font-weight: 600; line-height: 1.5;
-  color: var(--accent-text); cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
-.cites-chip:hover { border-color: var(--accent); }
-.cites-chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.cites-more { opacity: 0.75; }
+   stay folded until then. The chip names its domain rather than a number: a
+   number says a source exists, a domain says whether it is worth doubting. */
+.cites-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 15em;
+  padding: 1px 7px 1px 5px; margin: 0 2px; vertical-align: baseline;
+  border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2);
+  font-family: var(--font-mono); font-size: 0.74em; font-weight: 500; line-height: 1.7;
+  color: var(--muted); cursor: pointer; text-decoration: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s; }
+.cites-chip:hover { border-color: var(--line-strong); background: var(--surface); color: var(--fg); }
+.cites-chip.active { border-color: var(--accent); color: var(--fg); background: var(--accent-soft); }
+.cites-domain { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cites-more { flex: none; color: var(--faint); }
 
-/* The list, drawn at the top of the page against the viewport: a report body
+/* The panel, drawn at the top of the page against the viewport: a report body
    scrolls and a wide table scrolls sideways, and a panel drawn inside either of
    them would be cut off at its edge. Placed by the chip that opened it. */
 .cites-pop { position: fixed; z-index: 60;
   display: flex; flex-direction: column; width: max-content; max-width: min(340px, 78vw);
-  padding: 6px; border: 1px solid var(--line); border-radius: 12px;
-  background: var(--surface-solid); box-shadow: var(--shadow);
+  border: 1px solid var(--line-strong); border-radius: 14px;
+  background: var(--surface-solid);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2), 0 20px 50px -14px rgb(0 0 0 / 0.55);
   font-family: var(--font-sans); font-size: 13px; line-height: 1.4;
-  text-align: left; white-space: normal; }
-.cites-pop-head { padding: 4px 8px 6px; color: var(--faint); font-size: 11px;
-  font-family: var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; }
-.cites-row { display: flex; gap: 8px; padding: 6px 8px; border-radius: 8px;
-  color: var(--fg); text-decoration: none; }
-.cites-row:hover { background: var(--surface-2); }
-.cites-n { flex: none; min-width: 16px; font-family: var(--font-mono); font-size: 11px;
-  font-weight: 600; color: var(--faint); padding-top: 1px; }
-.cites-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.cites-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis;
+  text-align: left; white-space: normal;
+  animation: citesIn 0.16s var(--ease); }
+@keyframes citesIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* One source at a time, with a pager: four rows make a reader skim, one card
+   makes them read the one they actually doubt. */
+.cites-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.cites-pager { display: flex; align-items: center; gap: 2px; }
+.cites-arrow { display: grid; place-items: center; width: 20px; height: 20px; flex: none;
+  border: none; background: none; border-radius: 6px; color: var(--faint); cursor: pointer;
+  transition: color 0.15s, background 0.15s; }
+.cites-arrow:hover { color: var(--fg); background: var(--surface-2); }
+.cites-arrow svg { width: 13px; height: 13px; }
+.cites-count { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums; min-width: 2.4em; text-align: center; }
+.cites-pop-label { display: inline-flex; align-items: center; gap: 7px; margin-left: auto;
+  font-size: 12px; color: var(--faint); }
+/* Overlapped, so several sources read as a stack rather than a row of icons. */
+.cites-stack { display: inline-flex; }
+.cites-stack .fav { margin-left: -5px; border: 1.5px solid var(--surface-solid); border-radius: 5px; }
+.cites-stack .fav:first-child { margin-left: 0; }
+
+.cites-card { display: flex; flex-direction: column; gap: 5px; padding: 11px 12px 12px;
+  color: var(--fg); text-decoration: none; border-radius: 0 0 13px 13px; transition: background 0.15s; }
+.cites-card:hover { background: var(--surface-2); }
+.cites-card-top { display: flex; align-items: center; gap: 7px; min-width: 0;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+.cites-card-top .cites-domain { font-size: 11.5px; }
+.cites-title { font-size: 13.5px; font-weight: 600; line-height: 1.4; overflow: hidden;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .cites-url { display: flex; align-items: center; gap: 4px; color: var(--faint); font-size: 11.5px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cites-url svg { width: 10px; height: 10px; flex: none; }
-.cites-row.missing { color: var(--faint); font-style: italic; }
+.cites-card.missing { color: var(--faint); font-style: italic; }
+@media (prefers-reduced-motion: reduce) { .cites-pop { animation: none; } }
 
 .report-foot { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--line); display: flex; gap: 12px; flex-wrap: wrap; }
 
@@ -773,11 +888,6 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 /* Files picked in a bar, waiting to go with the next message. */
 .staged { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 .staged-error { width: 100%; font-size: 12.5px; color: var(--bad); }
-/* With something attached, a bar stops being a single line: the tiles take the
-   top and the input drops below them, so the pill squares off. */
-.cinput.with-staged { flex-direction: column; align-items: stretch; gap: 10px;
-  border-radius: 22px; padding: 10px 8px 6px 12px; }
-.cinput-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
 .prompt.with-staged { flex-direction: column; align-items: stretch; gap: 10px;
   border-radius: var(--r-lg); padding: 12px 10px 10px 12px; }
 .prompt-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
@@ -787,37 +897,76 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .cinput-attach svg { width: 17px; height: 17px; }
 /* The hero's bar is taller, so its attach button matches its send button. */
 .prompt .cinput-attach { width: 38px; height: 38px; }
+.prompt .mode-pill { height: 36px; font-size: 13.5px; }
 .prompt .cinput-attach svg { width: 19px; height: 19px; }
 
 /* Deep research mode. The button is the paperclip's twin so the two read as one
    row of controls; only its lit state tells them apart. */
-.cinput-mode { display: grid; place-items: center; width: 32px; height: 32px; flex: none;
-  border: none; background: none; border-radius: 9px; color: var(--faint); cursor: pointer;
-  transition: background 0.15s, color 0.15s; }
-.cinput-mode:hover { background: var(--surface-2); color: var(--fg); }
-.cinput-mode svg { width: 17px; height: 17px; }
-.cinput-mode.on { background: var(--accent-soft); color: var(--accent-text); }
+/* The mode control, on the left with attach rather than among the send actions.
+   A labelled pill says a mode exists even while it is off, which an icon in the
+   corner never does: that was the whole problem with the old lit glyph. */
+.cinput-left { display: flex; align-items: center; gap: 6px; flex: none; }
+.mode-pick { position: relative; }
+.mode-pill { display: inline-flex; align-items: center; gap: 6px; height: 32px;
+  padding: 0 10px 0 8px; border-radius: 999px; cursor: pointer; font-family: inherit;
+  font-size: 13px; color: var(--muted); background: transparent;
+  border: 1px solid var(--line); transition: background 0.15s, color 0.15s, border-color 0.15s; }
+.mode-pill:hover { color: var(--fg); background: var(--surface-2); border-color: var(--line-strong); }
+.mode-pill.on { color: var(--fg); background: transparent; border-color: var(--accent); }
+.mode-pill.on .mode-pill-ic { color: var(--accent-text); }
+.mode-pill.on:hover { background: var(--surface-2); }
+.mode-pill-ic { display: grid; place-items: center; flex: none; }
+.mode-pill-ic svg { width: 15px; height: 15px; }
+.mode-pill-label { white-space: nowrap; }
+.mode-pill-chev { display: grid; place-items: center; flex: none; opacity: 0.7; }
+.mode-pill-chev svg { width: 12px; height: 12px; }
+/* Narrow bars keep the icon and drop the word; the chip above still names it. */
+@media (max-width: 560px) { .mode-pill-label { display: none; } }
+
+.mode-menu { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 30;
+  width: max-content; min-width: 250px; max-width: min(320px, 80vw); padding: 5px;
+  display: flex; flex-direction: column; gap: 2px;
+  border: 1px solid var(--line-strong); border-radius: 14px; background: var(--surface-solid);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2), 0 20px 50px -14px rgb(0 0 0 / 0.55);
+  animation: modeIn 0.16s var(--ease); }
+@keyframes modeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.mode-item { display: flex; align-items: flex-start; gap: 10px; padding: 9px 10px;
+  border: none; background: none; border-radius: 10px; cursor: pointer; text-align: left;
+  font-family: inherit; color: var(--fg); transition: background 0.15s; }
+.mode-item:hover:not(.blocked) { background: var(--surface-2); }
+.mode-item.on { background: var(--surface-2); }
+.mode-item.blocked { cursor: default; opacity: 0.5; }
+.mode-item-ic { display: grid; place-items: center; flex: none; margin-top: 1px; color: var(--muted); }
+.mode-item.on .mode-item-ic { color: var(--accent-text); }
+.mode-item-ic svg { width: 16px; height: 16px; }
+.mode-item-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.mode-item-label { font-size: 13.5px; font-weight: 600; }
+.mode-item-note { font-size: 11.5px; line-height: 1.4; color: var(--faint); }
+.mode-item-tick { display: grid; place-items: center; flex: none; margin-top: 2px; color: var(--accent-text); }
+.mode-item-tick svg { width: 14px; height: 14px; }
+@media (prefers-reduced-motion: reduce) { .mode-menu { animation: none; } }
 
 /* What the bar carries above the text: the mode it will send in, and the files
    it will send with. Stacked, because each is a full line of its own. */
 .cinput-top { display: flex; flex-direction: column; gap: 8px; }
-/* Announced in words, because the lit icon alone is not enough warning for a
-   mode that costs minutes and a real share of the budget. */
-.mode-chip { display: flex; align-items: center; gap: 8px; align-self: flex-start;
-  max-width: 100%; padding: 5px 5px 5px 11px; border-radius: 999px;
-  background: var(--accent-soft); color: var(--accent-text); font-size: 12.5px; }
+/* The mode, as a line of text above what you are writing and aligned with it.
+   Not a pill: a pill reads as a thing clipped to the message, when this is a
+   statement about what sending is going to do. */
+.mode-chip { display: flex; align-items: center; gap: 7px; align-self: flex-start;
+  max-width: 100%; padding: 2px 4px 0; color: var(--muted); font-size: 13px;
+  font-weight: 600; }
+.mode-chip-icon { color: var(--accent-text); }
 .mode-chip-icon { display: grid; place-items: center; flex: none; }
-.mode-chip-icon svg { width: 14px; height: 14px; }
-.mode-chip-label { font-weight: 600; white-space: nowrap; }
-.mode-chip-note { color: var(--muted); min-width: 0; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; }
-.mode-chip-x { display: grid; place-items: center; width: 20px; height: 20px; flex: none;
-  border: none; background: none; border-radius: 50%; color: inherit; cursor: pointer; opacity: 0.6; }
-.mode-chip-x:hover { opacity: 1; background: var(--surface-2); }
+.mode-chip-icon svg { width: 15px; height: 15px; }
+.mode-chip-label { white-space: nowrap; }
+.mode-chip-x { display: grid; place-items: center; width: 18px; height: 18px; flex: none;
+  border: none; background: none; border-radius: 50%; color: var(--faint); cursor: pointer;
+  opacity: 0; transition: opacity 0.15s, color 0.15s, background 0.15s; }
+/* Quiet until reached for: the way out of a mode should not compete with the
+   statement that you are in one. */
+.cinput:hover .mode-chip-x, .mode-chip-x:focus-visible { opacity: 1; }
+.mode-chip-x:hover { color: var(--fg); background: var(--surface-2); }
 .mode-chip-x svg { width: 12px; height: 12px; }
-/* The note is the first thing to go when the bar is narrow: the label and the
-   way out of the mode matter more than the warning's second half. */
-@media (max-width: 560px) { .mode-chip-note { display: none; } }
 
 /* The same files, above the bubble they were sent with. */
 .bubble-files { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 82%; }
@@ -904,6 +1053,35 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 
 /* shell: chat column (scrolls) + optional report panel (scrolls) */
 .chat-main { flex: 1; min-height: 0; display: flex; position: relative; }
+/* The slim columns float over the page instead of pushing the thread sideways.
+   Opening "Recent" should not shove the conversation you are reading, and the
+   room is there: the thread is a fixed 680px column plus 24px of gutter either
+   side, so at 1400px and up there is 336px of empty page on each side of it,
+   more than either slim panel needs. Below that the page is genuinely too
+   narrow and they go back to taking their space.
+
+   A report is the exception, and the one the user asked to keep: it is wide,
+   resizable and meant to be read beside the thread, so it pushes. When it is
+   open the left column stops floating too, because the thread has moved off
+   centre and "Recent" would now be sitting on top of it. */
+@media (min-width: 1400px) {
+  .chat-main[data-panel="none"] > .chat-history,
+  .chat-main[data-panel="list"] > .chat-history {
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 6;
+  }
+  .chat-main[data-panel="list"] > .artifact-panel--list {
+    position: absolute; right: 0; top: 0; bottom: 0; z-index: 6;
+  }
+  /* In flow they had nothing behind them and could be half transparent. Floating
+     over a scrolling thread they cannot: the answer would read straight through
+     the panel. Glass, not a flat block, so the page still shows as depth. */
+  .chat-main[data-panel="none"] > .chat-history,
+  .chat-main[data-panel="list"] > .chat-history,
+  .chat-main[data-panel="list"] > .artifact-panel--list {
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(16px) saturate(1.3);
+  }
+}
 /* the conversation column: thread (scrolls) stacked over its own composer */
 .chat-center { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .chat-scroll { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; }
@@ -1016,15 +1194,18 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .hero .composer-note { margin: 14px 0 6px; }
 .composer-note { margin: 8px 0 0; text-align: center; font-family: var(--font-mono); font-size: 11px;
   color: var(--faint); letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
-.cinput { display: flex; flex-direction: row; align-items: center; gap: 8px; border-radius: 999px; background: var(--panel);
+.cinput { display: flex; flex-direction: column; gap: 6px; border-radius: 22px; background: var(--panel);
   border: 1px solid var(--line); box-shadow: var(--shadow); backdrop-filter: blur(12px); cursor: text;
-  padding: 6px 8px 6px 16px; transition: border-color 0.2s, box-shadow 0.2s; }
+  padding: 12px 12px 10px; transition: border-color 0.2s, box-shadow 0.2s; }
+.cinput.deep { border-color: var(--line-strong); }
 /* No focus highlight on the chat composer: the hero bar is the only one that
    lights up, to pull the eye toward it. The composer keeps its resting border. */
-.cinput-ta { flex: 1; min-width: 0; resize: none; background: transparent; border: 0; outline: none; font-family: inherit;
-  font-size: 14.5px; line-height: 1.6; color: var(--fg); padding: 7px 16px; max-height: 160px; text-align: left; }
-.cinput-ta::placeholder { color: var(--faint); text-align: center; }
-.cinput-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0; flex: none; }
+.cinput-row { display: flex; align-items: center; gap: 8px; }
+.cinput-left { display: flex; align-items: center; gap: 6px; flex: none; margin-right: auto; }
+.cinput-ta { width: 100%; min-width: 0; resize: none; background: transparent; border: 0; outline: none; font-family: inherit;
+  font-size: 14.5px; line-height: 1.6; color: var(--fg); padding: 4px 4px 2px; max-height: 160px; text-align: left; }
+.cinput-ta::placeholder { color: var(--faint); }
+.cinput-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .cinput-send { width: 34px; height: 34px; border-radius: 50%; border: none; flex: none; display: grid; place-items: center;
   cursor: pointer; background: var(--surface-2); color: var(--faint); transition: background 0.15s, color 0.15s, transform 0.15s; }
 .cinput-send svg { width: 16px; height: 16px; }
@@ -1085,7 +1266,12 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .src-n { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent-text);
   font-variant-numeric: tabular-nums; }
 .src-row.consulted .src-n { color: var(--faint); font-weight: 400; }
-.src-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.src-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+/* Where a source comes from, above what it is called: the domain is what a
+   reader weighs first, and the title only matters once they trust the domain. */
+.src-where { display: flex; align-items: center; gap: 6px; min-width: 0;
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .src-title { font-size: 13.5px; font-weight: 500; color: var(--fg); line-height: 1.4;
   transition: color 0.15s;
   overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
