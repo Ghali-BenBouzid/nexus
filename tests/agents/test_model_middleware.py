@@ -3,6 +3,9 @@ behaviour the old provider had, because losing any of them quietly is how a demo
 account gets billed wrong or a stopped run keeps spending.
 """
 
+import logging
+from types import SimpleNamespace
+
 import httpx
 import pytest
 from langchain_core.messages import AIMessage, HumanMessage
@@ -224,3 +227,28 @@ async def test_the_feed_shows_thinking_and_tool_calls_tagged_by_agent() -> None:
 
     assert events[0].type == "thinking"
     assert events[0].data == {"agent": "researcher", "index": 2}
+
+
+async def test_a_failing_tool_is_logged_with_its_cause_and_still_raises(caplog) -> None:
+    """Every tool of every agent passes through here, so it is the one place
+    that can say why one failed. The event the user sees carries a summary; the
+    cause carries the stack and sometimes a host, so it goes only to the log."""
+    events: list[AgentEvent] = []
+
+    async def emit(event: AgentEvent) -> None:
+        events.append(event)
+
+    async def explode(_request):
+        raise RuntimeError("Name or service not known")
+
+    middleware = agent_model.Progress(emit, agent="supervisor")
+    request = SimpleNamespace(tool_call={"name": "research", "args": {"q": "x"}})
+
+    with caplog.at_level(logging.WARNING, logger="app.agents.model"):
+        with pytest.raises(RuntimeError):
+            await middleware.awrap_tool_call(request, explode)
+
+    assert "tool research failed for supervisor" in caplog.text
+    # The stack is what makes a deployment diagnosable at all.
+    assert "Name or service not known" in caplog.text
+    assert [event.type for event in events] == ["tool_call", "tool_error"]

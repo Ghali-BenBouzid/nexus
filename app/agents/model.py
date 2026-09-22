@@ -273,6 +273,14 @@ class Progress(AgentMiddleware):
         try:
             return await handler(request)
         except Exception as exc:
+            # Every tool of every agent passes through here, so this is the one
+            # place that sees them all: research, the document and report
+            # readers, the runs the supervisor starts. The event carries a
+            # summary for the user; the cause carries the stack, a status code
+            # and sometimes a host, so it goes to the log and nowhere else.
+            # (web_search and fetch_page never reach this: they answer the
+            # agent with their failure instead of raising, and log their own.)
+            logger.warning("tool %s failed for %s", name, self.agent, exc_info=exc)
             await self.emit(
                 AgentEvent(
                     type="tool_error",
