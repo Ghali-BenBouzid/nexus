@@ -395,6 +395,22 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Files staged in a chat belong to that chat's composer. Leaving the chat, by
+  // whatever route (the exit button, the logo, the browser's back button),
+  // leaves them behind rather than carrying them into the landing page's bar,
+  // where they sat looking attached to a question nobody had asked. Watching
+  // the view instead of each exit is what keeps a future exit from missing it.
+  // The other direction is untouched: a file staged on the landing page is
+  // meant to go with the first message into the chat it creates.
+  const lastView = useRef(view);
+  useEffect(() => {
+    if (lastView.current === "chat" && view !== "chat") {
+      setStaged([]);
+      setUploadError(null);
+    }
+    lastView.current = view;
+  }, [view]);
+
   // Update only one turn; turns run independently and never clobber each other.
   const patchTurn = (id: number, fn: (t: Turn) => Turn) =>
     setTurns((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));

@@ -104,7 +104,8 @@ async def create(
     # An empty prompt creates the conversation and nothing else: what a file
     # attached before the first message needs, since it has to be uploaded into
     # a conversation before the message that carries it can be sent.
-    if payload.prompt.strip():
+    # A file is a message on its own, so files with no text still send.
+    if payload.prompt.strip() or payload.document_ids:
         await service.submit_message(
             db,
             conversation,
@@ -157,6 +158,10 @@ async def add_message(
     )
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    # Text, files or both, but never neither: the client should not send one,
+    # and an empty turn would hand the supervisor nothing to answer.
+    if not payload.content.strip() and not payload.document_ids:
+        raise HTTPException(status_code=422, detail="A message needs text or a file.")
     await ensure_budget(db, current_user)
     await service.submit_message(
         db,

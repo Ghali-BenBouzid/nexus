@@ -100,11 +100,16 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
     caretToEnd();
   };
 
+  // A file is a message on its own. Someone who only wants a document checked
+  // or read has nothing to add, and making them type a word to unlock the send
+  // button turns "the message is optional" into a lie.
+  const canSend = val.trim().length > 0 || attachments.length > 0;
+
   const fire = (prompt: string) => {
     if (running) return; // don't start a second run on top of the current one
     const p = prompt.trim();
-    if (!p) return;
-    remember(p);
+    if (!p && attachments.length === 0) return;
+    if (p) remember(p); // nothing typed is nothing to recall with the arrows
     setHistIdx(null);
     draftRef.current = "";
     setVal("");
@@ -153,7 +158,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
     },
   }));
 
-  const active = !!running || val.trim().length > 0;
+  const active = !!running || canSend;
 
   // In deep mode the bar says what the report should cover, since that is what
   // sending it will produce. While a run is in flight the caller's placeholder
@@ -264,7 +269,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
             <button
               className={"cinput-send" + (active ? " active" : "") + (running ? " stop" : "")}
               onClick={() => (running ? onStop?.() : fire(val))}
-              disabled={!running && !val.trim()}
+              disabled={!running && !canSend}
               aria-label={running ? "Stop generating" : "Send"}
               title={running ? "Stop generating" : "Send"}
             >
@@ -299,7 +304,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
             {I.stop}
           </button>
         ) : (
-          <button className="prompt-go" onClick={() => fire(val)} disabled={!val.trim()} aria-label="Start research">
+          <button className="prompt-go" onClick={() => fire(val)} disabled={!canSend} aria-label="Start research">
             {I.arrowUp}
           </button>
         )}

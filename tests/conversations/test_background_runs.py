@@ -380,3 +380,69 @@ async def test_a_deep_run_from_deep_mode_is_stoppable(
         f"/research/query/{artifact['id']}", headers=auth_headers
     )
     assert detail.json()["stopped"] is True
+
+
+class _Hears(ScriptedModel):
+    """A supervisor that remembers the last thing the user said to it."""
+
+    heard: str = ""
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        self.heard = str(messages[-1].content)
+        return ChatResult(generations=[ChatGeneration(message=says("Got the file."))])
+
+
+async def test_a_file_is_a_message_on_its_own(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch, _bucket
+) -> None:
+    """Someone who only wants a document read has nothing to type, and making
+    them type a word to send it made "the message is optional" untrue."""
+    model = _Hears()
+    _use(lambda: model, monkeypatch=monkeypatch)
+    conversation = await client.post(
+        "/conversations", headers=auth_headers, json={"prompt": ""}
+    )
+    conversation_id = conversation.json()["id"]
+    uploaded = await client.post(
+        f"/conversations/{conversation_id}/documents",
+        files={"file": ("claims.pdf", _pdf(pages=1), "application/pdf")},
+        headers=auth_headers,
+    )
+
+    sent = await client.post(
+        f"/conversations/{conversation_id}/messages",
+        headers=auth_headers,
+        json={"content": "", "document_ids": [uploaded.json()["id"]]},
+    )
+    assert sent.status_code == 200, sent.text
+    await drain()
+
+    detail = (
+        await client.get(f"/conversations/{conversation_id}", headers=auth_headers)
+    ).json()
+    # The thread shows the file and nothing else: no invented words from the user.
+    user, answer = detail["messages"]
+    assert user["content"] == ""
+    assert [d["filename"] for d in user["documents"]] == ["claims.pdf"]
+    # The supervisor is told plainly what arrived, not handed an empty turn.
+    assert "claims.pdf" in model.heard
+    assert answer["query"]["reply"] == "Got the file."
+    # A chat is named after what it is about.
+    assert detail["title"] == "claims.pdf"
+
+
+async def test_a_message_with_neither_text_nor_a_file_is_refused(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    _use(lambda: _Hears(), monkeypatch=monkeypatch)
+    conversation = await client.post(
+        "/conversations", headers=auth_headers, json={"prompt": ""}
+    )
+
+    sent = await client.post(
+        f"/conversations/{conversation.json()['id']}/messages",
+        headers=auth_headers,
+        json={"content": "   "},
+    )
+
+    assert sent.status_code == 422

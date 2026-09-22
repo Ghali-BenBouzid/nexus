@@ -107,12 +107,28 @@ async def submit_message(
         message_id=user_message.id,
         user_id=conversation.user_id,
     )
+    # What the supervisor is handed as the message. Usually what the user
+    # typed; for a file sent on its own, a plain note of what arrived, so the
+    # supervisor decides what the file is for rather than facing an empty turn.
+    # The stored message stays empty, and the thread shows the file alone.
+    prompt, title = content, content
+    if not content.strip():
+        names = ", ".join(
+            d.filename
+            for d in await documents_repository.list_for_conversation(
+                db, conversation.id
+            )
+            if d.message_id == user_message.id
+        )
+        prompt = f"(Sent without a message: {names})"
+        # The sidebar names a chat after what it is about, which is the file.
+        title = names
     if not conversation.title:
-        await repository.set_title(db, conversation.id, title_for(content))
+        await repository.set_title(db, conversation.id, title_for(title))
     query = await research_repository.create_pending_query(
         db=db,
         user_id=conversation.user_id,
-        prompt=content,
+        prompt=prompt,
         kind=QueryKind.chat,
         conversation_id=conversation.id,
     )
