@@ -229,18 +229,35 @@ const en = {
     open: "Open",
     dismiss: "Dismiss",
   },
+  modes: {
+    pick: "Mode",
+    off: "Back to a normal answer",
+    answer: {
+      label: "Answer",
+      note: "Searches if it needs to. Seconds.",
+    },
+    deep: {
+      label: "Deep research",
+      note: "A full cited report. Minutes.",
+    },
+    factcheck: {
+      label: "Fact check",
+      note: "Tests a document's claims against the web.",
+      needsFile: "Attach a document first",
+      started: (files: string) => `Checking ${files}. The report lands in Outputs when it is done.`,
+    },
+  },
+  // What the bar asks for once a mode changes what sending means.
+  modePlaceholder: {
+    answer: "",
+    deep: "What should the report cover?",
+    factcheck: "Anything to focus the check on? Optional.",
+  } as Record<string, string>,
   cites: {
     label: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
     missing: "This source is no longer listed.",
     prev: "Previous source",
     next: "Next source",
-  },
-  deepMode: {
-    label: "Deep research",
-    hint: "Search the web in depth and write a cited report. Takes several minutes.",
-    off: "Turn off deep research",
-    note: "A few minutes, and a large share of the demo budget.",
-    placeholder: "What should the report cover?",
   },
   history: {
     recent: "Recent",
@@ -478,18 +495,34 @@ const fr: Dict = {
     open: "Ouvrir",
     dismiss: "Ignorer",
   },
+  modes: {
+    pick: "Mode",
+    off: "Revenir à une réponse normale",
+    answer: {
+      label: "Réponse",
+      note: "Cherche si besoin. Quelques secondes.",
+    },
+    deep: {
+      label: "Recherche approfondie",
+      note: "Un rapport complet et sourcé. Plusieurs minutes.",
+    },
+    factcheck: {
+      label: "Vérification",
+      note: "Confronte au web ce qu'affirme un document.",
+      needsFile: "Joignez d'abord un document",
+      started: (files: string) => `Vérification de ${files}. Le rapport arrivera dans Sorties une fois terminé.`,
+    },
+  },
+  modePlaceholder: {
+    answer: "",
+    deep: "Que doit couvrir le rapport ?",
+    factcheck: "Un point sur lequel concentrer la vérification ? Facultatif.",
+  } as Record<string, string>,
   cites: {
     label: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
     missing: "Cette source n'est plus répertoriée.",
     prev: "Source précédente",
     next: "Source suivante",
-  },
-  deepMode: {
-    label: "Recherche approfondie",
-    hint: "Fouille le web en profondeur et rédige un rapport sourcé. Prend plusieurs minutes.",
-    off: "Désactiver la recherche approfondie",
-    note: "Quelques minutes, et une bonne part du budget de démo.",
-    placeholder: "Sur quoi doit porter le rapport ?",
   },
   history: {
     recent: "Récent",

@@ -41,7 +41,7 @@ import {
 import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
 import { isLive, LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
 import { isUnread, loadSeen, markSeen, saveSeen, type Seen } from "./lib/unread";
-import type { Doc, LayoutMode, Output, Result, Theme, Turn, View } from "./types";
+import type { Doc, LayoutMode, Mode, Output, Result, Theme, Turn, View } from "./types";
 
 // Which outputs this browser has already announced. A per-viewer convenience,
 // so it lives in localStorage and a failure to read it is not worth a thought.
@@ -136,7 +136,7 @@ export default function App() {
   // the way to any other one: it spends minutes and real money, so it is only
   // ever on because the user just said so, never because they said so earlier
   // somewhere else.
-  const [deep, setDeep] = useState(false);
+  const [mode, setMode] = useState<Mode>("answer");
   // Which finished outputs the user has already been told about, so a report is
   // announced once per browser and not again on every reload.
   const announced = useRef<Set<number>>(new Set(storedAnnounced()));
@@ -505,7 +505,10 @@ export default function App() {
     // A fresh submission from the hero starts a new chat, and the hero has no
     // mode control: whatever the last chat was switched into does not follow
     // the user here, any more than it follows them into an existing one.
-    const deepRun = deep && !fresh && isLive();
+    const deepRun = mode === "deep" && !fresh && isLive();
+    // Fact check is not a turn: it reads a file and writes its own report. The
+    // message is only what to focus on, so the send path forks here.
+    const checking = mode === "factcheck" && !fresh && isLive() && staged.length > 0;
     const turn: Turn = {
       id,
       query: prompt,
@@ -525,7 +528,7 @@ export default function App() {
       setFocusedId(null);
       setLayout("thread");
       setTurns([turn]);
-      setDeep(false);
+      setMode("answer");
     } else {
       setTurns((prev) => [...prev, turn]);
     }
@@ -544,6 +547,19 @@ export default function App() {
         }
         attached = await uploadStaged(conversationId);
         patchTurn(id, (t) => ({ ...t, attachments: attached }));
+      }
+      if (checking) {
+        // The report is the output; the thread just records that it started, so
+        // the turn resolves immediately rather than sitting on a spinner while
+        // a background run it does not own works for minutes.
+        for (const doc of attached) await startFactCheck(doc);
+        applyOutcome(id, {
+          reply: t.modes.factcheck.started(attached.map((d) => d.filename).join(", ")),
+          result: { report: "", sources: [], consulted: [], gaps: [] },
+          outcome: "ok",
+        });
+        setMode("answer");
+        return;
       }
       const res = await runResearch(
         prompt,
@@ -658,10 +674,14 @@ export default function App() {
 
   // Fact-check a document from the panel: the same sub-agent the supervisor
   // calls, started from the file itself. It lands in Outputs like any other run.
+  async function startFactCheck(doc: Doc) {
+    const output = await factCheckDocument(doc.id);
+    setOutputs((current) => [output, ...current]);
+  }
+
   async function factCheck(doc: Doc) {
     try {
-      const output = await factCheckDocument(doc.id);
-      setOutputs((current) => [output, ...current]);
+      await startFactCheck(doc);
       setLayout("split");
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : t.uploads.failed);
@@ -705,7 +725,7 @@ export default function App() {
     setActiveConversation(conv.id);
     setDocuments(conv.documents);
     setStaged([]);
-    setDeep(false); // the mode was switched on for another chat, not this one
+    setMode("answer"); // the mode was switched on for another chat, not this one
     setUploadError(null);
     refreshOutputs();
     setFocusedId(null);
@@ -720,7 +740,7 @@ export default function App() {
     setTurns([]);
     setDocuments([]); // documents belong to a conversation, not to the account
     setStaged([]);
-    setDeep(false); // a new chat starts in the ordinary mode, like every other
+    setMode("answer"); // a new chat starts in the ordinary mode, like every other
     setUploadError(null);
     setFocusedId(null);
     setOpenOutputId(null);
@@ -806,10 +826,10 @@ export default function App() {
           onSubmit={startResearch}
           onStop={stopResearch}
           onExit={goHome}
-          deep={deep}
+          mode={mode}
           // Live only: a demo build has no deep run to start, and offering a
           // mode that cannot do anything is worse than not offering it.
-          onDeep={live ? setDeep : undefined}
+          onMode={live ? setMode : undefined}
           outputs={conversationOutputs}
           documents={documents}
           openOutputId={openOutputId}

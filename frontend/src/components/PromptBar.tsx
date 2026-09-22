@@ -3,6 +3,8 @@ import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "re
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import { useQueryHistory } from "../lib/history";
+import type { Mode } from "../types";
+import { ModePicker } from "./ModePicker";
 import { FileTile } from "./FileTile";
 
 type PromptBarProps = {
@@ -24,10 +26,10 @@ type PromptBarProps = {
   // submissions are blocked until the current run is stopped or finishes.
   running?: boolean;
   onStop?: () => void;
-  // Deep research mode. Leaving `onDeep` out hides the control entirely, which
-  // is what the demo build does: there is no deep run to start without a key.
-  deep?: boolean;
-  onDeep?: (next: boolean) => void;
+  // What sending does. Leaving `onMode` out hides the control entirely, which is
+  // what the demo build does: there is no background run to start without a key.
+  mode?: Mode;
+  onMode?: (next: Mode) => void;
 };
 
 // The query input, shared by the landing hero and the conversation composer.
@@ -49,8 +51,8 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
     onAttach,
     onUnstage,
     attachError,
-    deep,
-    onDeep,
+    mode = "answer",
+    onMode,
   },
   ref,
 ) {
@@ -156,7 +158,9 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
   // In deep mode the bar says what the report should cover, since that is what
   // sending it will produce. While a run is in flight the caller's placeholder
   // wins: what is happening now matters more than what the mode is.
-  const hint = deep && !running ? t.deepMode.placeholder : (placeholder ?? t.hero.placeholder);
+  const hint = mode !== "answer" && !running
+    ? t.modePlaceholder[mode]
+    : (placeholder ?? t.hero.placeholder);
 
   const files = onAttach && (attachments.length > 0 || attachError) && (
     <div className="staged">
@@ -172,20 +176,22 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
     </div>
   );
 
-  // While the mode is on it says so in words, above the input: it changes what
-  // sending does (minutes and a report, not seconds and an answer), and the lit
-  // icon alone is not enough warning for something that spends real money.
-  const modeChip = deep && onDeep && (
+  // While a mode is on it says so in words, above the input: it changes what
+  // sending does (minutes and a report, not seconds and an answer), and a lit
+  // pill alone is not enough warning for something that spends real money.
+  const modeChip = mode !== "answer" && onMode && (
     <div className="mode-chip">
-      <span className="mode-chip-icon" aria-hidden="true">{I.layers}</span>
-      <span className="mode-chip-label">{t.deepMode.label}</span>
-      <span className="mode-chip-note">{t.deepMode.note}</span>
+      <span className="mode-chip-icon" aria-hidden="true">
+        {mode === "deep" ? I.telescope : I.shield}
+      </span>
+      <span className="mode-chip-label">{t.modes[mode].label}</span>
+      <span className="mode-chip-note">{t.modes[mode].note}</span>
       <button
         type="button"
         className="mode-chip-x"
-        onClick={() => onDeep(false)}
-        aria-label={t.deepMode.off}
-        title={t.deepMode.off}
+        onClick={() => onMode("answer")}
+        aria-label={t.modes.off}
+        title={t.modes.off}
       >
         {I.close}
       </button>
@@ -201,20 +207,8 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
     </div>
   );
 
-  // Icon-only, next to the paperclip: this bar is one round line, and a
-  // labelled pill inside it would push the input off its own centre. The label
-  // lives in the chip above, which is where the mode is actually announced.
-  const deepButton = onDeep && (
-    <button
-      type="button"
-      className={"cinput-mode" + (deep ? " on" : "")}
-      onClick={() => onDeep(!deep)}
-      aria-pressed={!!deep}
-      aria-label={t.deepMode.label}
-      title={deep ? t.deepMode.off : t.deepMode.hint}
-    >
-      {I.layers}
-    </button>
+  const modeButton = onMode && (
+    <ModePicker mode={mode} onMode={onMode} canFactCheck={attachments.length > 0} />
   );
 
   const attachButton = onAttach && (
@@ -245,7 +239,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
   if (variant === "composer") {
     return (
       <div
-        className={"cinput" + (chips ? " with-staged" : "") + (deep ? " deep" : "")}
+        className={"cinput" + (chips ? " with-staged" : "") + (mode !== "answer" ? " deep" : "")}
         onClick={(e) => {
           if (!(e.target as HTMLElement).closest("button, textarea")) taRef.current?.focus();
         }}
@@ -262,9 +256,11 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
           aria-label={hint}
           className="cinput-ta"
         />
-        <div className="cinput-actions">
+        <div className="cinput-left">
           {attachButton}
-          {deepButton}
+          {modeButton}
+        </div>
+        <div className="cinput-actions">
           <button
             className={"cinput-send" + (active ? " active" : "") + (running ? " stop" : "")}
             onClick={() => (running ? onStop?.() : fire(val))}
@@ -285,7 +281,10 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
       <div className={"prompt" + (chips ? " with-staged" : "")}>
         {chips}
         <div className="prompt-row">
-        {attachButton}
+        <div className="cinput-left">
+          {attachButton}
+          {modeButton}
+        </div>
         <textarea
           ref={taRef}
           rows={1}

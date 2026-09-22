@@ -11,6 +11,10 @@ export type LayoutMode = "thread" | "split";
 export type Status = "pending" | "running" | "complete" | "failed";
 export type Outcome = "ok" | "empty" | "failed";
 
+// What sending a message does. "answer" is the ordinary turn; the other two
+// hand the work to a background run that writes its own report.
+export type Mode = "answer" | "deep" | "factcheck";
+
 export type Source = { title: string; url: string };
 
 export type Result = {

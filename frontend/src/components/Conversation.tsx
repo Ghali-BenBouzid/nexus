@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import { useIsMobile } from "../lib/useIsMobile";
-import type { Doc, LayoutMode, Output, Result, Theme, Turn } from "../types";
+import type { Doc, LayoutMode, Mode, Output, Result, Theme, Turn } from "../types";
 import { OutputsPanel } from "./OutputsPanel";
 import { ChatHistory } from "./ChatHistory";
 import { NexusLockup } from "./NexusLogo";
@@ -20,9 +20,9 @@ type ConversationProps = {
   onSubmit: (prompt: string) => void;
   onStop: () => void;
   onExit: () => void;
-  // Deep research mode, owned by App because it decides how a message is sent.
-  deep: boolean;
-  onDeep: ((next: boolean) => void) | undefined;
+  // What sending does, owned by App because App is what sends.
+  mode: Mode;
+  onMode: ((next: Mode) => void) | undefined;
   // The right-hand panel: what this account has produced, and what it attached.
   outputs: Output[];
   documents: Doc[];
@@ -63,8 +63,8 @@ export function Conversation({
   onSubmit,
   onStop,
   onExit,
-  deep,
-  onDeep,
+  mode,
+  onMode,
   outputs,
   documents,
   openOutputId,
@@ -309,8 +309,8 @@ export function Conversation({
                 onAttach={onAttach}
                 onUnstage={onUnstage}
                 attachError={uploadError}
-                deep={deep}
-                onDeep={onDeep}
+                mode={mode}
+                onMode={onMode}
                 autoFocus
                 placeholder={running ? t.chat.runningPlaceholder : t.chat.idlePlaceholder}
               />
