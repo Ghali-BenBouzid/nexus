@@ -806,7 +806,7 @@ html[data-theme="light"] .tour-hole {
   color: var(--muted); cursor: pointer; text-decoration: none;
   transition: background 0.15s, color 0.15s, border-color 0.15s; }
 .cites-chip:hover { border-color: var(--line-strong); background: var(--surface); color: var(--fg); }
-.cites-chip.active { border-color: var(--accent); color: var(--fg); background: var(--accent-soft); }
+.cites-chip.active { border-color: var(--accent); color: var(--fg); background: var(--surface); }
 .cites-domain { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cites-more { flex: none; color: var(--faint); }
 

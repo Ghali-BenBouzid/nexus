@@ -14,7 +14,6 @@ import type { Source } from "../types";
 
 type CiteProps = {
   onCite: (n: number) => void;
-  activeCite: number | null;
   // What the numbers point at, so a citation can name its sources where it
   // stands. Index n - 1 is source [n]; an out-of-range number shows as a bare
   // number, because code numbers the sources and a stray one points nowhere.
@@ -32,7 +31,7 @@ const POP_MIN_H = 180;
 // backed by four pages is a claim with four receipts, not four separate marks
 // in the prose. The group collapses to a single chip and opens to the list,
 // which is the only way a reader checks a source they actually doubt.
-function CiteGroup({ ns, sources, onCite, activeCite }: CiteProps & { ns: number[] }) {
+function CiteGroup({ ns, sources, onCite }: CiteProps & { ns: number[] }) {
   // Each offset is measured from the edge it is pinned to, so the panel grows
   // away from the chip rather than back over it.
   const [at, setAt] = useState<{
@@ -91,7 +90,6 @@ function CiteGroup({ ns, sources, onCite, activeCite }: CiteProps & { ns: number
     });
   };
 
-  const lit = ns.some((n) => n === activeCite);
   const label = t.cites.label(ns.length);
   // Which of the group's sources the panel is showing. It resets whenever the
   // panel closes, so reopening a citation always starts at its first source.
@@ -107,7 +105,7 @@ function CiteGroup({ ns, sources, onCite, activeCite }: CiteProps & { ns: number
       <button
         ref={chip}
         type="button"
-        className={"cites-chip" + (open || lit ? " active" : "")}
+        className={"cites-chip" + (open ? " active" : "")}
         onClick={toggle}
         aria-expanded={open}
         aria-label={label}
@@ -249,16 +247,15 @@ function jumpTo(target: string, root: HTMLElement | null): void {
 type MarkdownProps = {
   text: string;
   onCite: (n: number) => void;
-  activeCite: number | null;
   sources?: Source[];
 };
 
 // Full Markdown via react-markdown + GFM (tables, lists, code, etc.), with our
 // [n] citations layered on top. Tables get a scroll wrapper so a wide comparison
 // never overflows the report column.
-export function Markdown({ text, onCite, activeCite, sources = [] }: MarkdownProps) {
+export function Markdown({ text, onCite, sources = [] }: MarkdownProps) {
   const doc = useRef<HTMLDivElement>(null);
-  const cp: CiteProps = { onCite, activeCite, sources };
+  const cp: CiteProps = { onCite, sources };
   const kids = (children: ReactNode) => withCites(children, cp);
 
   const components: Components = {

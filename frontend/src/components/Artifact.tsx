@@ -130,7 +130,6 @@ export function Artifact({
   const [citeSeq, setCiteSeq] = useState(0);
   const onCite = (n: number) => {
     setActiveCite(n);
-    setSourcesOpen(true);
     setCiteSeq((k) => k + 1);
   };
   useScrollToCite(listRef, sourcesOpen ? activeCite : null, citeSeq);
@@ -192,7 +191,7 @@ export function Artifact({
       </div>
       <div className="art-body">
         <article className="report">
-          <Markdown text={result.report} onCite={onCite} activeCite={activeCite} sources={result.sources} />
+          <Markdown text={result.report} onCite={onCite} sources={result.sources} />
         </article>
         <Sources
           result={result}
