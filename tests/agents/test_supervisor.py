@@ -7,7 +7,6 @@ user, the sources it kept are the ones it cited, its reply is streamed as it is
 written, and a tool it has no business having is not offered.
 """
 
-
 from app.agents.schemas import AgentEvent, Turn
 from app.agents.sources import Sources
 from app.agents.supervisor import Document, Output, respond

@@ -172,9 +172,7 @@ async def test_the_backend_refuses_to_work_unopened() -> None:
 
 
 async def test_opening_and_closing_it_manages_one_client() -> None:
-    async with SelfHostedBackend(
-        searxng_url=SEARXNG, crawl4ai_url=CRAWL4AI
-    ) as backend:
+    async with SelfHostedBackend(searxng_url=SEARXNG, crawl4ai_url=CRAWL4AI) as backend:
         assert backend._client is not None
     assert backend._client is None
 
