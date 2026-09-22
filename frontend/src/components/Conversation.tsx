@@ -3,7 +3,16 @@ import { useEffect, useRef, useState } from "react";
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import { useIsMobile } from "../lib/useIsMobile";
-import type { Doc, LayoutMode, Mode, Output, Result, Theme, Turn } from "../types";
+import type {
+  ConversationId,
+  Doc,
+  LayoutMode,
+  Mode,
+  Output,
+  Result,
+  Theme,
+  Turn,
+} from "../types";
 import { OutputsPanel } from "./OutputsPanel";
 import { ChatHistory } from "./ChatHistory";
 import { NexusLockup } from "./NexusLogo";
@@ -47,7 +56,7 @@ type ConversationProps = {
   // The left column: open state + toggle, and the conversation loader (live only).
   historyOpen: boolean;
   onToggleHistory: () => void;
-  onOpenHistory?: (id: number) => void;
+  onOpenHistory?: (id: ConversationId) => void;
   // The chat has no nav bar, so the theme switch lives in the left column.
   theme: Theme;
   toggleTheme: () => void;

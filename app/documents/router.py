@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -41,7 +43,7 @@ async def _own_document(document_id: int, db: AsyncSession, user: User) -> Docum
     status_code=201,
 )
 async def upload(
-    conversation_id: int,
+    conversation_id: UUID,
     file: UploadFile,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -51,7 +53,7 @@ async def upload(
         raise HTTPException(status_code=404, detail="Conversation not found.")
     try:
         document = await service.upload(
-            db, file, conversation_id=conversation_id, user_id=user.id
+            db, file, conversation_id=conversation.id, user_id=user.id
         )
     except service.UploadError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -63,14 +65,14 @@ async def upload(
     response_model=list[DocumentSummary],
 )
 async def list_documents(
-    conversation_id: int,
+    conversation_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[DocumentSummary]:
     conversation = await conversations.get_conversation(db, conversation_id, user.id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found.")
-    documents = await repository.list_for_conversation(db, conversation_id)
+    documents = await repository.list_for_conversation(db, conversation.id)
     return [summary(document) for document in documents]
 
 

@@ -1,4 +1,4 @@
-import type { View } from "../types";
+import type { ConversationId, View } from "../types";
 
 // A tiny hand-rolled router over the History API. The app has effectively two
 // routes, the landing page and a chat, so this stays lighter than pulling in a
@@ -11,15 +11,15 @@ import type { View } from "../types";
 // Deep links and reloads work because the deploy serves index.html for unknown
 // paths (frontend/wrangler.jsonc: not_found_handling = single-page-application).
 
-export type Route = { view: View; conversationId: number | null };
+export type Route = { view: View; conversationId: ConversationId | null };
 
 const INVITE_PATH = /^\/invite\/([^/]+)\/?$/;
 
 export function getRoute(): Route {
   if (typeof window === "undefined") return { view: "home", conversationId: null };
   const path = window.location.pathname;
-  const match = path.match(/^\/chat\/(\d+)\/?$/);
-  if (match) return { view: "chat", conversationId: Number(match[1]) };
+  const match = path.match(/^\/chat\/([0-9a-f-]{36})\/?$/i);
+  if (match) return { view: "chat", conversationId: match[1].toLowerCase() };
   if (path === "/chat" || path === "/chat/") return { view: "chat", conversationId: null };
   if (path === "/how" || path === "/how/") return { view: "how", conversationId: null };
   // An invite link opens the landing page: a visitor arriving from it should see

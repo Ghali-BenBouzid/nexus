@@ -1,4 +1,5 @@
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,7 +79,7 @@ async def _detail(db: AsyncSession, conversation: Conversation) -> ConversationD
         db, conversation.id
     )
     return ConversationDetail(
-        id=conversation.id,
+        id=conversation.public_id,
         title=conversation.title,
         created_at=conversation.created_at,
         messages=_to_responses(messages, queries, documents),
@@ -129,7 +130,7 @@ async def list_all(
 
 @router.get("/{conversation_id}", response_model=ConversationDetail)
 async def detail(
-    conversation_id: int,
+    conversation_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -143,7 +144,7 @@ async def detail(
 
 @router.post("/{conversation_id}/messages", response_model=ConversationDetail)
 async def add_message(
-    conversation_id: int,
+    conversation_id: UUID,
     payload: MessageCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),

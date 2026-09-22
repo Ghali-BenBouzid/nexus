@@ -1,7 +1,7 @@
 // Dispatches a research run to either the simulated engine (default) or the real
 // backend (VITE_LIVE_MODE=true, with an invite). The UI calls runResearch and
 // reacts to the callbacks; it doesn't care which engine is behind them.
-import type { Mode, Outcome, Result, Status, TimelineEvent } from "../types";
+import type { ConversationId, Mode, Outcome, Result, Status, TimelineEvent } from "../types";
 import { hasInvite, runLiveResearch } from "./api";
 import { pickRun, toTimeline } from "./simulatedEngine";
 
@@ -22,7 +22,7 @@ export type ResearchCallbacks = {
   onQueryId?: (id: number) => void;
   // Live mode only: the conversation this run belongs to (a new one on the first
   // message, the existing one on follow-ups), so the app can persist it.
-  onConversation?: (id: number) => void;
+  onConversation?: (id: ConversationId) => void;
   // Live mode only: the run's title, when it has one.
   onTitle?: (title: string) => void;
   // Live mode only: seconds since the backend job last showed signs of life, so
@@ -52,7 +52,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 export function runResearch(
   prompt: string,
   cb: ResearchCallbacks,
-  conversationId?: number | null,
+  conversationId?: ConversationId | null,
   documentIds: number[] = [],
   // What the composer was switched to. The demo build has no background run to
   // simulate, so it answers the way it always does rather than pretending to

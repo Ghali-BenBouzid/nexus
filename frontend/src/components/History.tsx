@@ -2,11 +2,12 @@ import { useEffect, useState } from "react";
 
 import { listConversations, type ConversationSummary } from "../lib/api";
 import { lang, t } from "../lib/i18n";
+import type { ConversationId } from "../types";
 
 type HistoryProps = {
   open: boolean;
   onClose: () => void;
-  onOpen: (id: number) => void;
+  onOpen: (id: ConversationId) => void;
 };
 
 function when(iso: string): string {

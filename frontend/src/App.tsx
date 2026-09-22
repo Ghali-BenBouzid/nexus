@@ -42,7 +42,7 @@ import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
 import { isLive, LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
 import { tourSeen } from "./lib/tour";
 import { isUnread, loadSeen, markSeen, saveSeen, type Seen } from "./lib/unread";
-import type { Doc, LayoutMode, Mode, Output, Result, Theme, Turn, View } from "./types";
+import type { ConversationId, Doc, LayoutMode, Mode, Output, Result, Theme, Turn, View } from "./types";
 
 // Which outputs this browser has already announced. A per-viewer convenience,
 // so it lives in localStorage and a failure to read it is not worth a thought.
@@ -121,8 +121,10 @@ export default function App() {
   // The live conversation this chat belongs to (null = a fresh, unsaved chat).
   // A page refresh starts fresh and lands on home; the previous conversation
   // stays saved server-side and is reopened on demand from Recent/history.
-  const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
-  const setActiveConversation = (id: number | null) => setActiveConversationId(id);
+  const [activeConversationId, setActiveConversationId] = useState<ConversationId | null>(
+    null,
+  );
+  const setActiveConversation = (id: ConversationId | null) => setActiveConversationId(id);
 
   // Live research needs an invite (see lib/api). Without one, or once it has been
   // revoked or has expired, a live build asks for a demo account instead.
@@ -598,7 +600,7 @@ export default function App() {
 
   // Upload everything staged in the composer, keeping what fails visible rather
   // than dropping it silently. Returns what actually landed.
-  async function uploadStaged(conversationId: number): Promise<Doc[]> {
+  async function uploadStaged(conversationId: ConversationId): Promise<Doc[]> {
     const files = staged;
     setStaged([]);
     setUploadError(null);
@@ -735,7 +737,7 @@ export default function App() {
 
   // Open a past conversation from the sidebar: load its whole thread and make it
   // the active conversation. Anything running in the current chat is cancelled.
-  async function openHistory(conversationId: number) {
+  async function openHistory(conversationId: ConversationId) {
     setHistoryOpen(false);
     const conv = await loadConversation(conversationId);
     // Missing or not owned by this user: the API 404s and we land back on home

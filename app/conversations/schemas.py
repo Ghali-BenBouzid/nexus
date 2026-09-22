@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Literal
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.agents.schemas import Source
 from app.documents.schemas import DocumentSummary
@@ -37,7 +38,7 @@ class MessageCreate(BaseModel):
 class ConversationSummary(BaseSchema):
     """Sidebar row."""
 
-    id: int
+    id: UUID = Field(validation_alias="public_id")
     title: str | None
     created_at: datetime
     updated_at: datetime
@@ -72,7 +73,7 @@ class ConversationDetail(BaseSchema):
     """The full thread: its messages, the documents uploaded into it, and the
     reports it has produced (which finish long after the turn that asked)."""
 
-    id: int
+    id: UUID
     title: str | None
     created_at: datetime
     messages: list[MessageResponse]

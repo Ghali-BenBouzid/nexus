@@ -2,6 +2,7 @@ from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.agents.schemas import AgentEvent, Report, ResearchResult
 from app.models.query import Query, QueryEvent, QueryKind, QueryStatus
@@ -95,6 +96,7 @@ async def list_conversation_artifacts(
     result = await db.execute(
         select(Query)
         .where(Query.conversation_id == conversation_id, Query.kind != QueryKind.chat)
+        .options(selectinload(Query.conversation))
         .order_by(Query.created_at.desc())
     )
     return list(result.scalars().all())
@@ -209,6 +211,7 @@ async def list_artifacts(db: AsyncSession, user_id: int) -> list[Query]:
     result = await db.execute(
         select(Query)
         .where(Query.user_id == user_id, Query.kind != QueryKind.chat)
+        .options(selectinload(Query.conversation))
         .order_by(Query.created_at.desc())
     )
     return list(result.scalars().all())

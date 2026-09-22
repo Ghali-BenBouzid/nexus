@@ -15,6 +15,10 @@ export type Outcome = "ok" | "empty" | "failed";
 // hand the work to a background run that writes its own report.
 export type Mode = "answer" | "deep" | "factcheck";
 
+// What the API calls a conversation: an opaque UUID, never the database's
+// integer key, so a chat's URL gives nothing away and cannot be guessed.
+export type ConversationId = string;
+
 export type Source = { title: string; url: string };
 
 export type Result = {
@@ -100,7 +104,7 @@ export type Output = {
   title: string;
   prompt: string;
   status: Status;
-  conversationId: number | null;
+  conversationId: ConversationId | null;
   error: string | null;
   createdAt: string;
   completedAt: string | null;

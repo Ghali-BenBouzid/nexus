@@ -1,7 +1,8 @@
 from datetime import datetime
 from typing import Any
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.agents.schemas import Source
 from app.models.query import QueryStatus
@@ -38,7 +39,7 @@ class ArtifactSummary(BaseSchema):
 
     id: int
     kind: str
-    conversation_id: int | None
+    conversation_id: UUID | None = Field(validation_alias="conversation_public_id")
     title: str | None
     prompt: str
     status: QueryStatus
