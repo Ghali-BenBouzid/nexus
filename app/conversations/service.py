@@ -38,15 +38,6 @@ _MAX_CONTEXT_MESSAGES = 12
 # is a sidebar label, and paying for a call to write one is not worth it.
 _TITLE_CHARS = 60
 
-# What the thread says when the user asked for deep research themselves. The
-# supervisor is not consulted: there is nothing for it to decide, and paying for
-# a model call to produce one predictable sentence is waste. The run announces
-# itself, and the report arrives in Outputs the way every other one does.
-DEEP_ANNOUNCED = (
-    "Starting deep research on that. It runs for several minutes, so I will not "
-    "wait for it here: the report appears in Outputs when it is ready, and you "
-    "are told wherever you happen to be."
-)
 DEEP_STARTED = (
     "Deep research has started on that. It takes several minutes and will appear "
     "in the user's Outputs when it is done. Tell them it is running; do not wait "
@@ -99,11 +90,11 @@ async def submit_message(
     from here: its events feed the live progress, and it ends complete or failed.
     The caller checks the account's budget first.
 
-    ``deep`` starts a deep research run instead of asking the supervisor what to
-    do. It is the same run the supervisor can start for itself and it ends in
-    the same place, Outputs; the only difference is who decided to start it. The
-    thread says it has begun and moves on, because nobody waits ten minutes for
-    a chat message.
+    ``deep`` says the user switched the composer to deep research. It does not
+    start a run: it tells the supervisor, which decides whether this message is
+    one. A mode that fired on anything the user typed started ten-minute runs on
+    "hi" and on "don't start a deep research"; judging the message is exactly
+    what the supervisor is for.
     """
     user_message = await repository.add_message(
         db, conversation.id, MessageRole.user, content
@@ -118,23 +109,6 @@ async def submit_message(
     )
     if not conversation.title:
         await repository.set_title(db, conversation.id, title_for(content))
-    if deep:
-        run = await research_repository.create_pending_query(
-            db=db,
-            user_id=conversation.user_id,
-            prompt=content,
-            kind=QueryKind.deep_research,
-            title=title_for(content),
-            conversation_id=conversation.id,
-        )
-        # Always the worker, never this process: a deep run takes minutes, and
-        # a BackgroundTask would hold a request handler open for all of them.
-        await jobs.spawn(run_deep_research_job, query_id=run.id)
-        # No query on this message: the turn is the sentence above, already
-        # written, and there is nothing for the thread to follow.
-        return await repository.add_message(
-            db, conversation.id, MessageRole.assistant, content=DEEP_ANNOUNCED
-        )
     query = await research_repository.create_pending_query(
         db=db,
         user_id=conversation.user_id,
@@ -153,6 +127,7 @@ async def submit_message(
         query_id=query.id,
         conversation_id=conversation.id,
         message_id=assistant.id,
+        deep=deep,
     )
     return assistant
 
@@ -164,6 +139,8 @@ async def route_message(
     *,
     model: BaseChatModel | None = None,
     backend: SearchBackend | None = None,
+    # Defaults to off so a job queued before this argument existed still runs.
+    deep: bool = False,
 ) -> None:
     """The job for a new message: the supervisor answers it, using whatever
     tools the answer needs. Every model call is billed to the thread's owner."""
@@ -207,6 +184,7 @@ async def route_message(
             middleware=run.middleware,
             emit=run.emit,
             max_iters=settings.supervisor_max_iters,
+            deep=deep,
         )
         result = ResearchResult(
             points=[],

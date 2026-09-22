@@ -130,6 +130,7 @@ async def respond(
     middleware: Middleware = _no_middleware,
     emit: Emit = _noop,
     max_iters: int = 8,
+    deep: bool = False,
 ) -> Answer:
     """Answer the latest message, doing whatever work that needs first.
 
@@ -155,7 +156,7 @@ async def respond(
             start_fact_check=start_fact_check,
             on_research=on_research,
         ),
-        system_prompt=_system_prompt(message, documents, outputs),
+        system_prompt=_system_prompt(message, documents, outputs, deep=deep),
         middleware=[
             *middleware("supervisor", emit),
             # Out of rounds means answer with what it has, not fail the turn.
@@ -206,7 +207,11 @@ async def _stream(agent, messages: list[BaseMessage], emit: Emit) -> dict:
 
 
 def _system_prompt(
-    message: str, documents: list[Document], outputs: list[Output]
+    message: str,
+    documents: list[Document],
+    outputs: list[Output],
+    *,
+    deep: bool = False,
 ) -> str:
     rendered = render(
         PROMPT,
@@ -216,7 +221,34 @@ def _system_prompt(
         language=detect_language(message) or "",
     )
     prompt = rendered[0].content or ""
-    return "\n\n".join([prompt, _attachments(documents), _outputs(outputs)])
+    parts = [prompt, _attachments(documents), _outputs(outputs)]
+    if deep:
+        parts.append(_DEEP_MODE)
+    return "\n\n".join(parts)
+
+
+# Beside the attachments and the outputs, because it is the same kind of thing:
+# a fact about this conversation right now, not how Nexus works in general.
+# The toggle is a strong signal of what the user wants, not an instruction to
+# run whatever arrives: "hi" and "don't research this" arrive with it too, and
+# telling those apart from a real subject is the judgement this agent is for.
+_DEEP_MODE = """\
+<mode>
+The user has switched to deep research mode for this message. They want a \
+subject covered properly, so when this message is a subject or question worth \
+researching in depth, start deep_research on it, with a short title that names \
+the subject. Do not answer it with a quick research pass instead: choosing \
+this mode is the user asking for depth.
+
+When this message is not something to research (a greeting, small talk, a \
+question about Nexus, or a request not to research), do not start a run. \
+Answer it as you normally would, and say in a sentence what deep research is \
+for and what to send to start one.
+
+When it is worth researching but too vague to research well, ask one short \
+question to pin it down before starting: a deep run takes several minutes, and \
+a report built on a guess about what they meant wastes all of them.
+</mode>"""
 
 
 def _attachments(documents: list[Document]) -> str:

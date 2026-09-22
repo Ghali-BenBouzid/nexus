@@ -276,12 +276,28 @@ async def document(client: AsyncClient, auth_headers: dict[str, str], _bucket) -
     return uploaded.json()
 
 
-async def test_deep_mode_files_an_artifact_and_says_so_in_the_thread(
+class _JustGreets(ScriptedModel):
+    """A supervisor that answers and never reaches for a tool: what a greeting
+    gets. Records which tools it was offered, so a test can tell that deep
+    research was available and simply not used."""
+
+    offered: set[str] = set()
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        self.offered = {
+            tool.get("function", {}).get("name") or tool.get("name", "")
+            for tool in (kwargs.get("tools") or [])
+        }
+        return ChatResult(
+            generations=[ChatGeneration(message=says("Hi. What should I research?"))]
+        )
+
+
+async def test_deep_mode_lets_the_supervisor_start_the_run(
     client: AsyncClient, auth_headers: dict[str, str], monkeypatch
 ) -> None:
-    """Deep research the user asked for by name skips the supervisor: there is
-    nothing left to decide, and a model call to produce one predictable sentence
-    is waste. The run still ends where every other one does."""
+    """In deep mode the supervisor still holds the thread. It is the one that
+    starts the run, and the thread gets its words rather than a fixed line."""
     _use(lambda: _StartsDeepResearch(), monkeypatch=monkeypatch)
 
     created = await client.post(
@@ -290,50 +306,61 @@ async def test_deep_mode_files_an_artifact_and_says_so_in_the_thread(
         json={"prompt": "go deep on X", "deep": True},
     )
     conversation_id = created.json()["id"]
-
-    # The thread answers at once, and has no run of its own to wait on.
-    answer = created.json()["messages"][1]
-    assert answer["query_id"] is None
-    assert "Outputs" in answer["content"]
-
     await drain()
 
-    artifacts = await client.get("/research/artifacts", headers=auth_headers)
-    [artifact] = artifacts.json()
+    [artifact] = (await client.get("/research/artifacts", headers=auth_headers)).json()
     assert artifact["kind"] == "deep_research"
     assert artifact["conversation_id"] == conversation_id
-    assert artifact["status"] == "complete"
 
-    report = await client.get(f"/research/query/{artifact['id']}", headers=auth_headers)
-    assert report.json()["report"] == "THE DEEP REPORT"
+    detail = await client.get(f"/conversations/{conversation_id}", headers=auth_headers)
+    turn = detail.json()["messages"][1]["query"]
+    # A real turn, with a query behind it, answered by the supervisor.
+    assert turn is not None
+    assert "Outputs" in turn["reply"]
 
 
-async def test_the_supervisor_is_not_asked_when_the_user_already_chose(
+async def test_a_greeting_in_deep_mode_starts_nothing(
     client: AsyncClient, auth_headers: dict[str, str], monkeypatch
 ) -> None:
-    """The announcement is written by the application, not generated: a deep
-    message must not cost a supervisor turn before the run even starts."""
-    model = _StartsDeepResearch()
+    """The bug this replaces: with the mode on, "hi" started a ten-minute run,
+    and so did "don't start a deep research". The mode now informs a decision
+    instead of making it, so a message that is not a subject gets an answer and
+    no run at all."""
+    model = _JustGreets()
     _use(lambda: model, monkeypatch=monkeypatch)
 
-    await client.post(
-        "/conversations",
-        headers=auth_headers,
-        json={"prompt": "go deep on X", "deep": True},
+    created = await client.post(
+        "/conversations", headers=auth_headers, json={"prompt": "hi", "deep": True}
     )
     await drain()
 
-    # ``started`` is set when the supervisor reaches for its deep_research tool.
-    # The run itself never sees that tool, so this stays false for the whole
-    # run: the turn was answered by the sentence the application already had.
-    assert model.started is False
+    # The tool was there to use, and the supervisor chose not to.
+    assert "deep_research" in model.offered
+    assert (await client.get("/research/artifacts", headers=auth_headers)).json() == []
+    detail = await client.get(
+        f"/conversations/{created.json()['id']}", headers=auth_headers
+    )
+    assert detail.json()["messages"][1]["query"]["reply"].startswith("Hi.")
 
 
-async def test_a_deep_run_started_by_hand_is_stoppable(
+def test_deep_mode_is_told_to_the_supervisor_and_nothing_else_is() -> None:
+    """The mode reaches the agent as context, beside the attachments, and only
+    when it is on: an ordinary turn must read exactly as it did before."""
+    from app.agents.supervisor import _system_prompt
+
+    on = _system_prompt("anything", [], [], deep=True)
+    off = _system_prompt("anything", [], [])
+
+    assert "<mode>" in on and "deep research mode" in on
+    assert "<mode>" not in off
+
+
+async def test_a_deep_run_from_deep_mode_is_stoppable(
     client: AsyncClient, auth_headers: dict[str, str], monkeypatch
 ) -> None:
     """A deep run costs minutes and money, so the user has to be able to call it
-    off. It is an ordinary query, and Outputs is where its id is found."""
+    off. It is an ordinary query however it was started, and Outputs is where
+    its id is found."""
     _use(lambda: _StartsDeepResearch(), monkeypatch=monkeypatch)
 
     await client.post(
