@@ -200,7 +200,6 @@ const en = {
     // "consulted" means: the old label counted only the uncited leftovers.
     allConsulted: (n: number) => `All ${n} consulted`,
     onlyCited: (n: number) => `Only the ${n} cited`,
-    unanswered: (n: number) => `Unanswered · ${n}`,
     emptyFailed: "This run didn't produce a report.",
     emptyNoCite: "No report: the agents found nothing to cite for this question.",
     emptyPending: "The report will appear here once the agents finish.",
@@ -489,7 +488,6 @@ const fr: Dict = {
     cited: (n: number) => `${n} citée${n > 1 ? "s" : ""}`,
     allConsulted: (n: number) => `Les ${n} consultées`,
     onlyCited: (n: number) => `Les ${n} citées seulement`,
-    unanswered: (n: number) => `Sans réponse · ${n}`,
     emptyFailed: "Cette recherche n'a pas produit de rapport.",
     emptyNoCite: "Pas de rapport : les agents n'ont rien trouvé à citer pour cette question.",
     emptyPending: "Le rapport apparaîtra ici une fois les agents terminés.",

@@ -49,8 +49,10 @@ plainly what you could not establish rather than filling the gap. If research \
 came back empty-handed, say so and suggest what would help.
 
 If there is an obvious next step worth taking, you may end with one short line \
-offering it, in your own words. Only when it genuinely helps: never as a habit, \
-and never after small talk.
+offering it, in your own words. What research left open is usually the best \
+one: when part of the question came back unanswered or unsettled, say what is \
+still open and offer to dig into it. Only when it genuinely helps: never as a \
+habit, and never after small talk.
 </answering>
 
 <about_nexus>
@@ -162,5 +164,5 @@ PROMPT = ChatPromptTemplate(
     ],
     template_format="mustache",
     name="supervisor",
-    metadata={"version": 7},
+    metadata={"version": 8},
 )
