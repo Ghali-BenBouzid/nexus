@@ -16,3 +16,22 @@ search:
   formats:
     - html
     - json
+  # How long an engine sits out after refusing us. SearXNG's defaults bench a
+  # CAPTCHA for a day and a rate limit for an hour, which a deep run (dozens of
+  # searches at once, all from one IP) trips in minutes and then pays for all
+  # day. Shorter, so an engine comes back while there is still work for it.
+  suspended_times:
+    SearxEngineAccessDenied: 900
+    SearxEngineCaptcha: 900
+    SearxEngineTooManyRequests: 300
+
+# More engines to spread the load: every one of them rate limits a single IP,
+# and with only DuckDuckGo and Brave doing the real work a deep run had both
+# refusing within minutes. These are off in SearXNG's defaults, not broken.
+engines:
+  - name: google
+    disabled: false
+  - name: bing
+    disabled: false
+  - name: yahoo
+    disabled: false
