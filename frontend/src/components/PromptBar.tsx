@@ -184,8 +184,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
       <span className="mode-chip-icon" aria-hidden="true">
         {mode === "deep" ? I.telescope : I.shield}
       </span>
-      <span className="mode-chip-label">{t.modes[mode].label}</span>
-      <span className="mode-chip-note">{t.modes[mode].note}</span>
+      <span className="mode-chip-label">{t.modes[mode].label}:</span>
       <button
         type="button"
         className="mode-chip-x"
@@ -240,13 +239,12 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
   if (variant === "composer") {
     return (
       <div
-        className={"cinput" + (chips ? " with-staged" : "") + (mode !== "answer" ? " deep" : "")}
+        className={"cinput" + (mode !== "answer" ? " deep" : "")}
         onClick={(e) => {
           if (!(e.target as HTMLElement).closest("button, textarea")) taRef.current?.focus();
         }}
       >
         {chips}
-        <div className="cinput-row">
         <textarea
           ref={taRef}
           rows={1}
@@ -257,21 +255,22 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
           aria-label={hint}
           className="cinput-ta"
         />
-        <div className="cinput-left">
-          {attachButton}
-          {modeButton}
-        </div>
-        <div className="cinput-actions">
-          <button
-            className={"cinput-send" + (active ? " active" : "") + (running ? " stop" : "")}
-            onClick={() => (running ? onStop?.() : fire(val))}
-            disabled={!running && !val.trim()}
-            aria-label={running ? "Stop generating" : "Send"}
-            title={running ? "Stop generating" : "Send"}
-          >
-            {running ? I.stop : I.arrowUp}
-          </button>
-        </div>
+        <div className="cinput-row">
+          <div className="cinput-left">
+            {attachButton}
+            {modeButton}
+          </div>
+          <div className="cinput-actions">
+            <button
+              className={"cinput-send" + (active ? " active" : "") + (running ? " stop" : "")}
+              onClick={() => (running ? onStop?.() : fire(val))}
+              disabled={!running && !val.trim()}
+              aria-label={running ? "Stop generating" : "Send"}
+              title={running ? "Stop generating" : "Send"}
+            >
+              {running ? I.stop : I.arrowUp}
+            </button>
+          </div>
         </div>
       </div>
     );

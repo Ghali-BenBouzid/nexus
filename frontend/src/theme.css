@@ -464,69 +464,75 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
    ============================================================ */
 
 .tour { position: fixed; inset: 0; z-index: 90; }
-/* The dim is one huge spread shadow cast by the hole, not a sheet drawn over
-   the page: the lit control keeps its own colour instead of being tinted by an
-   overlay sitting on top of it. With no target the mask itself carries the dim. */
-.tour-mask { position: absolute; inset: 0; background: rgb(0 0 0 / 0.55);
-  animation: tourFade 0.28s var(--ease); }
+.tour-mask { position: absolute; inset: 0; background: rgb(4 4 6 / 0.62);
+  animation: tourFade 0.2s var(--ease); }
 .tour-mask.lit { background: transparent; }
-.tour-hole { position: absolute; border-radius: 14px;
-  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.62), 0 0 0 1px var(--accent) inset;
-  transition: top 0.32s var(--ease), left 0.32s var(--ease),
-              width 0.32s var(--ease), height 0.32s var(--ease); }
+/* The dim is cast by the hole, not painted over the page: one enormous spread
+   shadow darkens everything outside it, so the lit control keeps its own colour
+   instead of being tinted by a sheet lying on top of it. The rings are what make
+   it read as lifted rather than merely uncovered. */
+.tour-hole { position: absolute; border-radius: 12px;
+  box-shadow: 0 0 0 9999px rgb(4 4 6 / 0.62),
+              0 0 0 1px rgb(255 255 255 / 0.22),
+              0 8px 40px rgb(0 0 0 / 0.5);
+  outline: 1px solid rgb(255 255 255 / 0.14); outline-offset: 2px;
+  /* A spring, without the library: overshoot and settle. */
+  transition: top 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
+              left 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
+              width 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
+              height 0.42s cubic-bezier(0.22, 1.4, 0.36, 1); }
+html[data-theme="light"] .tour-mask { background: rgb(17 17 20 / 0.48); }
+html[data-theme="light"] .tour-mask.lit { background: transparent; }
+html[data-theme="light"] .tour-hole {
+  box-shadow: 0 0 0 9999px rgb(17 17 20 / 0.48),
+              0 0 0 1px rgb(0 0 0 / 0.06),
+              0 8px 40px rgb(0 0 0 / 0.18);
+  outline-color: rgb(255 255 255 / 0.85); }
 
-/* The card reads as hovering above the page rather than printed on it: a warm
-   rim, a tight contact shadow and a wide soft one, and it arrives with a slight
-   tilt that settles. Flat panels are what make a tour feel like a cookie banner. */
 .tour-card { position: fixed; z-index: 91; width: 320px; max-width: calc(100vw - 24px);
-  padding: 16px 18px 14px; border-radius: var(--r-md);
+  padding: 15px 16px 13px; border-radius: var(--r-md);
   border: 1px solid var(--line-strong); background: var(--surface-solid);
-  box-shadow: 0 2px 10px rgb(0 0 0 / 0.28), 0 28px 60px -18px rgb(0 0 0 / 0.7),
-              0 0 0 1px rgb(255 255 255 / 0.04) inset;
-  animation: tourRise 0.34s cubic-bezier(0.16, 1, 0.3, 1); }
+  box-shadow: 0 2px 10px rgb(0 0 0 / 0.28), 0 28px 60px -18px rgb(0 0 0 / 0.7);
+  animation: tourRise 0.34s cubic-bezier(0.22, 1.4, 0.36, 1);
+  transition: top 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
+              bottom 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
+              left 0.42s cubic-bezier(0.22, 1.4, 0.36, 1); }
 @keyframes tourFade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes tourRise {
-  from { opacity: 0; transform: perspective(700px) rotateX(7deg) translateY(10px) scale(0.97); }
-  to { opacity: 1; transform: none; }
-}
-/* A small notch pointing back at what is lit, so the card is clearly about it. */
-.tour-card::before { content: ""; position: absolute; width: 12px; height: 12px;
-  background: var(--surface-solid); border: 1px solid var(--line-strong);
-  transform: rotate(45deg); }
-.tour-card.arrow-up::before { top: -7px; left: 50%; margin-left: -6px;
-  border-right: none; border-bottom: none; }
-.tour-card.arrow-down::before { bottom: -7px; left: 50%; margin-left: -6px;
-  border-left: none; border-top: none; }
+@keyframes tourRise { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
 
-.tour-card-head { display: flex; align-items: center; justify-content: space-between;
-  margin-bottom: 8px; }
-.tour-step { font-family: var(--font-mono); font-size: 11px; color: var(--faint);
-  letter-spacing: 0.04em; font-variant-numeric: tabular-nums; }
-.tour-skip { border: none; background: none; padding: 0; cursor: pointer;
-  font-family: inherit; font-size: 12px; color: var(--faint); transition: color 0.15s; }
-.tour-skip:hover { color: var(--fg); }
-.tour-card h3 { font-family: var(--font-display); font-size: 16px; font-weight: 600;
-  margin: 0 0 6px; }
-.tour-card p { margin: 0 0 14px; font-size: 13.5px; line-height: 1.6; color: var(--muted); }
+.tour-card-head { display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; margin-bottom: 6px; }
+.tour-card h3 { font-family: var(--font-display); font-size: 14.5px; font-weight: 600;
+  line-height: 1.35; margin: 0; }
+.tour-x { display: grid; place-items: center; width: 24px; height: 24px; flex: none;
+  margin: -3px -4px 0 0; border: none; background: none; border-radius: 7px;
+  color: var(--faint); cursor: pointer; transition: color 0.15s, background 0.15s; }
+.tour-x:hover { color: var(--fg); background: var(--surface-2); }
+.tour-x svg { width: 15px; height: 15px; }
+.tour-card p { margin: 0 0 15px; font-size: 13px; line-height: 1.6; color: var(--muted); }
 
-.tour-nav { display: flex; align-items: center; gap: 10px; }
-.tour-dots { display: flex; gap: 5px; margin-right: auto; }
-.tour-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--line-strong);
-  transition: background 0.2s, transform 0.2s; }
-.tour-dots i.on { background: var(--accent); transform: scale(1.25); }
-.tour-back { border: none; background: none; padding: 6px 4px; cursor: pointer;
-  font-family: inherit; font-size: 13px; color: var(--faint); transition: color 0.15s; }
-.tour-back:hover { color: var(--fg); }
-.tour-next { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-  padding: 7px 13px; border: none; border-radius: 999px; font-family: inherit;
-  font-size: 13px; font-weight: 600; background: var(--accent); color: var(--accent-ink);
+.tour-nav { display: flex; align-items: center; gap: 6px; }
+/* The step you are on widens into a bar; the others stay dots. Position without
+   a counter to read. */
+.tour-dots { display: flex; align-items: center; gap: 5px; margin-right: auto; }
+.tour-dots i { width: 6px; height: 6px; border-radius: 999px; background: var(--line-strong);
+  transition: width 0.3s var(--ease), background 0.3s; }
+.tour-dots i.on { width: 17px; background: var(--accent); }
+.tour-back { display: inline-flex; align-items: center; gap: 5px; border: none; background: none;
+  padding: 6px 9px; border-radius: 9px; cursor: pointer; font-family: inherit; font-size: 12.5px;
+  font-weight: 500; color: var(--faint); transition: color 0.15s, background 0.15s; }
+.tour-back:hover { color: var(--fg); background: var(--surface-2); }
+.tour-next { display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+  padding: 6px 12px; border: none; border-radius: 9px; font-family: inherit;
+  font-size: 12.5px; font-weight: 600; background: var(--accent); color: var(--accent-ink);
   transition: transform 0.15s, box-shadow 0.2s; }
 .tour-next:hover { transform: translateY(-1px); box-shadow: 0 8px 20px -8px var(--accent); }
-.tour-next svg { width: 14px; height: 14px; }
+.tour-next:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.tour-next svg { width: 13px; height: 13px; }
 
 @media (prefers-reduced-motion: reduce) {
   .tour-mask, .tour-card { animation: none; }
-  .tour-hole { transition: none; }
+  .tour-hole, .tour-card, .tour-dots i { transition: none; }
   .tour-next:hover { transform: none; }
 }
 
@@ -874,11 +880,6 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 /* Files picked in a bar, waiting to go with the next message. */
 .staged { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 .staged-error { width: 100%; font-size: 12.5px; color: var(--bad); }
-/* With something attached, a bar stops being a single line: the tiles take the
-   top and the input drops below them, so the pill squares off. */
-.cinput.with-staged { flex-direction: column; align-items: stretch; gap: 10px;
-  border-radius: 22px; padding: 10px 8px 6px 12px; }
-.cinput-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
 .prompt.with-staged { flex-direction: column; align-items: stretch; gap: 10px;
   border-radius: var(--r-lg); padding: 12px 10px 10px 12px; }
 .prompt-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
@@ -938,23 +939,23 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 /* What the bar carries above the text: the mode it will send in, and the files
    it will send with. Stacked, because each is a full line of its own. */
 .cinput-top { display: flex; flex-direction: column; gap: 8px; }
-/* Announced in words, because the lit icon alone is not enough warning for a
-   mode that costs minutes and a real share of the budget. */
-.mode-chip { display: flex; align-items: center; gap: 8px; align-self: flex-start;
-  max-width: 100%; padding: 5px 5px 5px 11px; border-radius: 999px;
-  background: var(--accent-soft); color: var(--accent-text); font-size: 12.5px; }
+/* The mode, as a line of text above what you are writing and aligned with it.
+   Not a pill: a pill reads as a thing clipped to the message, when this is a
+   statement about what sending is going to do. */
+.mode-chip { display: flex; align-items: center; gap: 7px; align-self: flex-start;
+  max-width: 100%; padding: 2px 4px 0; color: var(--accent-text); font-size: 13px;
+  font-weight: 600; }
 .mode-chip-icon { display: grid; place-items: center; flex: none; }
-.mode-chip-icon svg { width: 14px; height: 14px; }
-.mode-chip-label { font-weight: 600; white-space: nowrap; }
-.mode-chip-note { color: var(--muted); min-width: 0; overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; }
-.mode-chip-x { display: grid; place-items: center; width: 20px; height: 20px; flex: none;
-  border: none; background: none; border-radius: 50%; color: inherit; cursor: pointer; opacity: 0.6; }
-.mode-chip-x:hover { opacity: 1; background: var(--surface-2); }
+.mode-chip-icon svg { width: 15px; height: 15px; }
+.mode-chip-label { white-space: nowrap; }
+.mode-chip-x { display: grid; place-items: center; width: 18px; height: 18px; flex: none;
+  border: none; background: none; border-radius: 50%; color: var(--faint); cursor: pointer;
+  opacity: 0; transition: opacity 0.15s, color 0.15s, background 0.15s; }
+/* Quiet until reached for: the way out of a mode should not compete with the
+   statement that you are in one. */
+.cinput:hover .mode-chip-x, .mode-chip-x:focus-visible { opacity: 1; }
+.mode-chip-x:hover { color: var(--fg); background: var(--surface-2); }
 .mode-chip-x svg { width: 12px; height: 12px; }
-/* The note is the first thing to go when the bar is narrow: the label and the
-   way out of the mode matter more than the warning's second half. */
-@media (max-width: 560px) { .mode-chip-note { display: none; } }
 
 /* The same files, above the bubble they were sent with. */
 .bubble-files { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; max-width: 82%; }
@@ -1153,15 +1154,20 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .hero .composer-note { margin: 14px 0 6px; }
 .composer-note { margin: 8px 0 0; text-align: center; font-family: var(--font-mono); font-size: 11px;
   color: var(--faint); letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
-.cinput { display: flex; flex-direction: row; align-items: center; gap: 8px; border-radius: 999px; background: var(--panel);
+.cinput { display: flex; flex-direction: column; gap: 6px; border-radius: 22px; background: var(--panel);
   border: 1px solid var(--line); box-shadow: var(--shadow); backdrop-filter: blur(12px); cursor: text;
-  padding: 6px 8px 6px 16px; transition: border-color 0.2s, box-shadow 0.2s; }
+  padding: 12px 12px 10px; transition: border-color 0.2s, box-shadow 0.2s; }
+/* A mode changes what sending costs, so the bar it is set on says so quietly in
+   its own edge, not only in the line of text above the input. */
+.cinput.deep { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
 /* No focus highlight on the chat composer: the hero bar is the only one that
    lights up, to pull the eye toward it. The composer keeps its resting border. */
-.cinput-ta { flex: 1; min-width: 0; resize: none; background: transparent; border: 0; outline: none; font-family: inherit;
-  font-size: 14.5px; line-height: 1.6; color: var(--fg); padding: 7px 16px; max-height: 160px; text-align: left; }
-.cinput-ta::placeholder { color: var(--faint); text-align: center; }
-.cinput-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; padding: 0; flex: none; }
+.cinput-row { display: flex; align-items: center; gap: 8px; }
+.cinput-left { display: flex; align-items: center; gap: 6px; flex: none; margin-right: auto; }
+.cinput-ta { width: 100%; min-width: 0; resize: none; background: transparent; border: 0; outline: none; font-family: inherit;
+  font-size: 14.5px; line-height: 1.6; color: var(--fg); padding: 4px 4px 2px; max-height: 160px; text-align: left; }
+.cinput-ta::placeholder { color: var(--faint); }
+.cinput-actions { display: flex; align-items: center; gap: 8px; flex: none; }
 .cinput-send { width: 34px; height: 34px; border-radius: 50%; border: none; flex: none; display: grid; place-items: center;
   cursor: pointer; background: var(--surface-2); color: var(--faint); transition: background 0.15s, color 0.15s, transform 0.15s; }
 .cinput-send svg { width: 16px; height: 16px; }

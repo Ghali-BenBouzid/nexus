@@ -23,24 +23,16 @@ function find(target: string | null): Box | null {
 
 // Where the card goes relative to the lit area: below it when there is room,
 // above it otherwise, and centred on screen when nothing is lit.
-function place(box: Box | null): { style: React.CSSProperties; arrow: "up" | "down" | null } {
-  if (!box) {
-    return {
-      style: { top: "50%", left: "50%", transform: "translate(-50%, -50%)" },
-      arrow: null,
-    };
-  }
+function place(box: Box | null): React.CSSProperties {
+  if (!box) return { top: "50%", left: "50%", transform: "translate(-50%, -50%)" };
   const below = window.innerHeight - (box.top + box.height) > 190;
   const left = Math.min(
     Math.max(12, box.left + box.width / 2 - CARD_W / 2),
     window.innerWidth - CARD_W - 12,
   );
-  return {
-    style: below
-      ? { top: box.top + box.height + GAP, left }
-      : { bottom: window.innerHeight - box.top + GAP, left },
-    arrow: below ? "up" : "down",
-  };
+  return below
+    ? { top: box.top + box.height + GAP, left }
+    : { bottom: window.innerHeight - box.top + GAP, left };
 }
 
 // A quick tour of what Nexus does, for someone handed a demo account who would
@@ -130,7 +122,7 @@ export function Tour({
   }, [i, steps.length]);
 
   if (!step) return null;
-  const { style, arrow } = place(box);
+  const style = place(box);
   const last = i === steps.length - 1;
 
   return (
@@ -147,14 +139,13 @@ export function Tour({
         )}
       </div>
 
-      <div className={"tour-card" + (arrow ? " arrow-" + arrow : "")} style={style}>
+      <div className="tour-card" style={style}>
         <div className="tour-card-head">
-          <span className="tour-step">{i + 1}/{steps.length}</span>
-          <button type="button" className="tour-skip" onClick={close}>
-            {t.tour.skip}
+          <h3>{step.title}</h3>
+          <button type="button" className="tour-x" onClick={close} aria-label={t.tour.skip}>
+            {I.close}
           </button>
         </div>
-        <h3>{step.title}</h3>
         <p>{step.body}</p>
         <div className="tour-nav">
           <span className="tour-dots" aria-hidden="true">

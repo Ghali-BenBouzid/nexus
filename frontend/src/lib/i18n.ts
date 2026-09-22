@@ -236,29 +236,21 @@ const en = {
     back: "Back",
     next: "Next",
     done: "Start asking",
-    ask: {
-      title: "Ask it anything",
-      body: "Nexus reads the web and answers here, with every claim linked to the page it came from.",
-    },
-    history: {
-      title: "Your chats are kept",
-      body: "Everything you ask stays here, so you can reopen a thread and carry on.",
-    },
-    composer: {
-      title: "The same bar, inside a chat",
-      body: "Follow-ups land in the conversation. It only searches again when it has to.",
-    },
     deep: {
-      title: "Deep research",
-      body: "Switch modes here. Deep research sends out a team of agents and writes a full cited report. It takes minutes and runs in the background.",
+      title: "There is a slower mode",
+      body: "Deep research sends out a small team of agents and comes back with a proper report. It takes a few minutes, so it runs in the background while you get on with something else.",
     },
     attach: {
-      title: "Fact check a document",
-      body: "Attach a PDF, then pick Fact check. It pulls out what the document claims and tests each one against the web.",
+      title: "Throw a document at it",
+      body: "Attach a PDF and switch to Fact check. It pulls out what the document claims and goes looking for whether each one holds up.",
     },
     outputs: {
-      title: "Reports land here",
-      body: "Deep research and fact checks arrive in Outputs, and you are told wherever you are when one is ready.",
+      title: "Reports show up here",
+      body: "Anything that ran in the background lands in this panel, and you get a nudge wherever you are when one is finished.",
+    },
+    history: {
+      title: "Nothing gets lost",
+      body: "Every chat is kept. Open an old one from here and pick up where you stopped.",
     },
   },
   modes: {
@@ -534,29 +526,21 @@ const fr: Dict = {
     back: "Retour",
     next: "Suivant",
     done: "Poser une question",
-    ask: {
-      title: "Posez n'importe quelle question",
-      body: "Nexus lit le web et répond ici, chaque affirmation renvoyant à la page dont elle vient.",
-    },
-    history: {
-      title: "Vos conversations sont gardées",
-      body: "Tout ce que vous demandez reste ici : rouvrez un fil et reprenez où vous en étiez.",
-    },
-    composer: {
-      title: "La même barre, dans la conversation",
-      body: "Les questions de suivi arrivent dans le fil. Il ne cherche à nouveau que si c'est nécessaire.",
-    },
     deep: {
-      title: "Recherche approfondie",
-      body: "Changez de mode ici. La recherche approfondie envoie une équipe d'agents et rédige un rapport complet et sourcé. Elle prend quelques minutes et tourne en arrière-plan.",
+      title: "Il existe un mode plus lent",
+      body: "La recherche approfondie envoie une petite équipe d'agents et revient avec un vrai rapport. Ça prend quelques minutes, donc ça tourne en arrière-plan pendant que vous faites autre chose.",
     },
     attach: {
-      title: "Vérifier un document",
-      body: "Joignez un PDF, puis choisissez Vérification. Nexus en extrait les affirmations et confronte chacune au web.",
+      title: "Donnez-lui un document",
+      body: "Joignez un PDF et passez en Vérification. Il en extrait les affirmations et va voir si elles tiennent.",
     },
     outputs: {
       title: "Les rapports arrivent ici",
-      body: "Recherches approfondies et vérifications atterrissent dans Sorties, et vous êtes prévenu où que vous soyez.",
+      body: "Tout ce qui a tourné en arrière-plan atterrit dans ce panneau, et vous êtes prévenu où que vous soyez quand c'est prêt.",
+    },
+    history: {
+      title: "Rien ne se perd",
+      body: "Chaque conversation est gardée. Rouvrez-en une d'ici et reprenez où vous vous étiez arrêté.",
     },
   },
   modes: {

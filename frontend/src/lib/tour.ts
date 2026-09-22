@@ -38,14 +38,15 @@ export function markTourSeen(): void {
   }
 }
 
-// Six steps, weighted toward the two features a demo account exists to try:
-// deep research and fact check each get their own, and each says what comes
-// back rather than what the button is called.
+// Four steps. What a chat box is for needs no explaining in 2026, so the tour
+// spends its half-minute on the parts that are genuinely not obvious: that the
+// two background runs exist at all, and where their reports end up.
 export function tourSteps(): TourStep[] {
+  // Landing first, then into a chat once, rather than bouncing between the two:
+  // starting inside a chat would throw a first-time visitor somewhere they never
+  // asked to go before saying anything at all.
   return [
-    { id: "ask", target: "hero-bar", view: "home", ...t.tour.ask },
     { id: "history", target: "history", view: "home", ...t.tour.history },
-    { id: "composer", target: "composer", view: "chat", ...t.tour.composer },
     { id: "deep", target: "mode", view: "chat", ...t.tour.deep },
     { id: "attach", target: "attach", view: "chat", ...t.tour.attach },
     { id: "outputs", target: "outputs", view: "chat", ...t.tour.outputs },
