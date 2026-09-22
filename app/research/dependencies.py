@@ -156,6 +156,20 @@ def get_search_backend() -> SearchBackend:
     itself.
     """
     if settings.searxng_url and settings.crawl4ai_url:
+        if not settings.crawl4ai_token:
+            # Not a preference. Without a token Crawl4AI binds loopback inside
+            # its own container, so it is unreachable from anywhere else while
+            # still reporting itself healthy. Refusing here says that once,
+            # instead of every page read failing to connect for reasons no log
+            # explains.
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    "CRAWL4AI_TOKEN is not set. Crawl4AI only listens beyond "
+                    "localhost once it has one, so without it every page read "
+                    "fails to connect."
+                ),
+            )
         return SelfHostedBackend(
             searxng_url=settings.searxng_url,
             crawl4ai_url=settings.crawl4ai_url,
