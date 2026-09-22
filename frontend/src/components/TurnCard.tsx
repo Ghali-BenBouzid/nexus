@@ -49,7 +49,6 @@ export function TurnCard({
   // and moves the view to it. The seq is what lets the same citation be clicked
   // twice and still bring its source back after scrolling away.
   const onCite = (n: number) => {
-    setShowSources(true);
     setActiveCite(n);
     setCiteSeq((k) => k + 1);
   };
@@ -84,7 +83,7 @@ export function TurnCard({
 
           {answer.trim() && (
             <div className={"reply-text" + (streaming ? " streaming" : "")}>
-              <Markdown text={answer} onCite={onCite} activeCite={activeCite} sources={sources} />
+              <Markdown text={answer} onCite={onCite} sources={sources} />
             </div>
           )}
 

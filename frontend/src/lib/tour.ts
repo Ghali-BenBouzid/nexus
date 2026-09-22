@@ -11,6 +11,10 @@ export type TourStep = {
   // The `data-tour` value to spotlight. Null centres the popover with no
   // cut-out, for a step that is about the product rather than a control.
   target: string | null;
+  // How far the lit area reaches past the control, when the default is too
+  // generous. A button with a neighbour close by needs a tighter one, or the
+  // spotlight lights both and points at neither.
+  pad?: number;
   title: string;
   body: string;
   // Where the tour must be for this step to make sense. The tour moves the app
@@ -48,7 +52,9 @@ export function tourSteps(): TourStep[] {
   return [
     { id: "history", target: "history", view: "home", ...t.tour.history },
     { id: "deep", target: "mode", view: "chat", ...t.tour.deep },
-    { id: "attach", target: "attach", view: "chat", ...t.tour.attach },
+    // The attach button sits 6px from the mode pill, so the usual 8px halo
+    // would spill onto its neighbour.
+    { id: "attach", target: "attach", view: "chat", pad: 2, ...t.tour.attach },
     { id: "outputs", target: "outputs", view: "chat", ...t.tour.outputs },
   ];
 }

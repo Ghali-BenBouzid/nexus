@@ -17,7 +17,7 @@
   --r-xl: 28px;
 
   --maxw: 1120px;
-  --ease: cubic-bezier(0.2, 0.65, 0.3, 0.9);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* ---- Dark theme (default, signature look) ---- */
@@ -481,11 +481,10 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
               0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent),
               0 10px 44px rgb(0 0 0 / 0.6);
   outline: none;
-  /* A spring, without the library: overshoot and settle. */
-  transition: top 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
-              left 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
-              width 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
-              height 0.42s cubic-bezier(0.22, 1.4, 0.36, 1); }
+  /* How long the move takes depends on how far it is going, so Tour.tsx sets the
+     duration inline. The curve is the app's, not the tour's. */
+  transition: top 0.42s var(--ease), left 0.42s var(--ease),
+              width 0.42s var(--ease), height 0.42s var(--ease); }
 html[data-theme="light"] .tour-mask { background: rgb(17 17 20 / 0.48); }
 html[data-theme="light"] .tour-mask.lit { background: transparent; }
 /* A light page already contrasts hard with a dim, so it needs far less of one. */
@@ -499,9 +498,8 @@ html[data-theme="light"] .tour-hole {
   padding: 15px 16px 13px; border-radius: var(--r-md);
   border: 1px solid var(--line-strong); background: var(--surface-solid);
   box-shadow: 0 2px 10px rgb(0 0 0 / 0.28), 0 28px 60px -18px rgb(0 0 0 / 0.7);
-  animation: tourRise 0.34s cubic-bezier(0.22, 1.4, 0.36, 1);
-  transition: top 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
-              left 0.42s cubic-bezier(0.22, 1.4, 0.36, 1); }
+  animation: tourRise 0.34s var(--ease);
+  transition: top 0.42s var(--ease), left 0.42s var(--ease); }
 @keyframes tourFade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes tourRise { from { opacity: 0; transform: scale(0.96); } to { opacity: 1; transform: none; } }
 
@@ -806,7 +804,7 @@ html[data-theme="light"] .tour-hole {
   color: var(--muted); cursor: pointer; text-decoration: none;
   transition: background 0.15s, color 0.15s, border-color 0.15s; }
 .cites-chip:hover { border-color: var(--line-strong); background: var(--surface); color: var(--fg); }
-.cites-chip.active { border-color: var(--accent); color: var(--fg); background: var(--accent-soft); }
+.cites-chip.active { border-color: var(--accent); color: var(--fg); background: var(--surface); }
 .cites-domain { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cites-more { flex: none; color: var(--faint); }
 
@@ -1004,14 +1002,21 @@ html[data-theme="light"] .tour-hole {
    typewriter-style reveal. The per-char animation-delay is set inline. */
 @media (prefers-reduced-motion: no-preference) {
   .hero h1 .char { animation: charUp 0.55s var(--ease) both; }
-  .hero-badge { transform: translateY(14px); animation: slideUp 0.9s var(--ease) 0.2s forwards; }
-  .hero-sub { transform: translateY(16px); animation: slideUp 0.9s var(--ease) 0.9s forwards; }
-  .prompt-wrap { transform: translateY(18px); animation: slideUp 0.9s var(--ease) 1.1s forwards; }
-  .chips-label { transform: translateY(14px); animation: slideUp 0.9s var(--ease) 1.3s forwards; }
-  .chips { transform: translateY(14px); animation: slideUp 0.9s var(--ease) 1.35s forwards; }
+  /* The hero arrives by fading, not by sliding. Five elements each easing a
+     14-18px translate on its own delay read as a stack of separate little jumps
+     rather than one entrance, and the prompt bar's own 18px offset parked it on
+     top of the credits line underneath, which does not move. Nothing below the
+     heading changes position now: only its opacity. */
+  .hero-badge { animation: fadeIn 0.5s var(--ease) 0.1s both; }
+  .hero-sub { animation: fadeIn 0.5s var(--ease) 0.15s both; }
+  .prompt-wrap { animation: fadeIn 0.5s var(--ease) 0.25s both; }
+  .hero .composer-note { animation: fadeIn 0.5s var(--ease) 0.3s both; }
+  .chips-label { animation: fadeIn 0.5s var(--ease) 0.35s both; }
+  .chips { animation: fadeIn 0.5s var(--ease) 0.4s both; }
   .ev { transform: translateY(8px); animation: slideUp 0.45s var(--ease) forwards; }
 }
 @keyframes slideUp { to { transform: translateY(0); } }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes charUp { from { opacity: 0; transform: translateY(0.6em); } to { opacity: 1; transform: translateY(0); } }
 @keyframes spin { to { transform: rotate(360deg); } }
 
@@ -1369,7 +1374,7 @@ html[data-theme="light"] .tour-hole {
   /* Two shadows: a tight one for the edge, a wide one for the lift, so it reads
      as sitting above the page rather than printed on it. */
   box-shadow: 0 2px 6px rgb(0 0 0 / 0.22), 0 18px 48px -12px rgb(0 0 0 / 0.55);
-  animation: toastIn 0.32s cubic-bezier(0.16, 1, 0.3, 1); }
+  animation: toastIn 0.32s var(--ease); }
 @keyframes toastIn {
   from { opacity: 0; transform: translateX(18px) scale(0.97); }
   to { opacity: 1; transform: none; }
