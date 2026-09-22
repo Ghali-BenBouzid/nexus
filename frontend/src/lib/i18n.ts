@@ -160,7 +160,7 @@ const en = {
   },
   chat: {
     runningPlaceholder: "Working… stop to ask something else",
-    idlePlaceholder: "Ask a follow-up, or something new…",
+    idlePlaceholder: "Ask anything",
     jumpLatest: "Jump to latest",
     showArtifacts: "Show outputs",
   },
@@ -237,20 +237,20 @@ const en = {
     next: "Next",
     done: "Start asking",
     deep: {
-      title: "There is a slower mode",
-      body: "Deep research sends out a small team of agents and comes back with a proper report. It takes a few minutes, so it runs in the background while you get on with something else.",
+      title: "Deep research",
+      body: "Nexus sends out a small team of agents and comes back with a full cited report. It runs in the background, so you can carry on while it works.",
     },
     attach: {
-      title: "Throw a document at it",
-      body: "Attach a PDF and switch to Fact check. It pulls out what the document claims and goes looking for whether each one holds up.",
+      title: "Fact check a document",
+      body: "Attach a PDF and switch to Fact check. Nexus pulls out what the document claims and checks each one against the web.",
     },
     outputs: {
       title: "Reports show up here",
-      body: "Anything that ran in the background lands in this panel, and you get a nudge wherever you are when one is finished.",
+      body: "Anything Nexus runs in the background lands in this panel, and you get a nudge wherever you are once it is ready.",
     },
     history: {
-      title: "Nothing gets lost",
-      body: "Every chat is kept. Open an old one from here and pick up where you stopped.",
+      title: "Recent chats",
+      body: "Every chat is kept here. Reopen one and pick up where you stopped.",
     },
   },
   modes: {
@@ -451,7 +451,7 @@ const fr: Dict = {
   },
   chat: {
     runningPlaceholder: "Travail en cours… arrêtez pour demander autre chose",
-    idlePlaceholder: "Posez une question de suivi, ou autre chose…",
+    idlePlaceholder: "Posez une question",
     jumpLatest: "Aller au plus récent",
     showArtifacts: "Afficher les résultats",
   },
@@ -527,20 +527,20 @@ const fr: Dict = {
     next: "Suivant",
     done: "Poser une question",
     deep: {
-      title: "Il existe un mode plus lent",
-      body: "La recherche approfondie envoie une petite équipe d'agents et revient avec un vrai rapport. Ça prend quelques minutes, donc ça tourne en arrière-plan pendant que vous faites autre chose.",
+      title: "Recherche approfondie",
+      body: "Nexus envoie une petite équipe d'agents et vous rend un rapport complet et sourcé. Il travaille en arrière-plan, vous pouvez donc passer à autre chose pendant ce temps.",
     },
     attach: {
-      title: "Donnez-lui un document",
-      body: "Joignez un PDF et passez en Vérification. Il en extrait les affirmations et va voir si elles tiennent.",
+      title: "Vérifier un document",
+      body: "Joignez un PDF et passez en mode Vérification. Nexus en extrait les affirmations et va confronter chacune au web.",
     },
     outputs: {
-      title: "Les rapports arrivent ici",
-      body: "Tout ce qui a tourné en arrière-plan atterrit dans ce panneau, et vous êtes prévenu où que vous soyez quand c'est prêt.",
+      title: "Vos rapports arrivent ici",
+      body: "Tout ce que Nexus lance en arrière-plan atterrit dans ce panneau, et vous êtes prévenu où que vous soyez dès que c'est prêt.",
     },
     history: {
-      title: "Rien ne se perd",
-      body: "Chaque conversation est gardée. Rouvrez-en une d'ici et reprenez où vous vous étiez arrêté.",
+      title: "Conversations récentes",
+      body: "Toutes vos conversations restent ici. Rouvrez-en une et reprenez où vous vous étiez arrêté.",
     },
   },
   modes: {

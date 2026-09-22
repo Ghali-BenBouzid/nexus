@@ -153,6 +153,9 @@ export function Tour({
               <i key={s.id} className={n === i ? "on" : undefined} />
             ))}
           </span>
+          <button type="button" className="tour-skip" onClick={close}>
+            {t.tour.skip}
+          </button>
           {i > 0 && (
             <button type="button" className="tour-back" onClick={() => setI(i - 1)}>
               {t.tour.back}

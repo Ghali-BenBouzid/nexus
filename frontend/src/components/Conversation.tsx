@@ -272,7 +272,13 @@ export function Conversation({
         <div className="artifact-list-scrim" onClick={() => onLayout("thread")} aria-hidden="true" />
       )}
 
-      <div className="chat-main" ref={mainRef}>
+      {/* Which panel is up, so the stylesheet can decide whether the side
+          columns float over the page or push the thread aside. */}
+      <div
+        className="chat-main"
+        data-panel={layout === "split" ? (previewing ? "reader" : "list") : "none"}
+        ref={mainRef}
+      >
         <ChatHistory
           open={historyOpen}
           onToggle={onToggleHistory}
@@ -326,6 +332,7 @@ export function Conversation({
               <div className="resizer" role="separator" aria-orientation="vertical" onMouseDown={startResize} />
             )}
             <OutputsPanel
+              tourAnchor
               outputs={outputs}
               documents={documents}
               width={previewing ? artifactWidth : SLIM_WIDTH}

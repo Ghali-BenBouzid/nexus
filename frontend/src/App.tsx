@@ -74,7 +74,17 @@ export default function App() {
   // /chat/:id starts on the chat view and the conversation is loaded on mount.
   const [view, setView] = useState<View>(() => getRoute().view);
   const [turns, setTurns] = useState<Turn[]>([]);
-  const [layout, setLayout] = useState<LayoutMode>("thread");
+  // Both side panels start open on a desktop, because a panel nobody opens is a
+  // feature nobody knows exists: the Outputs list is how a visitor learns that
+  // background runs land somewhere. On a phone they are sheets over the thread,
+  // so there they stay shut.
+  const [layout, setLayout] = useState<LayoutMode>(() => {
+    try {
+      return window.matchMedia("(max-width: 920px)").matches ? "thread" : "split";
+    } catch {
+      return "thread";
+    }
+  });
   const [focusedId, setFocusedId] = useState<number | null>(null);
   const [now, setNow] = useState(0);
   const [scrolled, setScrolled] = useState(false);
@@ -85,14 +95,15 @@ export default function App() {
   const [font] = useState(getStoredFont);
   const [bloom] = useState(getStoredBloom);
   const [darkLevel] = useState(getStoredDarkLevel);
-  // The Recent column is hidden by default; the user's open/closed choice is
-  // remembered across sessions.
+  // The Recent column starts open on a desktop and the user's choice is
+  // remembered from then on.
   const [chatHistoryOpen, setChatHistoryOpen] = useState(() => {
     try {
       // On mobile the Recent column is a drawer opened from a corner button; it
       // always lands closed, regardless of the remembered desktop preference.
       if (window.matchMedia("(max-width: 920px)").matches) return false;
-      return localStorage.getItem("nexus-history-open") === "true";
+      const stored = localStorage.getItem("nexus-history-open");
+      return stored === null ? true : stored === "true";
     } catch {
       return false;
     }

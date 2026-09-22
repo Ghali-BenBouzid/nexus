@@ -464,7 +464,7 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
    ============================================================ */
 
 .tour { position: fixed; inset: 0; z-index: 90; }
-.tour-mask { position: absolute; inset: 0; background: rgb(4 4 6 / 0.62);
+.tour-mask { position: absolute; inset: 0; background: rgb(2 2 4 / 0.82);
   animation: tourFade 0.2s var(--ease); }
 .tour-mask.lit { background: transparent; }
 /* The dim is cast by the hole, not painted over the page: one enormous spread
@@ -472,10 +472,15 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
    instead of being tinted by a sheet lying on top of it. The rings are what make
    it read as lifted rather than merely uncovered. */
 .tour-hole { position: absolute; border-radius: 12px;
-  box-shadow: 0 0 0 9999px rgb(4 4 6 / 0.62),
-              0 0 0 1px rgb(255 255 255 / 0.22),
-              0 8px 40px rgb(0 0 0 / 0.5);
-  outline: 1px solid rgb(255 255 255 / 0.14); outline-offset: 2px;
+  /* A dark page needs a much deeper dim than a light one before the eye reads
+     the hole as lit: at 0.62 over near-black there is barely a difference to
+     see, and only the thin ring says anything is happening. The soft accent
+     halo is what actually pulls the eye, since the dim alone cannot. */
+  box-shadow: 0 0 0 9999px rgb(2 2 4 / 0.82),
+              0 0 0 1px rgb(255 255 255 / 0.3),
+              0 0 0 5px color-mix(in srgb, var(--accent) 22%, transparent),
+              0 10px 44px rgb(0 0 0 / 0.6);
+  outline: none;
   /* A spring, without the library: overshoot and settle. */
   transition: top 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
               left 0.42s cubic-bezier(0.22, 1.4, 0.36, 1),
@@ -483,11 +488,12 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
               height 0.42s cubic-bezier(0.22, 1.4, 0.36, 1); }
 html[data-theme="light"] .tour-mask { background: rgb(17 17 20 / 0.48); }
 html[data-theme="light"] .tour-mask.lit { background: transparent; }
+/* A light page already contrasts hard with a dim, so it needs far less of one. */
 html[data-theme="light"] .tour-hole {
-  box-shadow: 0 0 0 9999px rgb(17 17 20 / 0.48),
-              0 0 0 1px rgb(0 0 0 / 0.06),
-              0 8px 40px rgb(0 0 0 / 0.18);
-  outline-color: rgb(255 255 255 / 0.85); }
+  box-shadow: 0 0 0 9999px rgb(17 17 20 / 0.5),
+              0 0 0 1px rgb(255 255 255 / 0.9),
+              0 0 0 5px color-mix(in srgb, var(--accent) 26%, transparent),
+              0 10px 40px rgb(0 0 0 / 0.22); }
 
 .tour-card { position: fixed; z-index: 91; width: 320px; max-width: calc(100vw - 24px);
   padding: 15px 16px 13px; border-radius: var(--r-md);
@@ -518,6 +524,9 @@ html[data-theme="light"] .tour-hole {
 .tour-dots i { width: 6px; height: 6px; border-radius: 999px; background: var(--line-strong);
   transition: width 0.3s var(--ease), background 0.3s; }
 .tour-dots i.on { width: 17px; background: var(--accent); }
+.tour-skip { border: none; background: none; padding: 6px 8px; border-radius: 9px; cursor: pointer;
+  font-family: inherit; font-size: 12.5px; color: var(--faint); transition: color 0.15s, background 0.15s; }
+.tour-skip:hover { color: var(--fg); background: var(--surface-2); }
 .tour-back { display: inline-flex; align-items: center; gap: 5px; border: none; background: none;
   padding: 6px 9px; border-radius: 9px; cursor: pointer; font-family: inherit; font-size: 12.5px;
   font-weight: 500; color: var(--faint); transition: color 0.15s, background 0.15s; }
@@ -904,7 +913,9 @@ html[data-theme="light"] .tour-hole {
   font-size: 13px; color: var(--muted); background: transparent;
   border: 1px solid var(--line); transition: background 0.15s, color 0.15s, border-color 0.15s; }
 .mode-pill:hover { color: var(--fg); background: var(--surface-2); border-color: var(--line-strong); }
-.mode-pill.on { color: var(--accent-text); background: var(--accent-soft); border-color: var(--accent); }
+.mode-pill.on { color: var(--fg); background: transparent; border-color: var(--accent); }
+.mode-pill.on .mode-pill-ic { color: var(--accent-text); }
+.mode-pill.on:hover { background: var(--surface-2); }
 .mode-pill-ic { display: grid; place-items: center; flex: none; }
 .mode-pill-ic svg { width: 15px; height: 15px; }
 .mode-pill-label { white-space: nowrap; }
@@ -924,7 +935,7 @@ html[data-theme="light"] .tour-hole {
   border: none; background: none; border-radius: 10px; cursor: pointer; text-align: left;
   font-family: inherit; color: var(--fg); transition: background 0.15s; }
 .mode-item:hover:not(.blocked) { background: var(--surface-2); }
-.mode-item.on { background: var(--accent-soft); }
+.mode-item.on { background: var(--surface-2); }
 .mode-item.blocked { cursor: default; opacity: 0.5; }
 .mode-item-ic { display: grid; place-items: center; flex: none; margin-top: 1px; color: var(--muted); }
 .mode-item.on .mode-item-ic { color: var(--accent-text); }
@@ -943,8 +954,9 @@ html[data-theme="light"] .tour-hole {
    Not a pill: a pill reads as a thing clipped to the message, when this is a
    statement about what sending is going to do. */
 .mode-chip { display: flex; align-items: center; gap: 7px; align-self: flex-start;
-  max-width: 100%; padding: 2px 4px 0; color: var(--accent-text); font-size: 13px;
+  max-width: 100%; padding: 2px 4px 0; color: var(--muted); font-size: 13px;
   font-weight: 600; }
+.mode-chip-icon { color: var(--accent-text); }
 .mode-chip-icon { display: grid; place-items: center; flex: none; }
 .mode-chip-icon svg { width: 15px; height: 15px; }
 .mode-chip-label { white-space: nowrap; }
@@ -1042,6 +1054,35 @@ html[data-theme="light"] .tour-hole {
 
 /* shell: chat column (scrolls) + optional report panel (scrolls) */
 .chat-main { flex: 1; min-height: 0; display: flex; position: relative; }
+/* The slim columns float over the page instead of pushing the thread sideways.
+   Opening "Recent" should not shove the conversation you are reading, and the
+   room is there: the thread is a fixed 680px column plus 24px of gutter either
+   side, so at 1400px and up there is 336px of empty page on each side of it,
+   more than either slim panel needs. Below that the page is genuinely too
+   narrow and they go back to taking their space.
+
+   A report is the exception, and the one the user asked to keep: it is wide,
+   resizable and meant to be read beside the thread, so it pushes. When it is
+   open the left column stops floating too, because the thread has moved off
+   centre and "Recent" would now be sitting on top of it. */
+@media (min-width: 1400px) {
+  .chat-main[data-panel="none"] > .chat-history,
+  .chat-main[data-panel="list"] > .chat-history {
+    position: absolute; left: 0; top: 0; bottom: 0; z-index: 6;
+  }
+  .chat-main[data-panel="list"] > .artifact-panel--list {
+    position: absolute; right: 0; top: 0; bottom: 0; z-index: 6;
+  }
+  /* In flow they had nothing behind them and could be half transparent. Floating
+     over a scrolling thread they cannot: the answer would read straight through
+     the panel. Glass, not a flat block, so the page still shows as depth. */
+  .chat-main[data-panel="none"] > .chat-history,
+  .chat-main[data-panel="list"] > .chat-history,
+  .chat-main[data-panel="list"] > .artifact-panel--list {
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    backdrop-filter: blur(16px) saturate(1.3);
+  }
+}
 /* the conversation column: thread (scrolls) stacked over its own composer */
 .chat-center { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; position: relative; }
 .chat-scroll { flex: 1; min-width: 0; overflow-y: auto; overflow-x: hidden; }
@@ -1157,9 +1198,7 @@ html[data-theme="light"] .tour-hole {
 .cinput { display: flex; flex-direction: column; gap: 6px; border-radius: 22px; background: var(--panel);
   border: 1px solid var(--line); box-shadow: var(--shadow); backdrop-filter: blur(12px); cursor: text;
   padding: 12px 12px 10px; transition: border-color 0.2s, box-shadow 0.2s; }
-/* A mode changes what sending costs, so the bar it is set on says so quietly in
-   its own edge, not only in the line of text above the input. */
-.cinput.deep { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.cinput.deep { border-color: var(--line-strong); }
 /* No focus highlight on the chat composer: the hero bar is the only one that
    lights up, to pull the eye toward it. The composer keeps its resting border. */
 .cinput-row { display: flex; align-items: center; gap: 8px; }
