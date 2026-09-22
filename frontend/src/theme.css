@@ -704,42 +704,72 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .report .doc a.jump:hover { text-decoration: underline; color: var(--accent-text); }
 /* A jumped-to heading lands clear of the panel's top edge, not glued to it. */
 .report .doc h2, .report .doc h3 { scroll-margin-top: 18px; }
+/* A source's mark. The monogram is not a failure state: a fair share of domains
+   have no usable favicon, so the letter is drawn to belong beside the real ones. */
+.fav { flex: none; border-radius: 4px; object-fit: contain; }
+.fav-mono { display: inline-grid; place-items: center; color: #fff;
+  font-family: var(--font-sans); font-weight: 700; line-height: 1; }
+
 /* One claim's sources, as one mark in the prose. A reader checks a source when
    they doubt the sentence it sits on, so the sources live on the sentence and
-   stay folded until then: a paragraph carrying eight bare numbers is noise for
-   everyone who was never going to click one. */
-.cites-chip { display: inline-flex; align-items: center; gap: 2px; padding: 1px 5px;
-  vertical-align: super; margin: 0 1px;
-  border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2);
-  font-family: var(--font-mono); font-size: 0.68em; font-weight: 600; line-height: 1.5;
-  color: var(--accent-text); cursor: pointer; transition: background 0.15s, color 0.15s, border-color 0.15s; }
-.cites-chip:hover { border-color: var(--accent); }
-.cites-chip.active { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
-.cites-more { opacity: 0.75; }
+   stay folded until then. The chip names its domain rather than a number: a
+   number says a source exists, a domain says whether it is worth doubting. */
+.cites-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 15em;
+  padding: 1px 7px 1px 5px; margin: 0 2px; vertical-align: baseline;
+  border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2);
+  font-family: var(--font-mono); font-size: 0.74em; font-weight: 500; line-height: 1.7;
+  color: var(--muted); cursor: pointer; text-decoration: none;
+  transition: background 0.15s, color 0.15s, border-color 0.15s; }
+.cites-chip:hover { border-color: var(--line-strong); background: var(--surface); color: var(--fg); }
+.cites-chip.active { border-color: var(--accent); color: var(--fg); background: var(--accent-soft); }
+.cites-domain { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cites-more { flex: none; color: var(--faint); }
 
-/* The list, drawn at the top of the page against the viewport: a report body
+/* The panel, drawn at the top of the page against the viewport: a report body
    scrolls and a wide table scrolls sideways, and a panel drawn inside either of
    them would be cut off at its edge. Placed by the chip that opened it. */
 .cites-pop { position: fixed; z-index: 60;
   display: flex; flex-direction: column; width: max-content; max-width: min(340px, 78vw);
-  padding: 6px; border: 1px solid var(--line); border-radius: 12px;
-  background: var(--surface-solid); box-shadow: var(--shadow);
+  border: 1px solid var(--line-strong); border-radius: 14px;
+  background: var(--surface-solid);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.2), 0 20px 50px -14px rgb(0 0 0 / 0.55);
   font-family: var(--font-sans); font-size: 13px; line-height: 1.4;
-  text-align: left; white-space: normal; }
-.cites-pop-head { padding: 4px 8px 6px; color: var(--faint); font-size: 11px;
-  font-family: var(--font-mono); letter-spacing: 0.04em; text-transform: uppercase; }
-.cites-row { display: flex; gap: 8px; padding: 6px 8px; border-radius: 8px;
-  color: var(--fg); text-decoration: none; }
-.cites-row:hover { background: var(--surface-2); }
-.cites-n { flex: none; min-width: 16px; font-family: var(--font-mono); font-size: 11px;
-  font-weight: 600; color: var(--faint); padding-top: 1px; }
-.cites-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
-.cites-title { font-weight: 500; overflow: hidden; text-overflow: ellipsis;
+  text-align: left; white-space: normal;
+  animation: citesIn 0.16s var(--ease); }
+@keyframes citesIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+/* One source at a time, with a pager: four rows make a reader skim, one card
+   makes them read the one they actually doubt. */
+.cites-pop-head { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.cites-pager { display: flex; align-items: center; gap: 2px; }
+.cites-arrow { display: grid; place-items: center; width: 20px; height: 20px; flex: none;
+  border: none; background: none; border-radius: 6px; color: var(--faint); cursor: pointer;
+  transition: color 0.15s, background 0.15s; }
+.cites-arrow:hover { color: var(--fg); background: var(--surface-2); }
+.cites-arrow svg { width: 13px; height: 13px; }
+.cites-count { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted);
+  font-variant-numeric: tabular-nums; min-width: 2.4em; text-align: center; }
+.cites-pop-label { display: inline-flex; align-items: center; gap: 7px; margin-left: auto;
+  font-size: 12px; color: var(--faint); }
+/* Overlapped, so several sources read as a stack rather than a row of icons. */
+.cites-stack { display: inline-flex; }
+.cites-stack .fav { margin-left: -5px; border: 1.5px solid var(--surface-solid); border-radius: 5px; }
+.cites-stack .fav:first-child { margin-left: 0; }
+
+.cites-card { display: flex; flex-direction: column; gap: 5px; padding: 11px 12px 12px;
+  color: var(--fg); text-decoration: none; border-radius: 0 0 13px 13px; transition: background 0.15s; }
+.cites-card:hover { background: var(--surface-2); }
+.cites-card-top { display: flex; align-items: center; gap: 7px; min-width: 0;
+  font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+.cites-card-top .cites-domain { font-size: 11.5px; }
+.cites-title { font-size: 13.5px; font-weight: 600; line-height: 1.4; overflow: hidden;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 .cites-url { display: flex; align-items: center; gap: 4px; color: var(--faint); font-size: 11.5px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cites-url svg { width: 10px; height: 10px; flex: none; }
-.cites-row.missing { color: var(--faint); font-style: italic; }
+.cites-card.missing { color: var(--faint); font-style: italic; }
+@media (prefers-reduced-motion: reduce) { .cites-pop { animation: none; } }
 
 .report-foot { margin-top: 30px; padding-top: 22px; border-top: 1px solid var(--line); display: flex; gap: 12px; flex-wrap: wrap; }
 
@@ -1085,7 +1115,12 @@ h1, h2, h3, .section-head h2, .feature-copy h2 { text-wrap: balance; }
 .src-n { font-family: var(--font-mono); font-size: 12px; font-weight: 600; color: var(--accent-text);
   font-variant-numeric: tabular-nums; }
 .src-row.consulted .src-n { color: var(--faint); font-weight: 400; }
-.src-main { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.src-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+/* Where a source comes from, above what it is called: the domain is what a
+   reader weighs first, and the title only matters once they trust the domain. */
+.src-where { display: flex; align-items: center; gap: 6px; min-width: 0;
+  font-family: var(--font-mono); font-size: 11px; color: var(--muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .src-title { font-size: 13.5px; font-weight: 500; color: var(--fg); line-height: 1.4;
   transition: color 0.15s;
   overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }

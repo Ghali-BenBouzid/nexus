@@ -232,6 +232,8 @@ const en = {
   cites: {
     label: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
     missing: "This source is no longer listed.",
+    prev: "Previous source",
+    next: "Next source",
   },
   deepMode: {
     label: "Deep research",
@@ -479,6 +481,8 @@ const fr: Dict = {
   cites: {
     label: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
     missing: "Cette source n'est plus répertoriée.",
+    prev: "Source précédente",
+    next: "Source suivante",
   },
   deepMode: {
     label: "Recherche approfondie",

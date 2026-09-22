@@ -7,6 +7,8 @@ import remarkGfm from "remark-gfm";
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import { segments } from "../lib/cites";
+import { domainOf } from "../lib/favicon";
+import { Favicon } from "./Favicon";
 import { resolve, slug } from "../lib/slug";
 import type { Source } from "../types";
 
@@ -91,6 +93,14 @@ function CiteGroup({ ns, sources, onCite, activeCite }: CiteProps & { ns: number
 
   const lit = ns.some((n) => n === activeCite);
   const label = t.cites.label(ns.length);
+  // Which of the group's sources the panel is showing. It resets whenever the
+  // panel closes, so reopening a citation always starts at its first source.
+  const [page, setPage] = useState(0);
+  useEffect(() => {
+    if (!open) setPage(0);
+  }, [open]);
+  const first = sources[ns[0] - 1];
+  const shown = sources[ns[page] - 1];
 
   return (
     <>
@@ -103,7 +113,14 @@ function CiteGroup({ ns, sources, onCite, activeCite }: CiteProps & { ns: number
         aria-label={label}
         title={label}
       >
-        {ns[0]}
+        {first ? (
+          <>
+            <Favicon url={first.url} size={13} />
+            <span className="cites-domain">{domainOf(first.url)}</span>
+          </>
+        ) : (
+          <span className="cites-domain">{ns[0]}</span>
+        )}
         {ns.length > 1 && <span className="cites-more">+{ns.length - 1}</span>}
       </button>
       {at &&
@@ -115,34 +132,58 @@ function CiteGroup({ ns, sources, onCite, activeCite }: CiteProps & { ns: number
               [at.fromBottom ? "bottom" : "top"]: at.y,
             }}
           >
-            <div className="cites-pop-head">{label}</div>
-            {ns.map((n) => {
-              const source = sources[n - 1];
-              return source ? (
-                <a
-                  key={n}
-                  className="cites-row"
-                  href={source.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  onClick={() => {
-                    onCite(n);
-                    setAt(null);
-                  }}
-                >
-                  <span className="cites-n">{n}</span>
-                  <span className="cites-main">
-                    <span className="cites-title">{source.title}</span>
-                    <span className="cites-url">{stripScheme(source.url)}{I.ext}</span>
-                  </span>
-                </a>
-              ) : (
-                <span key={n} className="cites-row missing">
-                  <span className="cites-n">{n}</span>
-                  <span className="cites-main">{t.cites.missing}</span>
+            <div className="cites-pop-head">
+              {ns.length > 1 && (
+                <div className="cites-pager">
+                  <button
+                    type="button"
+                    className="cites-arrow"
+                    onClick={() => setPage((i) => (i - 1 + ns.length) % ns.length)}
+                    aria-label={t.cites.prev}
+                  >
+                    {I.arrowLeft}
+                  </button>
+                  <span className="cites-count">{page + 1}/{ns.length}</span>
+                  <button
+                    type="button"
+                    className="cites-arrow"
+                    onClick={() => setPage((i) => (i + 1) % ns.length)}
+                    aria-label={t.cites.next}
+                  >
+                    {I.arrowRight}
+                  </button>
+                </div>
+              )}
+              <span className="cites-pop-label">
+                <span className="cites-stack" aria-hidden="true">
+                  {ns.slice(0, 3).map((n) =>
+                    sources[n - 1] ? <Favicon key={n} url={sources[n - 1].url} size={14} /> : null,
+                  )}
                 </span>
-              );
-            })}
+                {label}
+              </span>
+            </div>
+            {shown ? (
+              <a
+                className="cites-card"
+                href={shown.url}
+                target="_blank"
+                rel="noreferrer"
+                onClick={() => {
+                  onCite(ns[page]);
+                  setAt(null);
+                }}
+              >
+                <span className="cites-card-top">
+                  <Favicon url={shown.url} size={16} />
+                  <span className="cites-domain">{domainOf(shown.url)}</span>
+                </span>
+                <span className="cites-title">{shown.title}</span>
+                <span className="cites-url">{stripScheme(shown.url)}{I.ext}</span>
+              </a>
+            ) : (
+              <div className="cites-card missing">{t.cites.missing}</div>
+            )}
           </div>,
           document.body,
         )}
