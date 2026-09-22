@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import { useIsMobile } from "../lib/useIsMobile";
-import type { Doc, LayoutMode, Output, Result, Theme, Turn } from "../types";
+import type { Doc, LayoutMode, Mode, Output, Result, Theme, Turn } from "../types";
 import { OutputsPanel } from "./OutputsPanel";
 import { ChatHistory } from "./ChatHistory";
 import { NexusLockup } from "./NexusLogo";
@@ -20,9 +20,9 @@ type ConversationProps = {
   onSubmit: (prompt: string) => void;
   onStop: () => void;
   onExit: () => void;
-  // Deep research mode, owned by App because it decides how a message is sent.
-  deep: boolean;
-  onDeep: ((next: boolean) => void) | undefined;
+  // What sending does, owned by App because App is what sends.
+  mode: Mode;
+  onMode: ((next: Mode) => void) | undefined;
   // The right-hand panel: what this account has produced, and what it attached.
   outputs: Output[];
   documents: Doc[];
@@ -63,8 +63,8 @@ export function Conversation({
   onSubmit,
   onStop,
   onExit,
-  deep,
-  onDeep,
+  mode,
+  onMode,
   outputs,
   documents,
   openOutputId,
@@ -272,7 +272,13 @@ export function Conversation({
         <div className="artifact-list-scrim" onClick={() => onLayout("thread")} aria-hidden="true" />
       )}
 
-      <div className="chat-main" ref={mainRef}>
+      {/* Which panel is up, so the stylesheet can decide whether the side
+          columns float over the page or push the thread aside. */}
+      <div
+        className="chat-main"
+        data-panel={layout === "split" ? (previewing ? "reader" : "list") : "none"}
+        ref={mainRef}
+      >
         <ChatHistory
           open={historyOpen}
           onToggle={onToggleHistory}
@@ -299,7 +305,7 @@ export function Conversation({
           )}
 
           <div className="composer">
-            <div className="composer-inner">
+            <div className="composer-inner" data-tour="composer">
               <PromptBar
                 variant="composer"
                 onSubmit={submit}
@@ -309,8 +315,8 @@ export function Conversation({
                 onAttach={onAttach}
                 onUnstage={onUnstage}
                 attachError={uploadError}
-                deep={deep}
-                onDeep={onDeep}
+                mode={mode}
+                onMode={onMode}
                 autoFocus
                 placeholder={running ? t.chat.runningPlaceholder : t.chat.idlePlaceholder}
               />
@@ -326,6 +332,7 @@ export function Conversation({
               <div className="resizer" role="separator" aria-orientation="vertical" onMouseDown={startResize} />
             )}
             <OutputsPanel
+              tourAnchor
               outputs={outputs}
               documents={documents}
               width={previewing ? artifactWidth : SLIM_WIDTH}
@@ -346,6 +353,7 @@ export function Conversation({
           !isMobile && (
             <button
               className="artifact-fab"
+              data-tour="outputs"
               onClick={() => {
                 onOpenOutput(null); // land on the Outputs list, never a stale report
                 onLayout("split");

@@ -160,7 +160,7 @@ const en = {
   },
   chat: {
     runningPlaceholder: "Working… stop to ask something else",
-    idlePlaceholder: "Ask a follow-up, or something new…",
+    idlePlaceholder: "Ask anything",
     jumpLatest: "Jump to latest",
     showArtifacts: "Show outputs",
   },
@@ -229,16 +229,59 @@ const en = {
     open: "Open",
     dismiss: "Dismiss",
   },
+  tour: {
+    title: "A quick tour of Nexus",
+    start: "Take the tour",
+    skip: "Skip",
+    back: "Back",
+    next: "Next",
+    done: "Start asking",
+    deep: {
+      title: "Deep research",
+      body: "Nexus sends out a small team of agents and comes back with a full cited report. It runs in the background, so you can carry on while it works.",
+    },
+    attach: {
+      title: "Fact check a document",
+      body: "Attach a PDF and switch to Fact check. Nexus pulls out what the document claims and checks each one against the web.",
+    },
+    outputs: {
+      title: "Reports show up here",
+      body: "Anything Nexus runs in the background lands in this panel, and you get a nudge wherever you are once it is ready.",
+    },
+    history: {
+      title: "Recent chats",
+      body: "Every chat is kept here. Reopen one and pick up where you stopped.",
+    },
+  },
+  modes: {
+    pick: "Mode",
+    off: "Back to a normal answer",
+    answer: {
+      label: "Answer",
+      note: "Searches if it needs to. Seconds.",
+    },
+    deep: {
+      label: "Deep research",
+      note: "A full cited report. Minutes.",
+    },
+    factcheck: {
+      label: "Fact check",
+      note: "Tests a document's claims against the web.",
+      needsFile: "Attach a document first",
+      started: (files: string) => `Checking ${files}. The report lands in Outputs when it is done.`,
+    },
+  },
+  // What the bar asks for once a mode changes what sending means.
+  modePlaceholder: {
+    answer: "",
+    deep: "What should the report cover?",
+    factcheck: "Anything to focus the check on? Optional.",
+  } as Record<string, string>,
   cites: {
     label: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
     missing: "This source is no longer listed.",
-  },
-  deepMode: {
-    label: "Deep research",
-    hint: "Search the web in depth and write a cited report. Takes several minutes.",
-    off: "Turn off deep research",
-    note: "A few minutes, and a large share of the demo budget.",
-    placeholder: "What should the report cover?",
+    prev: "Previous source",
+    next: "Next source",
   },
   history: {
     recent: "Recent",
@@ -408,7 +451,7 @@ const fr: Dict = {
   },
   chat: {
     runningPlaceholder: "Travail en cours… arrêtez pour demander autre chose",
-    idlePlaceholder: "Posez une question de suivi, ou autre chose…",
+    idlePlaceholder: "Posez une question",
     jumpLatest: "Aller au plus récent",
     showArtifacts: "Afficher les résultats",
   },
@@ -476,16 +519,58 @@ const fr: Dict = {
     open: "Ouvrir",
     dismiss: "Ignorer",
   },
+  tour: {
+    title: "Nexus en bref",
+    start: "Faire le tour",
+    skip: "Passer",
+    back: "Retour",
+    next: "Suivant",
+    done: "Poser une question",
+    deep: {
+      title: "Recherche approfondie",
+      body: "Nexus envoie une petite équipe d'agents et vous rend un rapport complet et sourcé. Il travaille en arrière-plan, vous pouvez donc passer à autre chose pendant ce temps.",
+    },
+    attach: {
+      title: "Vérifier un document",
+      body: "Joignez un PDF et passez en mode Vérification. Nexus en extrait les affirmations et va confronter chacune au web.",
+    },
+    outputs: {
+      title: "Vos rapports arrivent ici",
+      body: "Tout ce que Nexus lance en arrière-plan atterrit dans ce panneau, et vous êtes prévenu où que vous soyez dès que c'est prêt.",
+    },
+    history: {
+      title: "Conversations récentes",
+      body: "Toutes vos conversations restent ici. Rouvrez-en une et reprenez où vous vous étiez arrêté.",
+    },
+  },
+  modes: {
+    pick: "Mode",
+    off: "Revenir à une réponse normale",
+    answer: {
+      label: "Réponse",
+      note: "Cherche si besoin. Quelques secondes.",
+    },
+    deep: {
+      label: "Recherche approfondie",
+      note: "Un rapport complet et sourcé. Plusieurs minutes.",
+    },
+    factcheck: {
+      label: "Vérification",
+      note: "Confronte au web ce qu'affirme un document.",
+      needsFile: "Joignez d'abord un document",
+      started: (files: string) => `Vérification de ${files}. Le rapport arrivera dans Sorties une fois terminé.`,
+    },
+  },
+  modePlaceholder: {
+    answer: "",
+    deep: "Que doit couvrir le rapport ?",
+    factcheck: "Un point sur lequel concentrer la vérification ? Facultatif.",
+  } as Record<string, string>,
   cites: {
     label: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
     missing: "Cette source n'est plus répertoriée.",
-  },
-  deepMode: {
-    label: "Recherche approfondie",
-    hint: "Fouille le web en profondeur et rédige un rapport sourcé. Prend plusieurs minutes.",
-    off: "Désactiver la recherche approfondie",
-    note: "Quelques minutes, et une bonne part du budget de démo.",
-    placeholder: "Sur quoi doit porter le rapport ?",
+    prev: "Source précédente",
+    next: "Source suivante",
   },
   history: {
     recent: "Récent",

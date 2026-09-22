@@ -99,6 +99,17 @@ export const I: Record<string, ReactElement> = {
       <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
     </svg>
   ),
+  // Deep research: a telescope, for looking hard at something far away. Layers
+  // said "a stack of things", which is not what a deep run is.
+  telescope: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M13.5 3.6l6.2 3.1a1.4 1.4 0 01.6 1.9l-1.3 2.6-8.7-4.4 1.3-2.6a1.4 1.4 0 011.9-.6z" />
+      <path d="M10.3 6.8L4.1 9.2a1.2 1.2 0 00-.6 1.7l1 2a1.2 1.2 0 001.6.6l6.5-2.1" />
+      <path d="M8.4 13.1L11 21" />
+      <path d="M13.6 11.4L17 19" />
+      <path d="M9 17h5" />
+    </svg>
+  ),
   layers: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 3l9 5-9 5-9-5 9-5z" />

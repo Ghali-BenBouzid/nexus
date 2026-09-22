@@ -21,6 +21,8 @@ type OutputsPanelProps = {
   onFactCheck: (doc: Doc) => void;
   uploadError?: string | null;
   isMobile?: boolean;
+  // The quick tour points here when the panel is open; at the fab when it is not.
+  tourAnchor?: boolean;
 };
 
 const kb = (bytes: number) =>
@@ -62,6 +64,7 @@ export function OutputsPanel({
   onFactCheck,
   uploadError,
   isMobile,
+  tourAnchor,
 }: OutputsPanelProps) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [confirming, setConfirming] = useState<number | null>(null);
@@ -70,7 +73,7 @@ export function OutputsPanel({
 
   if (open) {
     return (
-      <aside className="artifact-panel artifact-panel--reader" style={style}>
+      <aside className="artifact-panel artifact-panel--reader" style={style} data-tour={tourAnchor ? "outputs" : undefined}>
         <Artifact
           title={open.title}
           status={open.status}
@@ -86,7 +89,7 @@ export function OutputsPanel({
   }
 
   return (
-    <aside className="artifact-panel artifact-panel--list" style={style}>
+    <aside className="artifact-panel artifact-panel--list" style={style} data-tour={tourAnchor ? "outputs" : undefined}>
       <div className="ch-head">
         <span className="ap-title">{t.artifact.title}</span>
         {/* Mobile has no close button here: the top-right corner button toggles
