@@ -80,7 +80,9 @@ export default function App() {
   // so there they stay shut.
   const [layout, setLayout] = useState<LayoutMode>(() => {
     try {
-      return window.matchMedia("(max-width: 920px)").matches ? "thread" : "split";
+      if (window.matchMedia("(max-width: 920px)").matches) return "thread";
+      const stored = localStorage.getItem("nexus-outputs-open");
+      return stored === null || stored === "true" ? "split" : "thread";
     } catch {
       return "thread";
     }
@@ -157,6 +159,10 @@ export default function App() {
   // Which finished outputs the user has already been told about, so a report is
   // announced once per browser and not again on every reload.
   const announced = useRef<Set<number>>(new Set(storedAnnounced()));
+  // Background runs we have already shown the panel for. Once per run: if the
+  // user shuts the panel while one is still working, that is an answer, and
+  // reopening it every five seconds would be the app arguing with them.
+  const revealed = useRef<Set<number>>(new Set());
   const [ready, setReady] = useState<Output[]>([]);
   // Which reports this browser has read, so a finished one is marked new until
   // it is opened, and marked new again when a refresh rewrites it.
@@ -310,6 +316,19 @@ export default function App() {
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, anyOutputRunning, view]);
+
+  // A deep run or a fact check leaves the conversation and works on its own for
+  // minutes. Nothing in the thread shows that, so the panel where it will land
+  // opens as it starts: the run is visible as running, rather than as silence
+  // followed by a report out of nowhere.
+  useEffect(() => {
+    const starting = outputs.find(
+      (o) => (o.status === "running" || o.status === "pending") && !revealed.current.has(o.id),
+    );
+    if (!starting) return;
+    revealed.current.add(starting.id);
+    setLayout("split");
+  }, [outputs]);
 
   // Tell the user once when a report they are no longer watching is ready. Two
   // can land in the same poll, so they queue rather than overwrite each other.
@@ -543,7 +562,7 @@ export default function App() {
     // null below means this run never appends to the prior conversation.
     if (fresh) {
       setFocusedId(null);
-      setLayout("thread");
+      setOpenOutputId(null); // a report from the old chat is not this one's
       setTurns([turn]);
       setMode("answer");
     } else {
@@ -705,7 +724,14 @@ export default function App() {
     }
   }
 
-  const chooseLayout = (m: LayoutMode) => setLayout(m);
+  const chooseLayout = (m: LayoutMode) => {
+    setLayout(m);
+    try {
+      localStorage.setItem("nexus-outputs-open", String(m === "split"));
+    } catch {
+      /* ignore */
+    }
+  };
 
   useEffect(() => {
     if (tourSeen()) return;
@@ -765,7 +791,6 @@ export default function App() {
     setFocusedId(null);
     setOpenOutputId(null);
     setView("chat");
-    setLayout("thread");
     resumeInFlight(loaded);
   }
 
@@ -778,7 +803,6 @@ export default function App() {
     setUploadError(null);
     setFocusedId(null);
     setOpenOutputId(null);
-    setLayout("thread");
     setActiveConversation(null); // a fresh chat starts a new conversation
     navigate("/chat"); // becomes /chat/:id once the backend assigns one
     setView("chat"); // land on a fresh, empty conversation, not the hero

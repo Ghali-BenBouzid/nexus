@@ -29,6 +29,13 @@ html[data-theme="dark"] {
   --faint: rgba(255, 255, 255, 0.6);
   --line: rgba(255, 255, 255, 0.10);
   --line-strong: rgba(255, 255, 255, 0.18);
+  /* A citation sits inside a sentence and has to hold its own edge against the
+     prose. The general surface tokens are too faint for that: on black, a 10%
+     border over a 7% fill is barely a shape at all. */
+  --cite-line: rgba(255, 255, 255, 0.30);
+  --cite-fill: rgba(255, 255, 255, 0.13);
+  --cite-line-hover: rgba(255, 255, 255, 0.46);
+  --cite-fill-hover: rgba(255, 255, 255, 0.19);
   --surface: rgba(255, 255, 255, 0.045);
   --surface-2: rgba(255, 255, 255, 0.07);
   --surface-solid: #150e00;
@@ -57,6 +64,12 @@ html[data-theme="light"] {
   --faint: rgba(10, 7, 5, 0.62);
   --line: rgba(28, 18, 8, 0.12);
   --line-strong: rgba(28, 18, 8, 0.20);
+  /* On paper the fill has to go darker, not lighter: --surface-2 is white at
+     86%, which is brighter than the page, so the chip disappeared into it. */
+  --cite-line: rgba(28, 18, 8, 0.30);
+  --cite-fill: rgba(28, 18, 8, 0.07);
+  --cite-line-hover: rgba(28, 18, 8, 0.46);
+  --cite-fill-hover: rgba(28, 18, 8, 0.12);
   --surface: rgba(255, 255, 255, 0.66);
   --surface-2: rgba(255, 255, 255, 0.86);
   --surface-solid: #ffffff;
@@ -799,12 +812,12 @@ html[data-theme="light"] .tour-hole {
    number says a source exists, a domain says whether it is worth doubting. */
 .cites-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 15em;
   padding: 1px 7px 1px 5px; margin: 0 2px; vertical-align: baseline;
-  border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2);
+  border: 1px solid var(--cite-line); border-radius: 7px; background: var(--cite-fill);
   font-family: var(--font-mono); font-size: 0.74em; font-weight: 500; line-height: 1.7;
-  color: var(--muted); cursor: pointer; text-decoration: none;
+  color: var(--fg); cursor: pointer; text-decoration: none;
   transition: background 0.15s, color 0.15s, border-color 0.15s; }
-.cites-chip:hover { border-color: var(--line-strong); background: var(--surface); color: var(--fg); }
-.cites-chip.active { border-color: var(--accent); color: var(--fg); background: var(--surface); }
+.cites-chip:hover { border-color: var(--cite-line-hover); background: var(--cite-fill-hover); }
+.cites-chip.active { border-color: var(--accent); background: var(--cite-fill-hover); }
 .cites-domain { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cites-more { flex: none; color: var(--faint); }
 

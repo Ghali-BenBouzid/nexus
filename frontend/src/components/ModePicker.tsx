@@ -9,8 +9,8 @@ import type { Mode } from "../types";
 // it names itself in the bar and stays named while it is on.
 const MODES: { id: Mode; icon: keyof typeof I }[] = [
   { id: "answer", icon: "spark" },
-  { id: "deep", icon: "telescope" },
-  { id: "factcheck", icon: "shield" },
+  { id: "deep", icon: "microscope" },
+  { id: "factcheck", icon: "clipboardCheck" },
 ];
 
 export function ModePicker({

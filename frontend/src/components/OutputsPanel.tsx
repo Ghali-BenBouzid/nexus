@@ -173,7 +173,7 @@ export function OutputsPanel({
                   aria-label={t.uploads.factCheck}
                   title={t.uploads.factCheck}
                 >
-                  {I.shield}
+                  {I.clipboardCheck}
                 </button>
                 {confirming === doc.id ? (
                   <button

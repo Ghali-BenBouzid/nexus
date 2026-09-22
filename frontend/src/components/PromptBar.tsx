@@ -182,7 +182,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
   const modeChip = mode !== "answer" && onMode && (
     <div className="mode-chip">
       <span className="mode-chip-icon" aria-hidden="true">
-        {mode === "deep" ? I.telescope : I.shield}
+        {mode === "deep" ? I.microscope : I.clipboardCheck}
       </span>
       <span className="mode-chip-label">{t.modes[mode].label}:</span>
       <button

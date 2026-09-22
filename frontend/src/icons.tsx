@@ -99,15 +99,28 @@ export const I: Record<string, ReactElement> = {
       <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
     </svg>
   ),
-  // Deep research: a telescope, for looking hard at something far away. Layers
-  // said "a stack of things", which is not what a deep run is.
-  telescope: (
+  // Deep research: a microscope, for going over something closely. The source
+  // drawing carries two question bubbles as well; they turn to mush at the 15px
+  // the composer renders this at, so the instrument carries the meaning alone.
+  microscope: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M13.5 3.6l6.2 3.1a1.4 1.4 0 01.6 1.9l-1.3 2.6-8.7-4.4 1.3-2.6a1.4 1.4 0 011.9-.6z" />
-      <path d="M10.3 6.8L4.1 9.2a1.2 1.2 0 00-.6 1.7l1 2a1.2 1.2 0 001.6.6l6.5-2.1" />
-      <path d="M8.4 13.1L11 21" />
-      <path d="M13.6 11.4L17 19" />
-      <path d="M9 17h5" />
+      <path d="M3.5 21.2h17" />
+      <path d="M6.5 16.2h6" />
+      <path d="M15 3.6 18.6 5.9 14.2 12.8 10.6 10.5Z" />
+      <path d="M13.6 13.6a6.4 6.4 0 0 1-2.1 7.6" />
+    </svg>
+  ),
+  // Fact check: a clipboard of claims with a check badge. Drawn in strokes to
+  // sit with the rest of the set, where the source was a solid glyph, and with
+  // one ruled line rather than its several, which blurred together small.
+  clipboardCheck: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 3.2h6a1.1 1.1 0 0 1 1.1 1.1v1a1.1 1.1 0 0 1-1.1 1.1H9A1.1 1.1 0 0 1 7.9 5.3v-1A1.1 1.1 0 0 1 9 3.2Z" />
+      <path d="M16.1 4.8h1.4A1.5 1.5 0 0 1 19 6.3v3.9" />
+      <path d="M7.9 4.8H6.5A1.5 1.5 0 0 0 5 6.3v13.2A1.5 1.5 0 0 0 6.5 21h4.7" />
+      <path d="M8.4 10.2h4.2" />
+      <circle cx="17.2" cy="17.2" r="4.2" />
+      <path d="m15.4 17.2 1.3 1.3 2.5-2.7" />
     </svg>
   ),
   layers: (
