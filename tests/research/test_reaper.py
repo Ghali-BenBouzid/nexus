@@ -116,7 +116,7 @@ async def test_a_deep_run_resumes_from_its_checkpoint(
 
     def counted(messages, stop=None, run_manager=None, **kwargs):
         calls.append(1)
-        if len(calls) > 3:  # plan, then two researchers, then die
+        if len(calls) > 3:  # the lead, then two researchers, then die
             raise RuntimeError("the worker went away")
         return original(messages, stop, run_manager, **kwargs)
 
@@ -128,8 +128,9 @@ async def test_a_deep_run_resumes_from_its_checkpoint(
     async with db_session.SessionLocal() as db:
         assert (await db.get(Query, query_id)).status == QueryStatus.failed
 
-    # A worker picks it back up. The plan and both researchers are checkpointed,
-    # so only the write is left: one more call, not four.
+    # A worker picks it back up. The first round and both its researchers are
+    # checkpointed, so only the lead's verdict and the write are left: two more
+    # calls, not five.
     resumed = _StartsDeepResearch()
     after: list[int] = []
     resumed_generate = resumed._generate
@@ -148,4 +149,4 @@ async def test_a_deep_run_resumes_from_its_checkpoint(
         done = await db.get(Query, query_id)
     assert done.status == QueryStatus.complete
     assert done.report == "THE DEEP REPORT"
-    assert len(after) == 1  # the write, and nothing that already ran
+    assert len(after) == 2  # the lead and the write, nothing that already ran

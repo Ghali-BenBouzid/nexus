@@ -103,10 +103,16 @@ class Settings(BaseSettings):
     # to have properly covered. It takes minutes, writes its own report, and runs
     # in the background, so its ceilings are set by what is worth paying for
     # rather than by how long someone will sit and watch.
-    deep_cap: int = 12  # max sub-questions
+    deep_cap: int = 12  # max sub-questions in one round
     deep_max_iters: int = 6  # max tool rounds per researcher
     deep_concurrency: int = 6  # simultaneous researchers
-    deep_research_budget: float = 600.0  # seconds before researchers must submit
+    deep_research_budget: float = 600.0  # seconds one round's researchers get
+    # The lead sends rounds of researchers until it judges the subject covered.
+    # These are the ceilings on that judgement, not a target: a confused lead
+    # must not research all day, and every researcher is model calls paid for.
+    deep_max_rounds: int = 5
+    deep_max_researchers: int = 40
+    deep_research_window: float = 1_500.0  # seconds of research across rounds
     deep_researcher_timeout: float = 660.0  # hard stop for one researcher
     # The writer's limit on a deep run. Its own setting because a deep run hands
     # the writer several times the material a normal one does: twelve
@@ -120,16 +126,16 @@ class Settings(BaseSettings):
     # and every claim drags its sources into the citation list: one run came
     # back with 134 claims behind 215 sources. The curator cuts to this before
     # the writer sees anything.
-    deep_claim_cap: int = 45
+    deep_claim_cap: int = 60
     # The curator's own limit. Reading 134 claims took five minutes on a real
     # run, and past this the report is built from everything rather than losing
     # the writer's budget to the step before it.
     deep_curate_timeout: float = 360.0  # seconds
     # Whole-run backstop, above what the stages can spend between them: the
-    # researchers' hard stop (660 s), then the curator (360 s), then the writer
-    # (480 s). At 1500 s a run that used all three was killed just before it
-    # wrote anything.
-    deep_timeout: float = 2_100.0  # whole-run backstop
+    # research window (1500 s, plus the last round's hard stop), then the
+    # curator (360 s), then the writer (480 s). At 1500 s a one-round run that
+    # used all three was killed just before it wrote anything.
+    deep_timeout: float = 2_700.0  # whole-run backstop
     # The fact checker's own loop: read, search, read, write. Wider than a
     # researcher's because it checks several claims inside one loop.
     factcheck_max_iters: int = 14

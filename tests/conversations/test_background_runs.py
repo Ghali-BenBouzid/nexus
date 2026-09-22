@@ -12,6 +12,7 @@ import asyncio
 import pytest
 import pytest_asyncio
 from httpx import AsyncClient
+from langchain_core.messages import ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from app import jobs
@@ -53,8 +54,16 @@ class _StartsDeepResearch(ScriptedModel):
             tool.get("function", {}).get("name") or tool.get("name", "")
             for tool in (kwargs.get("tools") or [])
         }
-        if "SubmitPlanArgs" in names:
-            reply = call("SubmitPlanArgs", sub_questions=["q1", "q2"])
+        if "DispatchResearchersArgs" in names:
+            # The lead: one round, then satisfied once its findings are back.
+            if any(isinstance(m, ToolMessage) for m in messages):
+                reply = call("WriteReportArgs", reasoning="covered", outline="")
+            else:
+                reply = call(
+                    "DispatchResearchersArgs",
+                    reasoning="start wide",
+                    sub_questions=["q1", "q2"],
+                )
         elif "SubmitSelectionArgs" in names:
             # One call over every researcher's claims at once, numbered straight
             # through: 1-3 came from the first, 4-6 from the second.

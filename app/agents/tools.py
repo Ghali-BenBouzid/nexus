@@ -102,6 +102,24 @@ class SubmitPlanArgs(BaseModel):
     sub_questions: list[str] = Field(description="The list of sub-questions")
 
 
+class DispatchResearchersArgs(BaseModel):
+    reasoning: str = Field(
+        description="what the findings so far show, what is still missing or "
+        "unclear, and why these sub-questions are the next step"
+    )
+    sub_questions: list[str] = Field(
+        description="self-contained sub-questions, one researcher each"
+    )
+
+
+class WriteReportArgs(BaseModel):
+    reasoning: str = Field(description="why the subject is now covered")
+    outline: str = Field(
+        description="how the report should be organised, from what the findings "
+        "support, and what stays open"
+    )
+
+
 class SubmitSelectionArgs(BaseModel):
     keep: list[int] = Field(
         default_factory=list,

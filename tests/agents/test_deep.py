@@ -1,0 +1,127 @@
+"""The deep run's loop: a lead that reads what came back and decides again."""
+
+from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langgraph.checkpoint.memory import InMemorySaver
+
+from app.agents import deep
+from app.core.config import settings
+from tests.agents.fakes import ScriptedModel, call, says
+from tests.research.test_research import FakeBackend
+
+
+def _finding(messages: list[BaseMessage]) -> AIMessage:
+    question = str(messages[-1].content)
+    return call(
+        "SubmitFindingArgs",
+        claims=[{"text": f"about {question}", "cited_source_ids": []}],
+        found_info=True,
+    )
+
+
+async def _run(lead, *, cap: int = 12) -> tuple[dict, ScriptedModel]:
+    """Run a whole deep graph with ``lead`` deciding each turn: it gets the
+    lead's conversation and returns its reply."""
+
+    def respond(messages: list[BaseMessage], tools: list[str]) -> AIMessage:
+        if "DispatchResearchersArgs" in tools:
+            return lead(messages)
+        if "SubmitFindingArgs" in tools:
+            return _finding(messages)
+        return says("THE REPORT")
+
+    model = ScriptedModel(respond=respond)
+    graph = deep.compile_graph(InMemorySaver(serde=deep.SERDE))
+    limits = deep.Limits.deep()
+    limits.cap = cap
+    final = await graph.ainvoke(
+        {"question": "everything about X"},
+        {"configurable": {"thread_id": "t"}},
+        context=deep.Deps(model=model, backend=FakeBackend(), limits=limits),
+    )
+    return final, model
+
+
+def _rounds(messages: list[BaseMessage]) -> int:
+    return sum(isinstance(m, ToolMessage) for m in messages)
+
+
+async def test_the_lead_goes_back_for_what_the_first_round_left_open() -> None:
+    def lead(messages):
+        if _rounds(messages) == 0:
+            return call(
+                "DispatchResearchersArgs", reasoning="wide", sub_questions=["a", "b"]
+            )
+        if _rounds(messages) == 1:
+            # It reads the first round before choosing the second.
+            assert "about a" in str(messages[-1].content)
+            return call(
+                "DispatchResearchersArgs",
+                reasoning="a and b disagree",
+                sub_questions=["why a and b disagree"],
+            )
+        return call("WriteReportArgs", reasoning="covered", outline="a, then b")
+
+    final, model = await _run(lead)
+
+    indexes = [o["index"] for o in final["findings"]]
+    assert sorted(indexes) == [1, 2, 3]  # three researchers, never the same row
+    assert [len(r["sub_questions"]) for r in final["rounds"]] == [2, 1]
+    assert final["report"].content == "THE REPORT"
+    claims = [c.text for p in final["result"].points for c in p.claims]
+    assert "about why a and b disagree" in claims  # the second round is reported
+    writer = model.seen[-1]
+    assert "a, then b" in str(writer[-1].content)  # the outline shapes the report
+
+
+async def test_a_lead_that_never_stops_is_stopped_and_still_reports(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(settings, "deep_max_rounds", 3)
+
+    def lead(messages):
+        return call(
+            "DispatchResearchersArgs",
+            reasoning="more",
+            sub_questions=[f"q{_rounds(messages)}"],
+        )
+
+    final, _ = await _run(lead)
+
+    assert len(final["rounds"]) == 3
+    assert final["report"].content == "THE REPORT"
+
+
+async def test_the_lead_cannot_report_before_anything_was_researched() -> None:
+    def lead(messages):
+        if isinstance(messages[-1], ToolMessage) and "Nothing has been" in str(
+            messages[-1].content
+        ):
+            return call("DispatchResearchersArgs", reasoning="ok", sub_questions=["a"])
+        if _rounds(messages) == 0:
+            return call("WriteReportArgs", reasoning="I know this", outline="")
+        return call("WriteReportArgs", reasoning="covered", outline="")
+
+    final, _ = await _run(lead)
+
+    assert [r["sub_questions"] for r in final["rounds"]] == [["a"]]
+
+
+async def test_an_oversized_round_is_sent_back_then_clamped() -> None:
+    def lead(messages):
+        if _rounds(messages) == 0:
+            return call(
+                "DispatchResearchersArgs",
+                reasoning="everything",
+                sub_questions=["a", "b", "c"],
+            )
+        return call("WriteReportArgs", reasoning="covered", outline="")
+
+    final, model = await _run(lead, cap=2)
+
+    assert final["rounds"][0]["sub_questions"] == ["a", "b"]
+    refusals = [
+        m
+        for m in model.seen[2]
+        if isinstance(m, ToolMessage) and "exceeds the limit" in str(m.content)
+    ]
+    assert refusals  # it was asked to choose before anything was cut

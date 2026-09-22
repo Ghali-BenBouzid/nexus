@@ -7,9 +7,9 @@
     "version": 6,
     "sha256": "e229a8032f5fbff4648cee47deccf6f506d5395adf3b84d6b552821db629756d"
   },
-  "deep_planner": {
+  "deep_lead": {
     "version": 1,
-    "sha256": "f085c7d8c66636d743b6fc1a4f5e37e4001589af707a06f64fe435fb5ff18063"
+    "sha256": "9d44e9cf17bf1b963c9f5a2c85d5a41f57b919cc4dbd5181ed32cede9d73c28e"
   },
   "researcher": {
     "version": 5,

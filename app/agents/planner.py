@@ -68,7 +68,7 @@ async def _plan(
     retry_cap: int,
     prompt: ChatPromptTemplate,
 ) -> list[str]:
-    messages = _prompt_messages(prompt, query, cap=cap)
+    messages = prompt_messages(prompt, query, cap=cap)
     bound = model.bind_tools([SubmitPlanArgs], tool_choice="any")
     await emit(AgentEvent(type="planner_start", message=f"Planning: {query}"))
 
@@ -98,7 +98,7 @@ async def _plan(
             )
             return sub_questions
 
-        _feed_back(messages, reply, _why(sub_questions, cap))
+        feed_back(messages, reply, _why(sub_questions, cap))
 
     # Retries exhausted: an over-cap plan is still a plan, so clamp it.
     if sub_questions:
@@ -107,7 +107,7 @@ async def _plan(
     raise PlannerError("planner could not produce a usable plan")
 
 
-def _prompt_messages(
+def prompt_messages(
     prompt: ChatPromptTemplate, query: str, *, cap: int
 ) -> list[BaseMessage]:
     rendered = render(
@@ -137,7 +137,7 @@ def _why(sub_questions: list[str], cap: int) -> str:
     )
 
 
-def _feed_back(messages: list[BaseMessage], reply: AIMessage, why: str) -> None:
+def feed_back(messages: list[BaseMessage], reply: AIMessage, why: str) -> None:
     """Record the model's turn and answer it. A forced tool call must be answered
     as a tool result; if it did not call the tool at all, a plain nudge does."""
     messages.append(reply)
