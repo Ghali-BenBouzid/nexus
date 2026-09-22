@@ -10,35 +10,26 @@ const PAD = 8;
 const GAP = 14;
 const CARD_W = 320;
 
-// How the spotlight travels between steps. The duration used to be fixed, which
-// meant the velocity rose with the distance: the short hop from the mode pill to
-// the attach button read well, and the long one across to the Outputs panel
-// covered six times the ground in the same time and looked thrown rather than
-// moved. Time now grows with distance, so the speed has a ceiling.
+// How long the spotlight takes to travel between steps. A fixed duration meant
+// the velocity rose with the distance: the short hop from the mode pill to the
+// attach button read well, and the long one across to the Outputs panel covered
+// six times the ground in the same time and looked thrown rather than moved.
+// Time grows with distance now, so the speed has a ceiling.
 const MIN_MS = 400;
 const MAX_MS = 760;
 const MAX_SPEED = 1200; // pixels per second
-// A spring's overshoot is a fraction of the distance it covers, so the bounce
-// that is charming over 50px throws the frame far past a target on the other
-// side of the screen. Past this, it settles instead of springing.
-const SPRING_LIMIT = 320;
-const SPRING = "cubic-bezier(0.22, 1.4, 0.36, 1)";
-const SETTLE = "cubic-bezier(0.22, 1, 0.36, 1)";
-
 type Box = { top: number; left: number; width: number; height: number };
 
-type Travel = { ms: number; ease: string };
-
-function travel(from: Box | null, to: Box | null): Travel {
-  if (!from || !to) return { ms: MIN_MS, ease: SPRING };
+// Only the duration is decided here. The curve is the one every other moving
+// thing in the app uses, set in the stylesheet: a tour that eased differently
+// from the rest of the interface would be the tour drawing attention to itself.
+function travelMs(from: Box | null, to: Box | null): number {
+  if (!from || !to) return MIN_MS;
   const dist = Math.hypot(
     to.left + to.width / 2 - (from.left + from.width / 2),
     to.top + to.height / 2 - (from.top + from.height / 2),
   );
-  return {
-    ms: Math.min(MAX_MS, Math.max(MIN_MS, (dist / MAX_SPEED) * 1000)),
-    ease: dist > SPRING_LIMIT ? SETTLE : SPRING,
-  };
+  return Math.min(MAX_MS, Math.max(MIN_MS, (dist / MAX_SPEED) * 1000));
 }
 
 function find(target: string | null, pad = PAD): Box | null {
@@ -104,7 +95,7 @@ export function Tour({
   const cardRef = useRef<HTMLDivElement>(null);
   // Where the spotlight was, so the next move knows how far it has to go.
   const from = useRef<Box | null>(null);
-  const [move, setMove] = useState<Travel>({ ms: MIN_MS, ease: SPRING });
+  const [moveMs, setMoveMs] = useState(MIN_MS);
   const step: TourStep | undefined = steps[i];
 
   const close = () => {
@@ -151,7 +142,7 @@ export function Tour({
     let raf = 0;
     const measure = () => {
       const next = find(step.target, step.pad);
-      setMove(travel(from.current, next));
+      setMoveMs(travelMs(from.current, next));
       from.current = next;
       setBox(next);
     };
@@ -205,8 +196,7 @@ export function Tour({
               left: box.left,
               width: box.width,
               height: box.height,
-              transitionDuration: `${move.ms}ms`,
-              transitionTimingFunction: move.ease,
+              transitionDuration: `${moveMs}ms`,
             }}
           />
         )}
@@ -215,7 +205,7 @@ export function Tour({
       <div
         className="tour-card"
         ref={cardRef}
-        style={{ ...style, transitionDuration: `${move.ms}ms`, transitionTimingFunction: move.ease }}
+        style={{ ...style, transitionDuration: `${moveMs}ms` }}
       >
         <div className="tour-card-head">
           <h3>{step.title}</h3>
