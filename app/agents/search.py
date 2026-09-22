@@ -1,3 +1,4 @@
+import httpx
 from tavily import AsyncTavilyClient
 
 from app.agents.retry import RetryPolicy, retry_async
@@ -71,3 +72,120 @@ class TavilyBackend:
         if not results:
             return ""
         return results[0].get("raw_content", "")
+
+
+class SelfHostedBackend:
+    """SearchBackend over two services we run ourselves, in place of Tavily.
+
+    Tavily sold three things in two calls: a search index, a query-relevant
+    excerpt attached to every result, and a page reader that strips boilerplate.
+    Nothing open source does all three, so this splits the job:
+
+    * **SearXNG** is the index. It is a metasearch proxy: it forwards the query
+      to Google, Bing, DuckDuckGo and friends and normalises what comes back.
+    * **Crawl4AI** is the reader. Its ``/md`` endpoint fetches a page in a real
+      browser and returns pruned markdown, so a JS-rendered page is not an empty
+      shell.
+
+    What is genuinely lost is Tavily's excerpt: SearXNG hands back the search
+    engine's own blurb, a sentence or two, rather than the part of the page that
+    answers the query. Researchers will therefore read more pages than they used
+    to. That is affordable in a way it was not before, because reading is now
+    our own CPU rather than metered API calls.
+
+    Only this class knows either service exists; the tools depend on the
+    SearchBackend protocol, exactly as they did with Tavily.
+    """
+
+    def __init__(
+        self,
+        *,
+        searxng_url: str,
+        crawl4ai_url: str,
+        crawl4ai_token: str | None = None,
+        retry: RetryPolicy | None = None,
+        search_timeout: float = 20.0,
+        read_timeout: float = 60.0,
+    ) -> None:
+        self.searxng_url = searxng_url.rstrip("/")
+        self.crawl4ai_url = crawl4ai_url.rstrip("/")
+        self.crawl4ai_token = crawl4ai_token
+        self.retry = retry or RetryPolicy()
+        # Two budgets, because the calls are nothing alike: a metasearch query
+        # answers in about a second, while reading a page starts a browser and
+        # waits for the page to settle.
+        self.search_timeout = search_timeout
+        self.read_timeout = read_timeout
+        self._client: httpx.AsyncClient | None = None
+
+    async def __aenter__(self) -> "SelfHostedBackend":
+        self._client = httpx.AsyncClient(follow_redirects=True)
+        return self
+
+    async def __aexit__(self, exc_type: object, exc: object, tb: object) -> None:
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+    @property
+    def _ready_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            raise RuntimeError("SelfHostedBackend must be used within 'async with'")
+        return self._client
+
+    async def search(self, query: str, max_results: int) -> list[SearchHit]:
+        client = self._ready_client
+
+        async def _call() -> dict:
+            response = await client.get(
+                f"{self.searxng_url}/search",
+                params={"q": query, "format": "json"},
+                timeout=self.search_timeout,
+            )
+            # Raise on 4xx/5xx so retry_async can tell a 429 or a 502 (worth
+            # another go) from a 403 (the instance has JSON output switched off,
+            # which no amount of retrying will fix).
+            response.raise_for_status()
+            return response.json()
+
+        try:
+            payload = await retry_async(_call, policy=self.retry)
+        except Exception as exc:
+            raise SearchError("web search failed") from exc
+        # SearXNG returns a page of results, not a count we can ask for, so the
+        # cap is applied here.
+        return [
+            SearchHit(
+                title=result.get("title") or "",
+                url=result.get("url") or "",
+                content=result.get("content") or "",
+            )
+            for result in (payload.get("results") or [])[:max_results]
+        ]
+
+    async def extract(self, url: str) -> str:
+        client = self._ready_client
+        headers = (
+            {"Authorization": f"Bearer {self.crawl4ai_token}"}
+            if self.crawl4ai_token
+            else {}
+        )
+
+        async def _call() -> dict:
+            response = await client.post(
+                f"{self.crawl4ai_url}/md",
+                # f="fit" runs Crawl4AI's pruning filter, which drops nav, ads
+                # and footers and returns the page's own prose. "raw" would hand
+                # the whole document back and spend the context window on chrome.
+                json={"url": url, "f": "fit", "c": "0"},
+                headers=headers,
+                timeout=self.read_timeout,
+            )
+            response.raise_for_status()
+            return response.json()
+
+        try:
+            payload = await retry_async(_call, policy=self.retry)
+        except Exception as exc:
+            raise SearchError("page fetch failed") from exc
+        return payload.get("markdown") or ""

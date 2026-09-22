@@ -5,7 +5,8 @@ from fastapi import HTTPException
 from app.agents.model import build_model
 from app.agents.rate_limit import RateLimiter
 from app.agents.retry import RetryPolicy
-from app.agents.search import TavilyBackend
+from app.agents.search import SelfHostedBackend, TavilyBackend
+from app.agents.tools import SearchBackend
 from app.core.config import settings
 
 # Each preset: (base_url, default_model, settings-attr holding the key). All run
@@ -145,11 +146,27 @@ def get_model() -> Any:  # ChatOpenAI; see the note below
     )
 
 
-def get_search_backend() -> TavilyBackend:
-    """A fresh, client-less search backend (opened by the job)."""
-    if not settings.tavily_api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="Research is not configured (missing search API key).",
+def get_search_backend() -> SearchBackend:
+    """A fresh, client-less search backend (opened by the job).
+
+    The self-hosted pair wins when it is configured, because it is the one that
+    costs nothing to run; Tavily stays as the fallback so a deployment without
+    the services yet keeps working. Selected by what is configured rather than
+    by a separate switch, so there is one fewer setting that can disagree with
+    itself.
+    """
+    if settings.searxng_url and settings.crawl4ai_url:
+        return SelfHostedBackend(
+            searxng_url=settings.searxng_url,
+            crawl4ai_url=settings.crawl4ai_url,
+            crawl4ai_token=settings.crawl4ai_token,
+            retry=_retry_policy(),
+            search_timeout=settings.search_timeout,
+            read_timeout=settings.page_read_timeout,
         )
-    return TavilyBackend(api_key=settings.tavily_api_key, retry=_retry_policy())
+    if settings.tavily_api_key:
+        return TavilyBackend(api_key=settings.tavily_api_key, retry=_retry_policy())
+    raise HTTPException(
+        status_code=503,
+        detail="Research is not configured (no search backend).",
+    )

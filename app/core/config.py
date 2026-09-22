@@ -44,6 +44,17 @@ class Settings(BaseSettings):
     # agent / provider settings
     gemini_api_key: str | None = None
     tavily_api_key: str | None = None
+    # The self-hosted pair that replaces Tavily: a SearXNG instance for the
+    # index and a Crawl4AI server for reading a page. Setting searxng_url is
+    # what selects them; leaving it unset falls back to Tavily, so a deployment
+    # can move over one environment at a time.
+    searxng_url: str | None = None
+    crawl4ai_url: str | None = None
+    crawl4ai_token: str | None = None
+    # A metasearch query answers in about a second; reading a page starts a
+    # browser, so it gets its own, much longer budget.
+    search_timeout: float = 20.0  # seconds
+    page_read_timeout: float = 60.0  # seconds
 
     # LLM provider selection: openrouter | gemini | groq | cerebras | sambanova
     llm_provider: str = "openrouter"
