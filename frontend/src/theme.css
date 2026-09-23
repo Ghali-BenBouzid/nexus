@@ -35,12 +35,12 @@ html[data-theme="dark"] {
   /* A light chip on the dark page: most favicons are drawn for a white tab
      bar, and a dark mark on a dark chip simply vanished. The words go dark to
      sit on it. */
-  --cite-line: #dcd8d1;
-  --cite-fill: #c3beb6;
-  --cite-line-hover: #ece9e4;
-  --cite-fill-hover: #d2cdc6;
+  --cite-line: #c4bfb7;
+  --cite-fill: #a8a299;
+  --cite-line-hover: #d9d5cf;
+  --cite-fill-hover: #b8b2a9;
   --cite-text: #1c1915;
-  --cite-muted: rgba(28, 25, 21, 0.6);
+  --cite-muted: rgba(28, 25, 21, 0.72);
   --surface: rgba(255, 255, 255, 0.045);
   --surface-2: rgba(255, 255, 255, 0.07);
   --surface-solid: #150e00;
