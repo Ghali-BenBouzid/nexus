@@ -984,6 +984,7 @@ export default function App() {
           onOpenHistory={live ? openHistory : undefined}
           theme={theme}
           toggleTheme={toggleTheme}
+          accountName={live ? account?.name : undefined}
         />
       )}
 

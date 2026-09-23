@@ -231,6 +231,10 @@ const en = {
     dropHint: "PDF, Word or text",
     unsupported: "This file format is not supported. Try another one.",
   },
+  account: {
+    // What kind of account this is, beside its name: every account is an invite.
+    plan: "Demo",
+  },
   preview: {
     open: (name: string) => `Open ${name}`,
     close: "Close",
@@ -534,6 +538,9 @@ const fr: Dict = {
     drop: "Déposez pour joindre",
     dropHint: "PDF, Word ou texte",
     unsupported: "Ce format de fichier n'est pas pris en charge. Essayez-en un autre.",
+  },
+  account: {
+    plan: "Démo",
   },
   preview: {
     open: (name: string) => `Ouvrir ${name}`,

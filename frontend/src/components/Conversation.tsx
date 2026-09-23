@@ -54,6 +54,7 @@ type ConversationProps = {
   // The chat has no nav bar, so the theme switch lives in the left column.
   theme: Theme;
   toggleTheme: () => void;
+  accountName?: string;
 };
 
 export function Conversation({
@@ -91,6 +92,7 @@ export function Conversation({
   onToggleHistory,
   onOpenHistory,
   theme,
+  accountName,
   toggleTheme,
 }: ConversationProps) {
   const isMobile = useIsMobile();
@@ -300,6 +302,7 @@ export function Conversation({
           isMobile={isMobile}
           theme={theme}
           toggleTheme={toggleTheme}
+          accountName={accountName}
         />
 
         {/* The conversation column owns the composer, so the prompt bar stays
