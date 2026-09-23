@@ -33,13 +33,13 @@ html[data-theme="dark"] {
      prose. The general surface tokens are too faint for that: on black, a 10%
      border over a 7% fill is barely a shape at all. */
   /* A mid grey chip on the dark page: most favicons are drawn for a white tab
-     bar, and a dark mark on a dark chip simply vanished. Neutral rather than
-     warm, so it reads as grey and not as a pale accent. The words go dark to
-     sit on it. */
-  --cite-line: #c2c2c2;
-  --cite-fill: #a3a3a3;
-  --cite-line-hover: #d6d6d6;
-  --cite-fill-hover: #b3b3b3;
+     bar, and a dark mark on a dark chip simply vanished. Grey first, with 4%
+     of the accent so it belongs to the brand without reading as a pale
+     accent itself. The words go dark to sit on it. */
+  --cite-line: color-mix(in srgb, #c2c2c2 96%, var(--accent));
+  --cite-fill: color-mix(in srgb, #a3a3a3 96%, var(--accent));
+  --cite-line-hover: color-mix(in srgb, #d6d6d6 96%, var(--accent));
+  --cite-fill-hover: color-mix(in srgb, #b3b3b3 96%, var(--accent));
   --cite-text: #1a1a1a;
   --cite-muted: rgba(26, 26, 26, 0.72);
   --surface: rgba(255, 255, 255, 0.045);
