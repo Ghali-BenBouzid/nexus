@@ -55,27 +55,6 @@ import type {
   View,
 } from "./types";
 
-// Which outputs this browser has already announced. A per-viewer convenience,
-// so it lives in localStorage and a failure to read it is not worth a thought.
-const ANNOUNCED_KEY = "nexus-announced";
-
-function storedAnnounced(): number[] {
-  try {
-    const raw = localStorage.getItem(ANNOUNCED_KEY);
-    return raw ? (JSON.parse(raw) as number[]) : [];
-  } catch {
-    return [];
-  }
-}
-
-function rememberAnnounced(ids: Set<number>): void {
-  try {
-    localStorage.setItem(ANNOUNCED_KEY, JSON.stringify([...ids].slice(-50)));
-  } catch {
-    /* ignore */
-  }
-}
-
 // A file the user just picked, as a document, before the server has seen it.
 // Negative ids keep it apart from anything real: a placeholder can be listed and
 // removed, but never fetched, deleted or fact-checked.
@@ -195,9 +174,11 @@ export default function App() {
   // find deep research or fact check. Auto once per browser, replayable from the
   // nav. It waits a beat so it lands on a settled page, not a half-painted one.
   const [tour, setTour] = useState(false);
-  // Which finished outputs the user has already been told about, so a report is
-  // announced once per browser and not again on every reload.
-  const announced = useRef<Set<number>>(new Set(storedAnnounced()));
+  // Runs this tab has seen working. Only those are announced when they finish:
+  // a report that was already done when the page loaded is not news, and it
+  // still carries its unread mark in Outputs. Remembering announcements in the
+  // browser instead announced every past run at once on a new device.
+  const watching = useRef<Set<number>>(new Set());
   // Background runs we have already shown the panel for. Once per run: if the
   // user shuts the panel while one is still working, that is an answer, and
   // reopening it every five seconds would be the app arguing with them.
@@ -372,12 +353,14 @@ export default function App() {
   // Tell the user once when a report they are no longer watching is ready. Two
   // can land in the same poll, so they queue rather than overwrite each other.
   useEffect(() => {
+    for (const o of outputs) {
+      if (o.status === "running" || o.status === "pending") watching.current.add(o.id);
+    }
     const finished = outputs.filter(
-      (o) => o.status === "complete" && !announced.current.has(o.id),
+      (o) => o.status === "complete" && watching.current.has(o.id),
     );
     if (finished.length === 0) return;
-    for (const o of finished) announced.current.add(o.id);
-    rememberAnnounced(announced.current);
+    for (const o of finished) watching.current.delete(o.id);
     setReady((current) => [...current, ...finished]);
   }, [outputs]);
 
