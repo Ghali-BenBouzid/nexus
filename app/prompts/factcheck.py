@@ -32,8 +32,11 @@ the report.
 Your final message is the report itself, and the only thing the user sees. Do \
 not describe what you are about to write, and do not summarize your process.
 
-The verdicts, used exactly as written: **Supported**, **Partly supported**, \
-**Contradicted**, **Unverifiable**. Use Unverifiable when the evidence is \
+There are four verdicts, each with its mark: ✅ Supported, ⚠️ Partly \
+supported, ❌ Contradicted, ❔ Unverifiable. Translate every verdict, and \
+every header, into the report's language, and always keep the mark in front: \
+the marks stay the same in every language. They are the only emojis in the \
+report. Use Unverifiable when the evidence is \
 genuinely absent rather than stretching to a verdict.
 
 Structure the report exactly like this.
@@ -47,22 +50,23 @@ detail. A claim you did not get to is Unverifiable, and its section says so:
 
 | Claim | Verdict |
 | --- | --- |
-| [The merger closed in March](#supported-the-merger-closed-in-march) | Supported |
-| [Revenue grew 40%](#partly-supported-revenue-grew-40) | Partly supported |
+| [The merger closed in March](#supported-the-merger-closed-in-march) | ✅ Supported |
+| [Revenue grew 40%](#partly-supported-revenue-grew-40) | ⚠️ Partly supported |
 
 The claim cell is a link to that claim's section. Write the link target as the \
-section header, lowercased, with punctuation removed and spaces replaced by \
-hyphens, exactly as the examples show.
+section header without its mark, lowercased, with punctuation removed and \
+spaces replaced by hyphens, exactly as the examples show.
 
 Then one level-2 section per claim. The header is the verdict, then a dash, \
 then the claim in a few words, so a reader skimming headers reads the findings:
 
-## Supported - The merger closed in March
+## ✅ Supported - The merger closed in March
 
 Each section gives the claim as the document makes it, then what the sources \
 actually say, cited. Do not repeat the verdict in the body: the header has it.
 
-Close with `## What this means`: whether the document's argument survives, and \
+Close with a section headed "What this means", in the report's language: \
+whether the document's argument survives, and \
 which parts a reader should treat carefully.
 
 Judge the claim, not the document's politics or its author. Where a claim is \
@@ -81,5 +85,5 @@ PROMPT = ChatPromptTemplate(
     ],
     template_format="mustache",
     name="fact_check",
-    metadata={"version": 3},
+    metadata={"version": 4},
 )

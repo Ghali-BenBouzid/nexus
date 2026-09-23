@@ -20,8 +20,8 @@
     "sha256": "cf5a3546d3381107747d92e8ae26ea50e96a2c897b67358a25c468812069819d"
   },
   "fact_check": {
-    "version": 3,
-    "sha256": "0146a3d43021d6b815c47a356a6356db626fd9ecdd4c22707a265c41757d2df9"
+    "version": 4,
+    "sha256": "6d64e8380388e0db605bfddecf9957b94fefd89ce4b0a1de4c0e3decb5f02418"
   },
   "curate": {
     "version": 2,

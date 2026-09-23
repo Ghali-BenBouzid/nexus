@@ -49,6 +49,24 @@ describe("resolve", () => {
     expect(resolve("#The Merger Closed", ids)).toBe("supported-the-merger-closed");
   });
 
+  it("matches a French heading to the encoded link written for it", () => {
+    // The renderer percent-encodes accents in a link; the heading keeps them.
+    const french = [slug("Vérifié - Le pont a ouvert en 1937")];
+    expect(french).toEqual(["verifie-le-pont-a-ouvert-en-1937"]);
+    expect(resolve("#v%C3%A9rifi%C3%A9-le-pont-a-ouvert-en-1937", french)).toBe(french[0]);
+  });
+
+  it("finds the heading when the link rewords the claim", () => {
+    // From a live report: the link and its heading said the claim differently.
+    const headings = [
+      "supported-toll-is-collected-only-from-southbound-drivers",
+      "supported-electronic-tolling-only-since-2013",
+    ];
+    expect(
+      resolve("#supported-toll-collection-has-been-entirely-electronic-since-2013", headings),
+    ).toBe("supported-electronic-tolling-only-since-2013");
+  });
+
   it("refuses an ambiguous target rather than guessing", () => {
     expect(resolve("#the", ["the-first", "the-second"])).toBeNull();
   });
