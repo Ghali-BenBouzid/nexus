@@ -1008,7 +1008,8 @@ html[data-theme="light"] .tour-hole {
    component unmounts it on. */
 /* Its own layer above the jump-to-latest pill, which sits in the same spot. */
 .cinput { position: relative; z-index: 6; }
-.notice { position: absolute; left: 50%; bottom: calc(100% + 10px); z-index: 6;
+/* 11px from inside the bar's 1px border: 10px clear of it, like the jump pill. */
+.notice { position: absolute; left: 50%; bottom: calc(100% + 11px); z-index: 6;
   display: flex; align-items: center; gap: 8px; width: max-content;
   max-width: min(520px, calc(100vw - 32px));
   padding: 8px 14px 8px 11px; border-radius: 12px;
@@ -1335,12 +1336,16 @@ html[data-theme="light"] .tour-hole {
 
 /* "jump to latest" pill */
 .jump-latest {
-  position: absolute; left: 50%; bottom: 100%; margin-bottom: 4px; transform: translateX(-50%); z-index: 5;
+  /* The composer's 10px top padding is the gap: the same one the notice keeps. */
+  position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); z-index: 5;
   display: inline-flex; align-items: center; gap: 7px;
   font-size: 13px; font-weight: 500; color: var(--fg); cursor: pointer;
-  padding: 8px 15px 8px 12px; border-radius: 999px;
-  background: var(--panel); border: 1px solid var(--line-strong);
-  box-shadow: var(--shadow); backdrop-filter: blur(18px) saturate(1.4);
+  /* Lifted the way the upload notice is, since the two share this spot: a
+     solid surface and two shadows, a tight one for the edge and a wide one for
+     the height. */
+  padding: 8px 15px 8px 12px; border-radius: 12px;
+  background: var(--surface-solid); border: 1px solid var(--line-strong);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18), 0 12px 30px -10px rgb(0 0 0 / 0.4);
   animation: jumpIn 0.25s var(--ease);
 }
 .jump-latest:hover { border-color: var(--accent); color: var(--accent-text); }
