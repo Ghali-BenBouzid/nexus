@@ -22,8 +22,8 @@
 
 /* ---- Dark theme (default, signature look) ---- */
 html[data-theme="dark"] {
-  --bg: #110e09;
-  --bg-2: #15120d;
+  --bg: #010000;
+  --bg-2: #060400;
   --fg: #ffffff;
   --muted: rgba(255, 255, 255, 0.9);
   --faint: rgba(255, 255, 255, 0.6);
@@ -38,8 +38,8 @@ html[data-theme="dark"] {
   --cite-fill-hover: rgba(255, 255, 255, 0.19);
   --surface: rgba(255, 255, 255, 0.045);
   --surface-2: rgba(255, 255, 255, 0.07);
-  --surface-solid: #1f1c16;
-  --panel: rgba(25, 22, 16, 0.74);
+  --surface-solid: #150e00;
+  --panel: rgba(12, 8, 0, 0.74);
   --accent: #ca8a04;
   --accent-2: #eab308;
   --accent-ink: #ffffff;
@@ -51,7 +51,7 @@ html[data-theme="dark"] {
   --warn: var(--accent-2);
   --bad: #fb7185;
   --shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
-  --scrim: radial-gradient(120% 90% at 50% 8%, rgba(12,10,6,0) 30%, rgba(12,10,6,0.62) 78%, rgba(12,10,6,0.9) 100%);
+  --scrim: radial-gradient(120% 90% at 50% 8%, rgba(6,4,9,0) 30%, rgba(6,4,9,0.62) 78%, rgba(6,4,9,0.9) 100%);
   color-scheme: dark;
 }
 
@@ -139,6 +139,23 @@ button:focus-visible, a:focus-visible, textarea:focus-visible,
   opacity: 0;
   transition: opacity 0.8s var(--ease);
 }
+/* The chat is lifted off the landing page's void, in dark mode only. They are
+   different rooms: the landing page is a showpiece where the fluid blob is the
+   whole point and black is what it needs behind it, while the chat is a surface
+   you read on for a long stretch, and white text on near-black turns every
+   border, glyph edge and antialiased curve into a hard line.
+
+   Set on body, not on the root: applyBackground writes the landing values
+   inline on <html>, and a declaration on body wins over what it inherits from
+   there. Light mode keeps one background for both, where the contrast was never
+   the problem. */
+html[data-theme="dark"] body[data-stage="chat"] {
+  --bg: #090705;
+  --bg-2: #0d0b09;
+  --surface-solid: #171613;
+  --panel: rgba(17, 15, 13, 0.74);
+}
+
 body[data-stage="run"], body[data-stage="report"], body[data-stage="chat"] { --fluid-op: 0.12; }
 body[data-stage="run"] #fluid-canvas,
 body[data-stage="report"] #fluid-canvas,

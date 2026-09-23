@@ -115,36 +115,32 @@ function mix(a: string, b: string, t: number): string {
   return `#${hx(c(ar, br))}${hx(c(ag, bg))}${hx(c(ab, bb))}`;
 }
 
-// The backdrop is derived from the active accent, so every palette gets a
-// cohesive dark, and the returned `bg` is also the fluid's clear colour. Light
-// stays the neutral stylesheet value, which reads fine across accents.
-//
-// Dark surfaces are a warm charcoal: grey first, accent second. They used to be
-// pure black mixed a fraction toward the accent, which had two problems. The
-// fraction was tiny (level 0.06 gave 0.36%), so the page was #010000, and black
-// against white text turns every border, glyph edge and antialiased curve into a
-// hard line: the interface read as pixelated rather than smooth. And mixing black
-// toward the accent can only ever make brown, so there was no way to ask for a
-// grey with a hint of gold in it. `level` still lifts the whole set; the accent
-// touch is fixed, because it is a tint, not a dimmer.
+// The dark backdrop was a fixed violet-tinted near-black, so it only suited the
+// violet palette. Derive it from the active accent instead: a neutral near-black
+// faintly tinted toward the accent, so every palette gets a cohesive dark bg. The
+// returned `bg` is also the fluid's clear color. Light stays the neutral stylesheet
+// value (the warm cream reads fine across accents).
 export type DarkSurfaces = { bg: string; bg2: string; surfaceSolid: string; panel: string };
 const LIGHT_BG = "#faf7f2";
-// How far off pure black the page sits, and how much accent is mixed into it.
-const VOID_GREY = 0.034;
-const ACCENT_TOUCH = 0.042;
 
+// Dark surfaces are built by mixing PURE BLACK toward the accent -- never a neutral
+// grey, which reads as "lit". `level` lifts the whole set: at level 0 the bg is a
+// genuine black "lightless" void with just the blob glowing in it; higher adds a
+// dark, accent-hued ambient (still dark, never grey). UI surfaces sit above the
+// void via fixed offsets so cards/panels stay visible and palette-tinted even when
+// the void is pure black.
 export function darkSurfaces(p: Palette, level: number): DarkSurfaces {
   const a = p.accent;
-  const warm = (l: number) => mix(mix("#000000", "#ffffff", l), a, ACCENT_TOUCH);
-  const base = VOID_GREY + Math.max(0, level) * 0.03;
-  const panelHex = warm(base + 0.03);
+  // Keep the void deep: the slider only nudges a whisper of accent into a near-black
+  // base (so 0.06 stays essentially black). UI surfaces sit a fixed amount above it.
+  const t = Math.max(0, level) * 0.06;
+  const lift = (extra: number) => Math.min(1, t + extra);
+  const panelHex = mix("#000000", a, lift(0.055));
   const [pr, pg, pb] = parseHex(panelHex);
   return {
-    bg: warm(base),
-    bg2: warm(base + 0.015),
-    // Cards and popovers sit a fixed step above the page, so they stay legible
-    // whatever the level is set to.
-    surfaceSolid: warm(base + 0.055),
+    bg: mix("#000000", a, t),
+    bg2: mix("#000000", a, lift(0.025)),
+    surfaceSolid: mix("#000000", a, lift(0.1)),
     panel: `rgba(${pr}, ${pg}, ${pb}, 0.74)`,
   };
 }
