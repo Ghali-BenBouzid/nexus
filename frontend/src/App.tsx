@@ -66,6 +66,27 @@ function rememberAnnounced(ids: Set<number>): void {
   }
 }
 
+// A file the user just picked, as a document, before the server has seen it.
+// Negative ids keep it apart from anything real: a placeholder can be listed and
+// removed, but never fetched, deleted or fact-checked.
+let heldSeq = 0;
+
+function placeholder(file: File): Doc {
+  return {
+    id: -++heldSeq,
+    filename: file.name,
+    mediaType: file.type || "application/octet-stream",
+    sizeBytes: file.size,
+    pages: null,
+    chars: 0,
+    truncated: false,
+    ocr: false,
+    state: "uploading",
+  };
+}
+
+const pending = (doc: Doc) => doc.id < 0;
+
 export default function App() {
   const [theme, setTheme] = useState<Theme>(
     () => (document.documentElement.getAttribute("data-theme") as Theme) || "light",
@@ -469,7 +490,12 @@ export default function App() {
       setActiveConversation(cid);
       // A fresh chat has no files yet; a follow-up in an existing one may, and
       // the panel is the only place they show.
-      listDocuments(cid).then(setDocuments).catch(() => {});
+      listDocuments(cid)
+        // Anything still on its way up outlives the refresh: the server does
+        // not know about it yet, and dropping it would blank a tile the user
+        // is watching.
+        .then((docs) => setDocuments((prev) => [...docs, ...prev.filter(pending)]))
+        .catch(() => {});
       // The fresh /chat now has a real id: rewrite the URL in place (no extra
       // history entry) so a reload or back/forward resolves to this conversation.
       navigate(`/chat/${cid}`, { replace: true });
@@ -576,13 +602,21 @@ export default function App() {
       // message follows, carrying their ids.
       let attached: Doc[] = [];
       if (staged.length && isLive()) {
+        // The files show on the message and in the panel before a single byte
+        // has moved. Reading a long PDF takes real seconds, and a message that
+        // carries nothing for those seconds reads as a message that lost them.
+        const files = staged;
+        const holding = files.map(placeholder);
+        setStaged([]);
+        setUploadError(null);
+        patchTurn(id, (t) => ({ ...t, attachments: holding }));
+        setDocuments((docs) => [...docs, ...holding]);
         if (conversationId == null) {
           conversationId = await createConversation();
           setActiveConversation(conversationId);
           navigate(`/chat/${conversationId}`, { replace: true });
         }
-        attached = await uploadStaged(conversationId);
-        patchTurn(id, (t) => ({ ...t, attachments: attached }));
+        attached = await uploadStaged(conversationId, files, holding, id);
       }
       if (checking) {
         // The report is the output; the thread just records that it started, so
@@ -611,22 +645,41 @@ export default function App() {
     }
   }
 
-  // Upload everything staged in the composer, keeping what fails visible rather
-  // than dropping it silently. Returns what actually landed.
-  async function uploadStaged(conversationId: number): Promise<Doc[]> {
-    const files = staged;
-    setStaged([]);
-    setUploadError(null);
+  // Send the staged files, replacing each placeholder with what came back.
+  // A file that fails keeps its tile and says so: dropping it would leave the
+  // user asking about a document that is not there. Returns what landed.
+  async function uploadStaged(
+    conversationId: number,
+    files: File[],
+    holding: Doc[],
+    turnId: number,
+  ): Promise<Doc[]> {
     const uploaded: Doc[] = [];
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const held = holding[i];
+      let landed: Doc;
       try {
-        uploaded.push(await uploadDocument(conversationId, file));
+        landed = await uploadDocument(conversationId, files[i]);
+        uploaded.push(landed);
       } catch (err) {
-        setUploadError(err instanceof Error ? err.message : t.uploads.failed);
+        landed = {
+          ...held,
+          state: "failed",
+          error: err instanceof Error ? err.message : t.uploads.failed,
+        };
       }
+      settle(held.id, landed, turnId);
     }
-    if (uploaded.length) setDocuments((docs) => [...docs, ...uploaded]);
     return uploaded;
+  }
+
+  // Swap a placeholder for its outcome, wherever it is shown.
+  function settle(heldId: number, landed: Doc, turnId?: number) {
+    const swap = (docs: Doc[]) => docs.map((d) => (d.id === heldId ? landed : d));
+    setDocuments(swap);
+    if (turnId != null) {
+      patchTurn(turnId, (t) => ({ ...t, attachments: swap(t.attachments ?? []) }));
+    }
   }
 
   function stopResearch() {
@@ -695,17 +748,23 @@ export default function App() {
       return;
     }
     setUploadError(null);
+    const held = placeholder(file);
+    setDocuments((docs) => [...docs, held]);
     try {
-      const doc = await uploadDocument(activeConversationId, file);
-      setDocuments((docs) => [...docs, doc]);
+      settle(held.id, await uploadDocument(activeConversationId, file));
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : t.uploads.failed);
+      settle(held.id, {
+        ...held,
+        state: "failed",
+        error: err instanceof Error ? err.message : t.uploads.failed,
+      });
     }
   }
 
   async function removeDocument(doc: Doc) {
     setDocuments((docs) => docs.filter((d) => d.id !== doc.id));
-    await deleteDocument(doc.id);
+    // Nothing to delete for a file that never reached the server.
+    if (!pending(doc)) await deleteDocument(doc.id);
   }
 
   // Fact-check a document from the panel: the same sub-agent the supervisor

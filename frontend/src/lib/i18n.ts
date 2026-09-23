@@ -223,6 +223,14 @@ const en = {
     truncated: "shortened",
     pages: (n: number) => (n === 1 ? "1 page" : `${n} pages`),
     ready: (name: string) => `${name} is attached. Ask about it, or fact-check it.`,
+    // A file is read on the way in, and a long PDF takes a while. The tile says
+    // so from the first frame rather than sitting there looking finished.
+    reading: "Reading",
+    failedFile: "Could not be read",
+    retry: "Try again",
+    drop: "Drop to attach",
+    dropHint: "PDF, Word or text",
+    unsupported: (name: string) => `${name} is not a kind of file Nexus can read.`,
   },
   outputs: {
     ready: (title: string) => `${title} is ready.`,
@@ -513,6 +521,12 @@ const fr: Dict = {
     pages: (n: number) => (n === 1 ? "1 page" : `${n} pages`),
     ready: (name: string) =>
       `${name} est joint. Posez une question dessus, ou faites-le vérifier.`,
+    reading: "Lecture",
+    failedFile: "Lecture impossible",
+    retry: "Réessayer",
+    drop: "Déposez pour joindre",
+    dropHint: "PDF, Word ou texte",
+    unsupported: (name: string) => `Nexus ne sait pas lire ${name}.`,
   },
   outputs: {
     ready: (title: string) => `${title} est prêt.`,

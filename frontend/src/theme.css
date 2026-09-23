@@ -916,6 +916,33 @@ html[data-theme="light"] .tour-hole {
 /* Files picked in a bar, waiting to go with the next message. */
 .staged { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 .staged-error { width: 100%; font-size: 12.5px; color: var(--bad); }
+
+/* A file on its way up. The tile is there from the first frame, so it reads as
+   half-there until the server has actually read the file. */
+.ftile-meta { display: flex; align-items: center; gap: 5px; }
+.ftile-meta .spin { width: 10px; height: 10px; border-width: 1.5px; }
+.ftile[data-state="uploading"] .ftile-page { opacity: 0.55; }
+.ftile[data-state="failed"] { border-color: var(--bad); }
+.ftile[data-state="failed"] .ftile-page { opacity: 0.4; }
+.ftile[data-state="failed"] .ftile-meta { color: var(--bad); }
+.upload-item[data-state="uploading"] .upload-name { color: var(--muted); }
+.upload-item[data-state="failed"] .upload-meta { color: var(--bad); }
+.upload-item .upload-ic .spin { width: 14px; height: 14px; }
+
+/* Dropping a file anywhere on the window attaches it, so the whole window says
+   so. It is a statement, not a target: nothing here has to be hit. */
+.drop-veil { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  backdrop-filter: blur(3px); pointer-events: none;
+  animation: fadeIn 0.14s var(--ease); }
+.drop-card { display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 26px 34px; border-radius: 18px; background: var(--surface-solid);
+  border: 1.5px dashed var(--accent);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.2), 0 24px 60px -16px rgb(0 0 0 / 0.5); }
+.drop-ic { color: var(--accent); }
+.drop-ic svg { width: 22px; height: 22px; }
+.drop-title { font-size: 15px; font-weight: 600; color: var(--fg); }
+.drop-hint { font-family: var(--font-mono); font-size: 11px; color: var(--faint); }
 .prompt.with-staged { flex-direction: column; align-items: stretch; gap: 10px;
   border-radius: var(--r-lg); padding: 12px 10px 10px 12px; }
 .prompt-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }

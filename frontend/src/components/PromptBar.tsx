@@ -1,8 +1,10 @@
 import { forwardRef, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import { useQueryHistory } from "../lib/history";
+import { UPLOAD_ACCEPT, dragHasFiles, isSupported } from "../lib/uploads";
 import type { Mode } from "../types";
 import { ModePicker } from "./ModePicker";
 import { FileTile } from "./FileTile";
@@ -32,6 +34,62 @@ type PromptBarProps = {
   onMode?: (next: Mode) => void;
 };
 
+// Dropping a file on the page attaches it. The listeners are on the window
+// rather than on the bar, because the whole window is what people aim at: a
+// drop target the size of the composer is one most people miss. Only one prompt
+// bar is mounted at a time (the hero or the chat), so this stays a single
+// target.
+function useFileDrop(onFiles: ((files: File[]) => void) | undefined) {
+  const [over, setOver] = useState(false);
+  // Dragging across a child fires leave on the parent, so depth is counted
+  // rather than trusted: the veil lifts when the drag has truly left.
+  const depth = useRef(0);
+  // The bar re-renders on every keystroke and the caller passes a fresh arrow
+  // each time, so the listeners read the callback through a ref instead of
+  // being torn down and rebound as you type.
+  const sink = useRef(onFiles);
+  sink.current = onFiles;
+  const armed = !!onFiles;
+
+  useEffect(() => {
+    if (!armed) return;
+    const enter = (e: DragEvent) => {
+      if (!dragHasFiles(e.dataTransfer)) return;
+      depth.current += 1;
+      setOver(true);
+    };
+    const over_ = (e: DragEvent) => {
+      if (!dragHasFiles(e.dataTransfer)) return;
+      // Without this the browser opens the file instead of handing it over.
+      e.preventDefault();
+      if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+    };
+    const leave = () => {
+      depth.current = Math.max(0, depth.current - 1);
+      if (depth.current === 0) setOver(false);
+    };
+    const drop = (e: DragEvent) => {
+      if (!dragHasFiles(e.dataTransfer)) return;
+      e.preventDefault();
+      depth.current = 0;
+      setOver(false);
+      sink.current?.(Array.from(e.dataTransfer?.files ?? []));
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragover", over_);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragover", over_);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+    };
+  }, [armed]);
+
+  return over;
+}
+
 // The query input, shared by the landing hero and the conversation composer.
 // Owns auto-resize and shell-style ArrowUp/Down history recall so both places
 // behave identically.
@@ -60,6 +118,18 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
   const taRef = useRef<HTMLTextAreaElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const attachments = staged ?? [];
+
+  // A dropped file that the parser cannot read is refused here, with its name,
+  // rather than being sent up to come back as a server error a minute later.
+  const [rejected, setRejected] = useState<string | null>(null);
+  const take = (picked: File[]) => {
+    if (!onAttach || !picked.length) return;
+    const good = picked.filter(isSupported);
+    const bad = picked.find((f) => !isSupported(f));
+    setRejected(bad ? t.uploads.unsupported(bad.name) : null);
+    if (good.length) onAttach(good);
+  };
+  const dropping = useFileDrop(onAttach ? take : undefined);
 
   const { history, remember } = useQueryHistory();
   // null = editing a fresh draft; otherwise an index into `history` being browsed.
@@ -162,7 +232,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
     ? t.modePlaceholder[mode]
     : (placeholder ?? t.hero.placeholder);
 
-  const files = onAttach && (attachments.length > 0 || attachError) && (
+  const files = onAttach && (attachments.length > 0 || attachError || rejected) && (
     <div className="staged">
       {attachments.map((file, i) => (
         <FileTile
@@ -172,7 +242,9 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
           onRemove={() => onUnstage?.(i)}
         />
       ))}
-      {attachError && <span className="staged-error">{attachError}</span>}
+      {(attachError || rejected) && (
+        <span className="staged-error">{attachError ?? rejected}</span>
+      )}
     </div>
   );
 
@@ -206,6 +278,21 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
     </div>
   );
 
+  // Over the whole window, because the drop is: it says the page will take the
+  // file, which is the only thing a drag needs told.
+  const veil =
+    dropping &&
+    createPortal(
+      <div className="drop-veil">
+        <div className="drop-card">
+          <span className="drop-ic" aria-hidden="true">{I.paperclip}</span>
+          <span className="drop-title">{t.uploads.drop}</span>
+          <span className="drop-hint">{t.uploads.dropHint}</span>
+        </div>
+      </div>,
+      document.body,
+    );
+
   const modeButton = onMode && (
     <ModePicker mode={mode} onMode={onMode} canFactCheck={attachments.length > 0} />
   );
@@ -217,10 +304,9 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
         type="file"
         multiple
         className="visually-hidden"
-        accept=".pdf,.docx,.doc,.txt,.md"
+        accept={UPLOAD_ACCEPT}
         onChange={(e) => {
-          const picked = Array.from(e.target.files ?? []);
-          if (picked.length) onAttach(picked);
+          take(Array.from(e.target.files ?? []));
           e.target.value = ""; // so the same file can be picked again
         }}
       />
@@ -238,6 +324,8 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
 
   if (variant === "composer") {
     return (
+      <>
+      {veil}
       <div
         className={"cinput" + (mode !== "answer" ? " deep" : "")}
         onClick={(e) => {
@@ -273,11 +361,13 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
           </div>
         </div>
       </div>
+      </>
     );
   }
 
   return (
     <div className="prompt-wrap">
+      {veil}
       <div className={"prompt" + (chips ? " with-staged" : "")}>
         {chips}
         <div className="prompt-row">

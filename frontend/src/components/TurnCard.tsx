@@ -66,7 +66,13 @@ export function TurnCard({
         <div className="msg-row user">
           <div className="bubble-files">
             {turn.attachments!.map((doc) => (
-              <FileTile key={doc.id} name={doc.filename} bytes={doc.sizeBytes} />
+              <FileTile
+                key={doc.id}
+                name={doc.filename}
+                bytes={doc.sizeBytes}
+                state={doc.state}
+                error={doc.error}
+              />
             ))}
           </div>
         </div>

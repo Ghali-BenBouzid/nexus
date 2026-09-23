@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
+import { UPLOAD_ACCEPT } from "../lib/uploads";
 import type { Doc, Output, Result } from "../types";
 import { Artifact } from "./Artifact";
 
@@ -31,6 +32,8 @@ const kb = (bytes: number) =>
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 function docMeta(doc: Doc): string {
+  if (doc.state === "uploading") return t.uploads.reading;
+  if (doc.state === "failed") return doc.error ?? t.uploads.failedFile;
   const parts = [kb(doc.sizeBytes)];
   if (doc.pages) parts.push(t.uploads.pages(doc.pages));
   if (doc.ocr) parts.push(t.uploads.ocr);
@@ -148,7 +151,7 @@ export function OutputsPanel({
             ref={fileInput}
             type="file"
             className="visually-hidden"
-            accept=".pdf,.docx,.doc,.txt,.md"
+            accept={UPLOAD_ACCEPT}
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) onUpload(file);
@@ -160,21 +163,27 @@ export function OutputsPanel({
             <div className="drawer-empty">{t.uploads.empty}</div>
           )}
           {documents.map((doc) => (
-            <div key={doc.id} className="upload-item">
-              <span className="upload-ic">{I.doc}</span>
+            <div key={doc.id} className="upload-item" data-state={doc.state}>
+              <span className="upload-ic">
+                {doc.state === "uploading" ? <span className="spin" /> : I.doc}
+              </span>
               <div className="upload-main">
                 <div className="upload-name">{doc.filename}</div>
                 <div className="upload-meta">{docMeta(doc)}</div>
               </div>
               <div className="upload-actions">
-                <button
-                  className="icon-btn"
-                  onClick={() => onFactCheck(doc)}
-                  aria-label={t.uploads.factCheck}
-                  title={t.uploads.factCheck}
-                >
-                  {I.clipboardCheck}
-                </button>
+                {/* There is nothing to check until the server has read the
+                    file, so the action waits rather than failing. */}
+                {!doc.state && (
+                  <button
+                    className="icon-btn"
+                    onClick={() => onFactCheck(doc)}
+                    aria-label={t.uploads.factCheck}
+                    title={t.uploads.factCheck}
+                  >
+                    {I.clipboardCheck}
+                  </button>
+                )}
                 {confirming === doc.id ? (
                   <button
                     className="icon-btn danger"
