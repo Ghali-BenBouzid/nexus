@@ -34,9 +34,12 @@ const kb = (bytes: number) =>
 function docMeta(doc: Doc): string {
   if (doc.state === "uploading") return t.uploads.reading;
   if (doc.state === "failed") return doc.error ?? t.uploads.failedFile;
+  // Size and length, and nothing about how the text was got out. Whether a page
+  // came back through OCR is our problem, not something to hand the reader.
   const parts = [kb(doc.sizeBytes)];
   if (doc.pages) parts.push(t.uploads.pages(doc.pages));
-  if (doc.ocr) parts.push(t.uploads.ocr);
+  // Truncation stays: it is not how the file was read but how much of it was,
+  // and it is the reason an answer can miss what is in the last chapter.
   if (doc.truncated) parts.push(t.uploads.truncated);
   return parts.join(" · ");
 }

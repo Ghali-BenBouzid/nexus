@@ -219,7 +219,6 @@ const en = {
     remove: "Remove",
     factCheck: "Fact-check",
     failed: "The file could not be uploaded.",
-    ocr: "read by OCR",
     truncated: "shortened",
     pages: (n: number) => (n === 1 ? "1 page" : `${n} pages`),
     ready: (name: string) => `${name} is attached. Ask about it, or fact-check it.`,
@@ -516,7 +515,6 @@ const fr: Dict = {
     remove: "Retirer",
     factCheck: "Vérifier",
     failed: "Le fichier n'a pas pu être envoyé.",
-    ocr: "lu par OCR",
     truncated: "tronqué",
     pages: (n: number) => (n === 1 ? "1 page" : `${n} pages`),
     ready: (name: string) =>
