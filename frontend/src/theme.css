@@ -22,8 +22,8 @@
 
 /* ---- Dark theme (default, signature look) ---- */
 html[data-theme="dark"] {
-  --bg: #010000;
-  --bg-2: #060400;
+  --bg: #1c1810;
+  --bg-2: #201c14;
   --fg: #ffffff;
   --muted: rgba(255, 255, 255, 0.9);
   --faint: rgba(255, 255, 255, 0.6);
@@ -38,8 +38,8 @@ html[data-theme="dark"] {
   --cite-fill-hover: rgba(255, 255, 255, 0.19);
   --surface: rgba(255, 255, 255, 0.045);
   --surface-2: rgba(255, 255, 255, 0.07);
-  --surface-solid: #150e00;
-  --panel: rgba(12, 8, 0, 0.74);
+  --surface-solid: #29251d;
+  --panel: rgba(36, 32, 24, 0.74);
   --accent: #ca8a04;
   --accent-2: #eab308;
   --accent-ink: #ffffff;
@@ -51,7 +51,7 @@ html[data-theme="dark"] {
   --warn: var(--accent-2);
   --bad: #fb7185;
   --shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
-  --scrim: radial-gradient(120% 90% at 50% 8%, rgba(6,4,9,0) 30%, rgba(6,4,9,0.62) 78%, rgba(6,4,9,0.9) 100%);
+  --scrim: radial-gradient(120% 90% at 50% 8%, rgba(20,17,11,0) 30%, rgba(20,17,11,0.62) 78%, rgba(20,17,11,0.9) 100%);
   color-scheme: dark;
 }
 
@@ -1192,7 +1192,7 @@ html[data-theme="light"] .tour-hole {
 
 /* "jump to latest" pill */
 .jump-latest {
-  position: absolute; left: 50%; bottom: 118px; transform: translateX(-50%); z-index: 5;
+  position: absolute; left: 50%; bottom: 100%; margin-bottom: 4px; transform: translateX(-50%); z-index: 5;
   display: inline-flex; align-items: center; gap: 7px;
   font-size: 13px; font-weight: 500; color: var(--fg); cursor: pointer;
   padding: 8px 15px 8px 12px; border-radius: 999px;
@@ -1205,7 +1205,7 @@ html[data-theme="light"] .tour-hole {
 @keyframes jumpIn { from { opacity: 0; transform: translate(-50%, 8px); } }
 
 /* composer: sits inside the conversation column, no bar chrome of its own */
-.composer { flex: none; padding: 10px 0 16px; }
+.composer { position: relative; flex: none; padding: 10px 0 16px; }
 .composer-inner { max-width: 680px; margin-inline: auto; padding-inline: 24px; }
 /* Under the hero's bar the note sits between two small lines, so it needs its
    own air; in the chat composer it is the last thing on the screen. */

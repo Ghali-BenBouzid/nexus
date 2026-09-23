@@ -298,13 +298,15 @@ export function Conversation({
         <div className="chat-center">
           {chatColumn}
 
-          {!atBottom && turns.length > 0 && (
-            <button className="jump-latest" onClick={scrollToBottom} aria-label={t.chat.jumpLatest}>
-              {I.arrowDown}{t.chat.jumpLatest}
-            </button>
-          )}
-
           <div className="composer">
+            {/* Inside the composer, so it rides on its top edge: the bar changes
+                height with a mode line, an attachment or a wrapped message, and
+                anything measuring it in pixels goes stale the first time it does. */}
+            {!atBottom && turns.length > 0 && (
+              <button className="jump-latest" onClick={scrollToBottom} aria-label={t.chat.jumpLatest}>
+                {I.arrowDown}{t.chat.jumpLatest}
+              </button>
+            )}
             <div className="composer-inner" data-tour="composer">
               <PromptBar
                 variant="composer"
