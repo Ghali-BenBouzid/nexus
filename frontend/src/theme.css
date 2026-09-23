@@ -32,10 +32,15 @@ html[data-theme="dark"] {
   /* A citation sits inside a sentence and has to hold its own edge against the
      prose. The general surface tokens are too faint for that: on black, a 10%
      border over a 7% fill is barely a shape at all. */
-  --cite-line: rgba(255, 255, 255, 0.30);
-  --cite-fill: rgba(255, 255, 255, 0.13);
-  --cite-line-hover: rgba(255, 255, 255, 0.46);
-  --cite-fill-hover: rgba(255, 255, 255, 0.19);
+  /* A light chip on the dark page: most favicons are drawn for a white tab
+     bar, and a dark mark on a dark chip simply vanished. The words go dark to
+     sit on it. */
+  --cite-line: #efece7;
+  --cite-fill: #d9d5cf;
+  --cite-line-hover: #ffffff;
+  --cite-fill-hover: #e8e5e0;
+  --cite-text: #1c1915;
+  --cite-muted: rgba(28, 25, 21, 0.6);
   --surface: rgba(255, 255, 255, 0.045);
   --surface-2: rgba(255, 255, 255, 0.07);
   --surface-solid: #150e00;
@@ -70,6 +75,8 @@ html[data-theme="light"] {
   --cite-fill: rgba(28, 18, 8, 0.07);
   --cite-line-hover: rgba(28, 18, 8, 0.46);
   --cite-fill-hover: rgba(28, 18, 8, 0.12);
+  --cite-text: var(--fg);
+  --cite-muted: var(--faint);
   --surface: rgba(255, 255, 255, 0.66);
   --surface-2: rgba(255, 255, 255, 0.86);
   --surface-solid: #ffffff;
@@ -831,12 +838,12 @@ html[data-theme="light"] .tour-hole {
   padding: 1px 7px 1px 5px; margin: 0 2px; vertical-align: baseline;
   border: 1px solid var(--cite-line); border-radius: 7px; background: var(--cite-fill);
   font-family: var(--font-mono); font-size: 0.74em; font-weight: 500; line-height: 1.7;
-  color: var(--fg); cursor: pointer; text-decoration: none;
+  color: var(--cite-text); cursor: pointer; text-decoration: none;
   transition: background 0.15s, color 0.15s, border-color 0.15s; }
 .cites-chip:hover { border-color: var(--cite-line-hover); background: var(--cite-fill-hover); }
 .cites-chip.active { border-color: var(--accent); background: var(--cite-fill-hover); }
 .cites-domain { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cites-more { flex: none; color: var(--faint); }
+.cites-more { flex: none; color: var(--cite-muted); }
 
 /* The panel, drawn at the top of the page against the viewport: a report body
    scrolls and a wide table scrolls sideways, and a panel drawn inside either of
@@ -1275,6 +1282,18 @@ html[data-theme="light"] .tour-hole {
 .ch-foot { flex: none; display: flex; align-items: center; gap: 4px; padding: 8px 10px;
   border-top: 1px solid var(--line); }
 .ch-rail-foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+/* The signed-in account, under the settings, as a chat app shows it. */
+.ch-account { flex: none; display: flex; align-items: center; gap: 9px; min-width: 0;
+  padding: 10px 14px 14px; font-size: 13.5px; }
+.ch-avatar { flex: none; display: grid; place-items: center; width: 26px; height: 26px;
+  border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line-strong);
+  color: var(--fg); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
+/* One line of text, so a long name is cut with the plan still beside it. */
+.ch-account-who { display: flex; min-width: 0; white-space: pre; }
+.ch-account-name { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  font-weight: 500; color: var(--fg); }
+.ch-account-plan { flex: none; color: var(--faint); }
+.ch-rail-avatar { display: grid; place-items: center; padding: 2px 0 6px; }
 .lang-btn { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; }
 .ch-newchat { flex: none; display: flex; align-items: center; gap: 9px; margin: 10px; padding: 10px 12px;
   font-family: var(--font-display); font-weight: 500; font-size: 13.5px; color: var(--fg); cursor: pointer;
