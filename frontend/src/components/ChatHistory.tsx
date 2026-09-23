@@ -3,7 +3,8 @@ import { useEffect, useState } from "react";
 import { I } from "../icons";
 import { listConversations, type ConversationSummary } from "../lib/api";
 import { lang, setLang, t } from "../lib/i18n";
-import { initials } from "../lib/initials";
+import type { Account } from "../lib/api";
+import { AccountMenu } from "./AccountMenu";
 import type { Theme } from "../types";
 import { NexusLockup, NexusMark } from "./NexusLogo";
 
@@ -29,7 +30,7 @@ type ChatHistoryProps = {
   theme: Theme;
   toggleTheme: () => void;
   // Who is signed in, shown under the settings. Absent without a live account.
-  accountName?: string;
+  account?: Account | null;
 };
 
 // The chat workspace's left column, laid out like a chat app's: the brand in the
@@ -46,7 +47,7 @@ export function ChatHistory({
   isMobile,
   theme,
   toggleTheme,
-  accountName,
+  account,
 }: ChatHistoryProps) {
   const [items, setItems] = useState<ConversationSummary[] | null>(null);
   const listed = onOpen != null;
@@ -73,22 +74,6 @@ export function ChatHistory({
         {theme === "dark" ? I.sun : I.moon}
       </button>
     </>
-  );
-
-  // Who this is, the way a chat app says it: a round initial, the name and
-  // what kind of account it is. Not a button: there is no menu behind it yet,
-  // and a control that does nothing is worse than a label.
-  const avatar = accountName != null && (
-    <span className="ch-avatar" aria-hidden="true">{initials(accountName)}</span>
-  );
-  const account = accountName != null && (
-    <div className="ch-account" title={accountName}>
-      {avatar}
-      <span className="ch-account-who">
-        <span className="ch-account-name">{accountName}</span>
-        <span className="ch-account-plan"> · {t.account.plan}</span>
-      </span>
-    </div>
   );
 
   return (
@@ -129,7 +114,13 @@ export function ChatHistory({
               <div className="ch-space" />
             )}
             <div className="ch-foot">{settings}</div>
-            {account}
+            {/* Who this is, the way a chat app says it: a round initial, the
+                name and the kind of account, opening onto credits and sign out. */}
+            {account && (
+              <div className="ch-account-slot">
+                <AccountMenu account={account} />
+              </div>
+            )}
           </>
         ) : (
           <div className="ch-rail">
@@ -144,11 +135,7 @@ export function ChatHistory({
             </button>
             <div className="ch-rail-foot">
               {settings}
-              {accountName != null && (
-                <span className="ch-rail-avatar" title={`${accountName} · ${t.account.plan}`}>
-                  {avatar}
-                </span>
-              )}
+              {account && <AccountMenu account={account} compact />}
             </div>
           </div>
         )}

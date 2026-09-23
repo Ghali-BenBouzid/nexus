@@ -1283,17 +1283,62 @@ html[data-theme="light"] .tour-hole {
   border-top: 1px solid var(--line); }
 .ch-rail-foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; }
 /* The signed-in account, under the settings, as a chat app shows it. */
-.ch-account { flex: none; display: flex; align-items: center; gap: 9px; min-width: 0;
-  padding: 10px 14px 14px; font-size: 13.5px; }
+.ch-account-slot { flex: none; padding: 4px 8px 10px; }
+.ch-account { display: flex; align-items: center; gap: 9px; width: 100%; min-width: 0;
+  padding: 7px 8px; border: 1px solid transparent; border-radius: 10px; background: none;
+  font: inherit; font-size: 13.5px; text-align: left; cursor: pointer; }
+.ch-account:hover, .ch-account[aria-expanded="true"] { background: var(--surface-2); border-color: var(--line); }
 .ch-avatar { flex: none; display: grid; place-items: center; width: 26px; height: 26px;
   border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line-strong);
   color: var(--fg); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
 /* One line of text, so a long name is cut with the plan still beside it. */
-.ch-account-who { display: flex; min-width: 0; white-space: pre; }
+.ch-account-who { flex: 1; display: flex; min-width: 0; white-space: pre; }
 .ch-account-name { min-width: 0; overflow: hidden; text-overflow: ellipsis;
   font-weight: 500; color: var(--fg); }
 .ch-account-plan { flex: none; color: var(--faint); }
-.ch-rail-avatar { display: grid; place-items: center; padding: 2px 0 6px; }
+/* The menu opens upward, so the chevron points that way. */
+.ch-account-chev { flex: none; display: grid; color: var(--faint); transform: rotate(180deg); }
+.ch-account-chev svg { width: 14px; height: 14px; }
+.ch-rail-avatar { display: grid; place-items: center; padding: 3px; margin-bottom: 6px;
+  border: none; border-radius: 50%; background: none; cursor: pointer; }
+.ch-rail-avatar:hover .ch-avatar, .ch-rail-avatar[aria-expanded="true"] .ch-avatar { border-color: var(--fg); }
+
+/* The account menu: credits and sign out, drawn over the page. */
+.acct-menu { position: fixed; z-index: 70; width: 272px; padding: 6px;
+  border-radius: 14px; background: var(--surface-solid); border: 1px solid var(--line-strong);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18), 0 16px 40px -12px rgb(0 0 0 / 0.5);
+  animation: fadeIn 0.14s var(--ease); }
+.acct-head { display: flex; align-items: center; gap: 10px; padding: 8px 8px 10px; }
+.acct-head .ch-avatar { width: 32px; height: 32px; font-size: 12.5px; }
+.acct-who { display: flex; flex-direction: column; min-width: 0; }
+.acct-name { font-size: 14px; font-weight: 600; color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-kind { font-size: 12px; color: var(--faint); }
+.acct-section { padding: 10px 8px; border-top: 1px solid var(--line); }
+.acct-row { display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 13px; color: var(--fg); }
+.acct-num { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+.acct-bar { height: 6px; margin-top: 8px; border-radius: 999px; background: var(--surface-2);
+  border: 1px solid var(--line); overflow: hidden; }
+.acct-bar span { display: block; height: 100%; border-radius: inherit; background: var(--accent);
+  transition: width 0.4s var(--ease); }
+.acct-bar.low span { background: var(--bad); }
+.acct-note { margin: 8px 0 0; font-size: 12px; line-height: 1.45; color: var(--faint); }
+.acct-section .acct-note:first-child { margin-top: 0; }
+.acct-item { display: flex; align-items: center; gap: 9px; width: calc(100% + 8px); margin: 8px -4px 0;
+  padding: 8px; border: none; border-radius: 8px; background: none; font: inherit; font-size: 13.5px;
+  color: var(--fg); text-align: left; cursor: pointer; }
+.acct-item:hover { background: var(--surface-2); }
+.acct-item svg { width: 16px; height: 16px; color: var(--muted); }
+.acct-warn { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--fg); }
+.acct-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+.acct-btn { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line-strong);
+  background: none; font: inherit; font-size: 13px; color: var(--fg); cursor: pointer; }
+.acct-btn:hover { background: var(--surface-2); }
+/* The deep red in both themes, as the upload notice once learned: dark mode's
+   --bad is a pale rose for text, and white on it is hard to read. */
+.acct-btn.danger { border-color: transparent; background: #dc2626; color: #fff; }
+.acct-btn.danger:hover { background: #b91c1c; }
 .lang-btn { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; }
 .ch-newchat { flex: none; display: flex; align-items: center; gap: 9px; margin: 10px; padding: 10px 12px;
   font-family: var(--font-display); font-weight: 500; font-size: 13.5px; color: var(--fg); cursor: pointer;

@@ -72,6 +72,12 @@ function forgetAccess(): void {
   localStorage.removeItem(INVITE_KEY);
 }
 
+// Signing out on purpose is the same forgetting. The invite itself stays valid
+// on the server, which is what lets the same link sign the user back in.
+export function signOut(): void {
+  forgetAccess();
+}
+
 // A 401 on a request made with a stored access token: that token went stale, and
 // one retry with a fresh one is worth it. Any other refusal is final.
 class SessionExpiredError extends Error {}

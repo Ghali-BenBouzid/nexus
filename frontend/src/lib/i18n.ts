@@ -234,6 +234,16 @@ const en = {
   account: {
     // What kind of account this is, beside its name: every account is an invite.
     plan: "Demo",
+    menu: "Account",
+    kind: "Demo account",
+    credits: "Credits",
+    left: (percent: number) => `${percent}% left`,
+    until: (date: string) => `Access until ${date}`,
+    stays: "You stay signed in on this browser until you sign out.",
+    signOut: "Sign out",
+    // Said before signing out, not after: the link is the only way back in.
+    confirm: "To sign back in, you will need to open your invite link again. Keep it somewhere you can find it.",
+    cancel: "Cancel",
   },
   preview: {
     open: (name: string) => `Open ${name}`,
@@ -541,6 +551,15 @@ const fr: Dict = {
   },
   account: {
     plan: "Démo",
+    menu: "Compte",
+    kind: "Compte de démo",
+    credits: "Crédits",
+    left: (percent: number) => `${percent} % restants`,
+    until: (date: string) => `Accès jusqu'au ${date}`,
+    stays: "Votre session reste ouverte sur ce navigateur jusqu'à la déconnexion.",
+    signOut: "Se déconnecter",
+    confirm: "Pour vous reconnecter, il faudra rouvrir votre lien d'invitation. Gardez-le à portée de main.",
+    cancel: "Annuler",
   },
   preview: {
     open: (name: string) => `Ouvrir ${name}`,

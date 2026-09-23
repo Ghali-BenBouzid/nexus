@@ -6,7 +6,8 @@ describe("initials", () => {
   it("takes the first letter of the first two words", () => {
     expect(initials("Ghali")).toBe("G");
     expect(initials("ghali ben bouzid")).toBe("GB");
-    expect(initials("  Élodie   Durand ")).toBe("ÉD");
+    expect(initials("  Élodie   Durand ")).toBe("ED");
+    expect(initials("Łukasz Çelik")).toBe("ŁC");
   });
 
   it("never leaves the avatar empty", () => {

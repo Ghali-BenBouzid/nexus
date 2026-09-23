@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import { useIsMobile } from "../lib/useIsMobile";
+import type { Account } from "../lib/api";
 import type { Doc, LayoutMode, Mode, Output, Result, Theme, Turn } from "../types";
 import { OutputsPanel } from "./OutputsPanel";
 import { ChatHistory } from "./ChatHistory";
@@ -54,7 +55,7 @@ type ConversationProps = {
   // The chat has no nav bar, so the theme switch lives in the left column.
   theme: Theme;
   toggleTheme: () => void;
-  accountName?: string;
+  account?: Account | null;
 };
 
 export function Conversation({
@@ -92,7 +93,7 @@ export function Conversation({
   onToggleHistory,
   onOpenHistory,
   theme,
-  accountName,
+  account,
   toggleTheme,
 }: ConversationProps) {
   const isMobile = useIsMobile();
@@ -302,7 +303,7 @@ export function Conversation({
           isMobile={isMobile}
           theme={theme}
           toggleTheme={toggleTheme}
-          accountName={accountName}
+          account={account}
         />
 
         {/* The conversation column owns the composer, so the prompt bar stays
