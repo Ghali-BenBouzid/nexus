@@ -141,25 +141,27 @@ async def test_an_oversized_round_is_sent_back_then_clamped() -> None:
 # --- steering: what the user says to a run while it works -------------------
 
 
-def _notes_after(turn: list[int], at: int, notes: list[str]):
-    """A note reader that returns nothing until the lead's ``at``-th turn, as
-    if the user wrote in while the first rounds ran. ``turn`` is shared with
-    the lead so both count the same turns."""
+def _notes_from(read: int, notes: list[str]):
+    """A note reader that returns nothing until its ``read``-th call, as if the
+    user wrote in at that moment. The lead reads twice a turn (before it
+    decides, and after, to catch a note that landed meanwhile) and the writer
+    once, so read 3 is the start of the lead's second turn and read 5 the
+    writer, when the lead took two turns."""
+    reads = [0]
 
-    async def read() -> list[str]:
-        return notes if turn[0] >= at else []
+    async def reader() -> list[str]:
+        reads[0] += 1
+        return notes if reads[0] >= read else []
 
-    return read
+    return reader
 
 
 async def test_a_note_sent_while_running_reaches_the_lead_before_its_next_step() -> (
     None
 ):
-    turn = [0]
     seen_by_lead: list[list[str]] = []
 
     def lead(messages):
-        turn[0] += 1
         seen_by_lead.append([str(m.content) for m in messages])
         if _rounds(messages) == 0:
             return call("DispatchResearchersArgs", reasoning="faa", sub_questions=["a"])
@@ -170,7 +172,7 @@ async def test_a_note_sent_while_running_reaches_the_lead_before_its_next_step()
         return call("WriteReportArgs", reasoning="done", outline="short")
 
     # The note turns up after the first round went out.
-    final, _ = await _run(lead, notes=_notes_after(turn, 1, ["Assume EASA, not FAA."]))
+    final, _ = await _run(lead, notes=_notes_from(3, ["Assume EASA, not FAA."]))
 
     first, second, third = seen_by_lead
     assert not any("Assume EASA" in m for m in first)
@@ -186,18 +188,13 @@ async def test_a_note_sent_while_running_reaches_the_lead_before_its_next_step()
 
 
 async def test_a_note_sent_after_the_research_reaches_the_writer() -> None:
-    turn = [0]
-
     def lead(messages):
-        turn[0] += 1
         if _rounds(messages) == 0:
             return call("DispatchResearchersArgs", reasoning="go", sub_questions=["a"])
         return call("WriteReportArgs", reasoning="done", outline="short")
 
     # Nothing until the lead has already decided to write.
-    final, model = await _run(
-        lead, notes=_notes_after(turn, 2, ["Keep it to one page."])
-    )
+    final, model = await _run(lead, notes=_notes_from(5, ["Keep it to one page."]))
 
     writer = str(model.seen[-1][-1].content)
     assert "Keep it to one page." in writer
@@ -216,3 +213,28 @@ def test_without_notes_the_lead_reads_what_it_always_did() -> None:
     after = deep._conversation("q", rounds, findings, cap=3, left=left, notes=[])
 
     assert [m.content for m in before] == [m.content for m in after]
+
+
+async def test_a_note_sent_while_the_lead_decides_is_not_a_round_late() -> None:
+    """Live, a correction sent seconds after the run started arrived while the
+    lead was choosing its first round, and that round went on the old
+    assumption. The lead now decides again before anything goes out."""
+    reads = [0]
+
+    async def notes() -> list[str]:
+        reads[0] += 1
+        return [] if reads[0] == 1 else ["Assume EASA, not FAA."]
+
+    def lead(messages):
+        said = " ".join(str(m.content) for m in messages)
+        if _rounds(messages) == 0:
+            topic = "easa" if "Assume EASA" in said else "faa"
+            return call(
+                "DispatchResearchersArgs", reasoning=topic, sub_questions=[topic]
+            )
+        return call("WriteReportArgs", reasoning="done", outline="short")
+
+    final, _ = await _run(lead, notes=notes)
+
+    assert [r["sub_questions"] for r in final["rounds"]] == [["easa"]]
+    assert final["rounds"][0]["notes_seen"] == 1

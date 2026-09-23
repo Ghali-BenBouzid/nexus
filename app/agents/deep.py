@@ -186,20 +186,31 @@ async def lead_node(state: DeepState, runtime: Runtime[Deps]) -> dict:
         seconds=window - time.time(),
     )
     notes = await deps.notes()
-    decision = await lead(
-        state["question"],
-        rounds,
-        findings,
-        notes=notes,
-        model=deps.model,
-        emit=deps.emit,
-        cap=min(deps.limits.cap, left.researchers),
-        left=left,
-        # Out of budget, the lead still gets a last turn, told it is the last:
-        # the report is written to its outline, which says how long it should
-        # be. Skipping the lead here wrote reports with no shape and no length.
-        final=bool(rounds) and left.spent,
-    )
+
+    async def decide(notes: list[str]) -> Decision:
+        return await lead(
+            state["question"],
+            rounds,
+            findings,
+            notes=notes,
+            model=deps.model,
+            emit=deps.emit,
+            cap=min(deps.limits.cap, left.researchers),
+            left=left,
+            # Out of budget, the lead still gets a last turn, told it is the
+            # last: the report is written to its outline, which says how long
+            # it should be. Skipping the lead here wrote reports with no shape.
+            final=bool(rounds) and left.spent,
+        )
+
+    decision = await decide(notes)
+    # A note that arrived while the lead was deciding would otherwise wait out
+    # a whole round: a live run spent its first round on the US rules the
+    # user had already corrected. Decide again with it, once.
+    fresh = await deps.notes()
+    if len(fresh) > len(notes):
+        notes = fresh
+        decision = await decide(notes)
     if isinstance(decision, WriteReportArgs):
         return {
             "window": window,
