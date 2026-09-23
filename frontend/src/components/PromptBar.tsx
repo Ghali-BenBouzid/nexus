@@ -35,6 +35,9 @@ type PromptBarProps = {
   onMode?: (next: Mode) => void;
 };
 
+// How long a passing notice stays up, fade included.
+const NOTICE_MS = 2200;
+
 // Dropping a file on the page attaches it. The listeners are on the window
 // rather than on the bar, because the whole window is what people aim at: a
 // drop target the size of the composer is one most people miss. Only one prompt
@@ -121,14 +124,21 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
   const fileRef = useRef<HTMLInputElement>(null);
   const attachments = staged ?? [];
 
-  // A dropped file that the parser cannot read is refused here, with its name,
-  // rather than being sent up to come back as a server error a minute later.
-  const [rejected, setRejected] = useState<string | null>(null);
+  // A file the parser cannot read is refused here, with its name, rather than
+  // being sent up to come back as a server error. It is a passing remark, not
+  // a state the bar is in: it says so briefly and goes. The id restarts the
+  // timer when the same file is refused twice in a row.
+  const [rejected, setRejected] = useState<{ text: string; id: number } | null>(null);
+  useEffect(() => {
+    if (!rejected) return;
+    const timer = setTimeout(() => setRejected(null), NOTICE_MS);
+    return () => clearTimeout(timer);
+  }, [rejected]);
   const take = (picked: File[]) => {
     if (!onAttach || !picked.length) return;
     const good = picked.filter(isSupported);
     const bad = picked.find((f) => !isSupported(f));
-    setRejected(bad ? t.uploads.unsupported(bad.name) : null);
+    if (bad) setRejected({ text: t.uploads.unsupported(bad.name), id: Date.now() });
     if (good.length) onAttach(good);
   };
   const dropping = useFileDrop(onAttach ? take : undefined);
@@ -234,7 +244,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
     ? t.modePlaceholder[mode]
     : (placeholder ?? t.hero.placeholder);
 
-  const files = onAttach && (attachments.length > 0 || attachError || rejected) && (
+  const files = onAttach && (attachments.length > 0 || attachError) && (
     <div className="staged">
       {attachments.map((file, i) => (
         <FileTile
@@ -245,9 +255,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
           onRemove={() => onUnstage?.(i)}
         />
       ))}
-      {(attachError || rejected) && (
-        <span className="staged-error">{attachError ?? rejected}</span>
-      )}
+      {attachError && <span className="staged-error">{attachError}</span>}
     </div>
   );
 
@@ -283,6 +291,15 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
 
   // Over the whole window, because the drop is: it says the page will take the
   // file, which is the only thing a drag needs told.
+  const notice =
+    rejected &&
+    createPortal(
+      <div key={rejected.id} className="notice" role="status">
+        {rejected.text}
+      </div>,
+      document.body,
+    );
+
   const veil =
     dropping &&
     createPortal(
@@ -329,6 +346,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
     return (
       <>
       {veil}
+      {notice}
       <div
         className={"cinput" + (mode !== "answer" ? " deep" : "")}
         onClick={(e) => {
@@ -371,6 +389,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
   return (
     <div className="prompt-wrap">
       {veil}
+      {notice}
       <div className={"prompt" + (chips ? " with-staged" : "")}>
         {chips}
         <div className="prompt-row">
