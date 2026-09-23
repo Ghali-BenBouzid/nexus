@@ -4,6 +4,8 @@ import random
 from collections.abc import Awaitable, Callable
 
 import httpx
+import httpx2
+import openai
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -37,7 +39,17 @@ def is_transient(exc: Exception) -> bool:
     """True for failures a retry could plausibly fix: a network-layer error, or a
     429/5xx response. Permanent errors (bad key, bad request, quota) return False
     so we fail fast instead of hammering a request that can't succeed."""
-    if isinstance(exc, httpx.TimeoutException | httpx.TransportError):
+    # The OpenAI client speaks httpx2, not httpx: a connection the provider
+    # drops mid-response surfaces as httpx2.ReadError, and checking httpx alone
+    # let one kill a whole deep run with no retry.
+    network = (
+        httpx.TimeoutException,
+        httpx.TransportError,
+        httpx2.TimeoutException,
+        httpx2.TransportError,
+        openai.APIConnectionError,
+    )
+    if isinstance(exc, network):
         return True
     return _status_code(exc) in _TRANSIENT_STATUS
 
