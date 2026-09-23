@@ -22,8 +22,8 @@
 
 /* ---- Dark theme (default, signature look) ---- */
 html[data-theme="dark"] {
-  --bg: #1c1810;
-  --bg-2: #201c14;
+  --bg: #110e09;
+  --bg-2: #15120d;
   --fg: #ffffff;
   --muted: rgba(255, 255, 255, 0.9);
   --faint: rgba(255, 255, 255, 0.6);
@@ -38,8 +38,8 @@ html[data-theme="dark"] {
   --cite-fill-hover: rgba(255, 255, 255, 0.19);
   --surface: rgba(255, 255, 255, 0.045);
   --surface-2: rgba(255, 255, 255, 0.07);
-  --surface-solid: #29251d;
-  --panel: rgba(36, 32, 24, 0.74);
+  --surface-solid: #1f1c16;
+  --panel: rgba(25, 22, 16, 0.74);
   --accent: #ca8a04;
   --accent-2: #eab308;
   --accent-ink: #ffffff;
@@ -51,7 +51,7 @@ html[data-theme="dark"] {
   --warn: var(--accent-2);
   --bad: #fb7185;
   --shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8);
-  --scrim: radial-gradient(120% 90% at 50% 8%, rgba(20,17,11,0) 30%, rgba(20,17,11,0.62) 78%, rgba(20,17,11,0.9) 100%);
+  --scrim: radial-gradient(120% 90% at 50% 8%, rgba(12,10,6,0) 30%, rgba(12,10,6,0.62) 78%, rgba(12,10,6,0.9) 100%);
   color-scheme: dark;
 }
 

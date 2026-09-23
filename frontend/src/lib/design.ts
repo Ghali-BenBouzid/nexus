@@ -130,8 +130,8 @@ function mix(a: string, b: string, t: number): string {
 export type DarkSurfaces = { bg: string; bg2: string; surfaceSolid: string; panel: string };
 const LIGHT_BG = "#faf7f2";
 // How far off pure black the page sits, and how much accent is mixed into it.
-const VOID_GREY = 0.065;
-const ACCENT_TOUCH = 0.06;
+const VOID_GREY = 0.034;
+const ACCENT_TOUCH = 0.042;
 
 export function darkSurfaces(p: Palette, level: number): DarkSurfaces {
   const a = p.accent;
