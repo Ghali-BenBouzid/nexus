@@ -956,6 +956,13 @@ html[data-theme="light"] .tour-hole {
 .pv-body { position: relative; flex: 1; min-height: 0; }
 .pv-frame { display: block; width: 100%; height: 100%; border: none; background: var(--surface-solid); }
 .pv-scroll { height: 100%; overflow: auto; }
+/* Pages on a desk: the sheet stays white in either theme, because it is the
+   document's own paper, and the space around it is a shade under the card. */
+.pv-pdf { display: flex; flex-direction: column; align-items: center; gap: 14px;
+  padding: 22px 28px 40px; background: var(--bg-2); }
+.pv-page { width: min(100%, 780px); background: #fff; border-radius: 3px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.18), 0 6px 18px -8px rgb(0 0 0 / 0.35); overflow: hidden; }
+.pv-page canvas { display: block; width: 100%; height: 100%; }
 .pv-doc { padding: 28px 40px 48px; font-size: 15px; line-height: 1.65; color: var(--fg); }
 .pv-text { margin: 0; padding: 22px 26px 40px; font-family: var(--font-mono); font-size: 12.5px;
   line-height: 1.6; color: var(--fg); white-space: pre-wrap; word-break: break-word; }
@@ -967,6 +974,7 @@ html[data-theme="light"] .tour-hole {
   .pv-card { width: 100%; height: 100%; border-radius: 0; border: none; }
   .pv-doc { padding: 20px 16px 40px; }
   .pv-text { padding: 16px; }
+  .pv-pdf { padding: 12px 8px 24px; gap: 8px; }
 }
 
 /* Dropping a file anywhere on the window attaches it, so the whole window says
