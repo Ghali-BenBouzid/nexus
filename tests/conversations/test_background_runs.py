@@ -518,3 +518,125 @@ async def test_a_message_with_neither_text_nor_a_file_is_refused(
     )
 
     assert sent.status_code == 422
+
+
+# --- steering a deep run that is still working -------------------------------
+
+
+async def _running_deep_run(client: AsyncClient, headers: dict[str, str]):
+    """A conversation with a deep run in it that is still working, as the
+    thread sees it minutes after the run was started. Returns the
+    conversation's public id, its row id, and the run's id."""
+    import uuid
+
+    from sqlalchemy import select
+
+    from app.db import session as db_session
+    from app.models.conversation import Conversation
+    from app.models.query import QueryKind, QueryStatus
+    from app.research import repository as research_repository
+
+    _use(lambda: _JustGreets())
+    created = await client.post(
+        "/conversations", headers=headers, json={"prompt": "hi"}
+    )
+    await drain()
+    public_id = created.json()["id"]
+    async with db_session.SessionLocal() as db:
+        conversation = (
+            await db.execute(
+                select(Conversation).where(
+                    Conversation.public_id == uuid.UUID(public_id)
+                )
+            )
+        ).scalar_one()
+        run = await research_repository.create_pending_query(
+            db,
+            conversation.user_id,
+            "VFR weather for a student pilot",
+            "Aviation weather",
+            kind=QueryKind.deep_research,
+            conversation_id=conversation.id,
+        )
+        await research_repository.set_status(db, run.id, QueryStatus.running)
+    return public_id, conversation.id, run.id
+
+
+class _Steers(ScriptedModel):
+    """A supervisor that passes the user's change of mind to the running run,
+    and says only what the tool told it."""
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        names = {
+            tool.get("function", {}).get("name") or tool.get("name", "")
+            for tool in (kwargs.get("tools") or [])
+        }
+        done = [m for m in messages if isinstance(m, ToolMessage)]
+        if "steer_deep_research" in names and not done:
+            run_id = int(
+                re.search(r"- id (\d+): Aviation", str(messages[0].content)).group(1)
+            )  # type: ignore[union-attr]
+            reply = call("steer_deep_research", run_id=run_id, note="Assume EASA.")
+        else:
+            reply = says("Passed on: the run switches to EASA from its next step.")
+        return ChatResult(generations=[ChatGeneration(message=reply)])
+
+
+async def test_a_running_deep_run_is_steered_from_the_thread(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    """The user changes their mind while a deep run works. The supervisor sees
+    the run, passes the change to it, and no second run is started."""
+    from app.db import session as db_session
+    from app.research import repository as research_repository
+
+    public_id, _, run_id = await _running_deep_run(client, auth_headers)
+    _use(lambda: _Steers(), monkeypatch=monkeypatch)
+
+    await client.post(
+        f"/conversations/{public_id}/messages",
+        headers=auth_headers,
+        json={"content": "actually I fly in France, not the US", "mode": "deep"},
+    )
+    await drain()
+
+    async with db_session.SessionLocal() as db:
+        assert await research_repository.list_notes(db, run_id) == ["Assume EASA."]
+    artifacts = (await client.get("/research/artifacts", headers=auth_headers)).json()
+    assert [a["id"] for a in artifacts] == [run_id]  # steered, not started again
+    detail = await client.get(f"/conversations/{public_id}", headers=auth_headers)
+    assert detail.json()["messages"][-1]["query"]["reply"].startswith("Passed on")
+
+
+async def test_a_note_says_honestly_how_much_it_can_still_change(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    from app.agents.schemas import AgentEvent
+    from app.conversations.service import STEERED_LATE, STEERED_NEXT, _steerer
+    from app.db import session as db_session
+    from app.models.query import QueryStatus
+    from app.research import repository as research_repository
+
+    _, conversation_id, run_id = await _running_deep_run(client, auth_headers)
+    steer = _steerer(conversation_id)
+
+    assert await steer(run_id, "Assume EASA.") == STEERED_NEXT
+    assert "was empty" in await steer(run_id, "   ")
+    # Another conversation's run is not this one's to change.
+    assert "belongs to this conversation" in await _steerer(conversation_id + 999)(
+        run_id, "x"
+    )
+    # Once the lead has stopped, a note only reaches the writer, and says so.
+    async with db_session.SessionLocal() as db:
+        await research_repository.add_event(
+            db, run_id, AgentEvent(type="lead_done", message="Covered")
+        )
+    assert await steer(run_id, "Keep it short.") == STEERED_LATE
+    # A finished run cannot be changed at all.
+    async with db_session.SessionLocal() as db:
+        await research_repository.set_status(db, run_id, QueryStatus.complete)
+    assert "no longer running" in await steer(run_id, "Anything.")
+
+    async with db_session.SessionLocal() as db:
+        notes = await research_repository.list_notes(db, run_id)
+    assert notes == ["Assume EASA.", "Keep it short."]

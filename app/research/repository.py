@@ -271,6 +271,21 @@ async def add_event(db: AsyncSession, query_id: int, event: AgentEvent) -> None:
     await db.commit()
 
 
+# A note the user sent to a running deep run, stored on the run's own feed so it
+# outlives any worker and reads back in the order it was sent.
+STEERED = "steered"
+
+
+async def list_notes(db: AsyncSession, query_id: int) -> list[str]:
+    """What the user has said to this run while it worked, oldest first."""
+    result = await db.execute(
+        select(QueryEvent.message)
+        .where(QueryEvent.query_id == query_id, QueryEvent.type == STEERED)
+        .order_by(QueryEvent.id)
+    )
+    return list(result.scalars().all())
+
+
 async def list_events(
     db: AsyncSession, query_id: int, after_id: int
 ) -> list[QueryEvent]:

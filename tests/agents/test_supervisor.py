@@ -245,3 +245,56 @@ def _record(into: list[AgentEvent]):
         into.append(event)
 
     return emit
+
+
+# --- steering a deep run that is still working -------------------------------
+
+
+async def _never_steer(run_id: int, note: str) -> str:
+    raise AssertionError("steer was not expected")
+
+
+async def test_steering_exists_only_while_a_deep_run_is_working() -> None:
+    """Additive by construction: with nothing running, a turn gets exactly the
+    tools and the prompt it had before steering existed."""
+    from app.agents.supervisor import _system_prompt
+
+    idle = ScriptedModel([says("hi")])
+    await _respond(idle, steer_deep_research=_never_steer, running=[])
+    busy = ScriptedModel([says("hi")])
+    running = [Output(id=7, title="Aviation weather", content="")]
+    await _respond(busy, steer_deep_research=_never_steer, running=running)
+
+    assert "steer_deep_research" not in idle.bound_tools[0]
+    assert "steer_deep_research" in busy.bound_tools[0]
+    assert _system_prompt("m", [], [], running=[]) == _system_prompt("m", [], [])
+    prompt = _system_prompt("m", [], [], running=running)
+    assert "<running>" in prompt and "id 7: Aviation weather" in prompt
+
+
+async def test_a_change_of_mind_is_passed_to_the_running_run() -> None:
+    steered: list[tuple[int, str]] = []
+
+    async def steer(run_id: int, note: str) -> str:
+        steered.append((run_id, note))
+        return "Noted on the run."
+
+    model = ScriptedModel(
+        [
+            call("steer_deep_research", run_id=7, note="Assume EASA, not FAA."),
+            says("Done: the run will switch to EASA from its next step."),
+        ]
+    )
+
+    answer = await _respond(
+        model,
+        "actually I fly in Europe",
+        steer_deep_research=steer,
+        running=[Output(id=7, title="Aviation weather", content="")],
+        mode="deep",
+    )
+
+    assert steered == [(7, "Assume EASA, not FAA.")]
+    # Steering counts as acting in deep mode: no "you started nothing" check.
+    assert len(model.seen) == 2
+    assert answer.text.startswith("Done")

@@ -117,6 +117,14 @@ class FactCheckArgs(BaseModel):
     )
 
 
+class SteerArgs(BaseModel):
+    run_id: int = Field(description="The id of the running deep research run")
+    note: str = Field(
+        description="What the user wants changed, self-contained and in their "
+        "words: the corrected assumption, the changed decision, the new focus"
+    )
+
+
 async def _noop(event: AgentEvent) -> None:
     return None
 
@@ -141,6 +149,8 @@ async def respond(
     emit: Emit = _noop,
     max_iters: int = 8,
     mode: str = "answer",
+    running: list[Output] | None = None,
+    steer_deep_research: Callable[[int, str], Awaitable[str]] | None = None,
 ) -> Answer:
     """Answer the latest message, doing whatever work that needs first.
 
@@ -152,21 +162,29 @@ async def respond(
     """
     documents = documents or []
     outputs = outputs or []
+    running = running or []
     agent = create_agent(
         model=model,
-        tools=_tools(
-            backend=backend,
-            sources=sources,
-            documents=documents,
-            outputs=outputs,
-            model=model,
-            middleware=middleware,
-            emit=emit,
-            start_deep_research=start_deep_research,
-            start_fact_check=start_fact_check,
-            on_research=on_research,
+        tools=[
+            *_tools(
+                backend=backend,
+                sources=sources,
+                documents=documents,
+                outputs=outputs,
+                model=model,
+                middleware=middleware,
+                emit=emit,
+                start_deep_research=start_deep_research,
+                start_fact_check=start_fact_check,
+                on_research=on_research,
+            ),
+            # Only while a deep run is working here: every other turn has
+            # exactly the tools and the prompt it had before steering existed.
+            *_steer_tool(running, steer_deep_research),
+        ],
+        system_prompt=_system_prompt(
+            message, documents, outputs, mode=mode, running=running
         ),
-        system_prompt=_system_prompt(message, documents, outputs, mode=mode),
         middleware=[
             *middleware("supervisor", emit),
             # Out of rounds means answer with what it has, not fail the turn,
@@ -230,6 +248,7 @@ def _system_prompt(
     outputs: list[Output],
     *,
     mode: str = "answer",
+    running: list[Output] | None = None,
 ) -> str:
     rendered = render(
         PROMPT,
@@ -242,7 +261,46 @@ def _system_prompt(
     parts = [prompt, _attachments(documents), _outputs(outputs)]
     if mode in _MODES:
         parts.append(_MODES[mode])
+    if running:
+        parts.append(_running(running))
     return "\n\n".join(parts)
+
+
+def _running(running: list[Output]) -> str:
+    """The deep runs still working in this conversation. Without this the
+    supervisor could not tell a run was going at all, and a user changing
+    their mind got a second run, or a promise that the first had changed."""
+    lines = [f"- id {o.id}: {o.title}" for o in running]
+    return (
+        "<running>\nDeep research runs still working in this conversation, not "
+        "readable yet:\n" + "\n".join(lines) + "\nWhen the user changes their "
+        "mind about one, corrects an assumption it was started with, or wants its "
+        "focus changed, pass that to it with steer_deep_research instead of "
+        "starting another run. Say what the tool says will happen, nothing more."
+        "\n</running>"
+    )
+
+
+def _steer_tool(
+    running: list[Output],
+    steer: Callable[[int, str], Awaitable[str]] | None,
+) -> list[StructuredTool]:
+    if not running or steer is None:
+        return []
+    return [
+        StructuredTool.from_function(
+            coroutine=steer,
+            name="steer_deep_research",
+            description=(
+                "Pass a correction or a change of mind to a deep research run "
+                "that is still working: its lead reads it before its next step "
+                "and adjusts what it researches next. Returns what will happen, "
+                "to pass on; the run is not restarted and nothing already found "
+                "is lost."
+            ),
+            args_schema=SteerArgs,
+        )
+    ]
 
 
 # Beside the attachments and the outputs, because it is the same kind of thing:
@@ -335,7 +393,9 @@ class RunClaimCheck(AgentMiddleware):
             if isinstance(message, HumanMessage):
                 break
             turn.append(message)
-        if any(getattr(m, "name", None) == self.tool for m in turn):
+        # Steering a run that is already going is acting on it too.
+        acted = {self.tool, "steer_deep_research"}
+        if any(getattr(m, "name", None) in acted for m in turn):
             return None
         self.checked = True
         return {

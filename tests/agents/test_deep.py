@@ -18,7 +18,7 @@ def _finding(messages: list[BaseMessage]) -> AIMessage:
     )
 
 
-async def _run(lead, *, cap: int = 12) -> tuple[dict, ScriptedModel]:
+async def _run(lead, *, cap: int = 12, notes=None) -> tuple[dict, ScriptedModel]:
     """Run a whole deep graph with ``lead`` deciding each turn: it gets the
     lead's conversation and returns its reply."""
 
@@ -36,7 +36,12 @@ async def _run(lead, *, cap: int = 12) -> tuple[dict, ScriptedModel]:
     final = await graph.ainvoke(
         {"question": "everything about X"},
         {"configurable": {"thread_id": "t"}},
-        context=deep.Deps(model=model, backend=FakeBackend(), limits=limits),
+        context=deep.Deps(
+            model=model,
+            backend=FakeBackend(),
+            limits=limits,
+            **({"notes": notes} if notes else {}),
+        ),
     )
     return final, model
 
@@ -131,3 +136,83 @@ async def test_an_oversized_round_is_sent_back_then_clamped() -> None:
         if isinstance(m, ToolMessage) and "exceeds the limit" in str(m.content)
     ]
     assert refusals  # it was asked to choose before anything was cut
+
+
+# --- steering: what the user says to a run while it works -------------------
+
+
+def _notes_after(turn: list[int], at: int, notes: list[str]):
+    """A note reader that returns nothing until the lead's ``at``-th turn, as
+    if the user wrote in while the first rounds ran. ``turn`` is shared with
+    the lead so both count the same turns."""
+
+    async def read() -> list[str]:
+        return notes if turn[0] >= at else []
+
+    return read
+
+
+async def test_a_note_sent_while_running_reaches_the_lead_before_its_next_step() -> (
+    None
+):
+    turn = [0]
+    seen_by_lead: list[list[str]] = []
+
+    def lead(messages):
+        turn[0] += 1
+        seen_by_lead.append([str(m.content) for m in messages])
+        if _rounds(messages) == 0:
+            return call("DispatchResearchersArgs", reasoning="faa", sub_questions=["a"])
+        if _rounds(messages) == 1:
+            return call(
+                "DispatchResearchersArgs", reasoning="easa", sub_questions=["b"]
+            )
+        return call("WriteReportArgs", reasoning="done", outline="short")
+
+    # The note turns up after the first round went out.
+    final, _ = await _run(lead, notes=_notes_after(turn, 1, ["Assume EASA, not FAA."]))
+
+    first, second, third = seen_by_lead
+    assert not any("Assume EASA" in m for m in first)
+    # Read before the second decision, after the first round's findings.
+    assert "Assume EASA, not FAA." in second[-1]
+    assert "overrides anything it contradicts" in second[-1]
+    assert [r["notes_seen"] for r in final["rounds"]] == [0, 1]
+    # On the next turn it is replayed where it arrived: between round one's
+    # findings and round two's dispatch, once, not again at the end.
+    note_at = next(i for i, m in enumerate(third) if "Assume EASA" in m)
+    assert "about a" in third[note_at - 1]
+    assert sum("Assume EASA" in m for m in third) == 1
+
+
+async def test_a_note_sent_after_the_research_reaches_the_writer() -> None:
+    turn = [0]
+
+    def lead(messages):
+        turn[0] += 1
+        if _rounds(messages) == 0:
+            return call("DispatchResearchersArgs", reasoning="go", sub_questions=["a"])
+        return call("WriteReportArgs", reasoning="done", outline="short")
+
+    # Nothing until the lead has already decided to write.
+    final, model = await _run(
+        lead, notes=_notes_after(turn, 2, ["Keep it to one page."])
+    )
+
+    writer = str(model.seen[-1][-1].content)
+    assert "Keep it to one page." in writer
+    assert "after the research was done" in writer
+    assert final["notes_seen"] == 0
+
+
+def test_without_notes_the_lead_reads_what_it_always_did() -> None:
+    """Steering is additive: a run nobody writes to gives the lead exactly the
+    conversation it had before steering existed."""
+    rounds = [deep.Round(reasoning="r", sub_questions=["a"], deadline=0.0)]
+    findings = [deep.Outcome(index=1, round=1, sub_question="a", finding=None)]
+    left = deep.Left(rounds=1, researchers=1, seconds=600)
+
+    before = deep._conversation("q", rounds, findings, cap=3, left=left)
+    after = deep._conversation("q", rounds, findings, cap=3, left=left, notes=[])
+
+    assert [m.content for m in before] == [m.content for m in after]

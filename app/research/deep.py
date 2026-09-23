@@ -100,6 +100,10 @@ async def run_deep_research_job(
     graph = get_graph()
     config = deep.run_config(query_id)
 
+    async def notes() -> list[str]:
+        async with db_session.SessionLocal() as db:
+            return await repository.list_notes(db, query_id)
+
     async def work(run: Run) -> None:
         state = await graph.aget_state(config)
         if state.next:
@@ -118,6 +122,7 @@ async def run_deep_research_job(
                 emit=run.emit,
                 middleware=run.middleware,
                 limits=Limits.deep(),
+                notes=notes,
             ),
             # Every node lands in the checkpointer, which is the whole point:
             # "exit" would checkpoint only at the end, and a run that crashed

@@ -30,7 +30,7 @@ import operator
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, NotRequired, TypedDict
 
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -87,6 +87,10 @@ class Round(TypedDict):
     reasoning: str
     sub_questions: list[str]
     deadline: float  # wall clock, when this round's researchers must submit
+    # How many of the user's steering notes the lead had read when it chose
+    # this round, so a replay puts each note back where it arrived. Absent on
+    # a round checkpointed before steering existed, which read none.
+    notes_seen: NotRequired[int]
 
 
 class Outcome(TypedDict):
@@ -104,6 +108,7 @@ class DeepState(TypedDict, total=False):
     rounds: Annotated[list[Round], operator.add]
     findings: Annotated[list[Outcome], operator.add]
     outline: str  # set once the lead is done researching; how to shape the report
+    notes_seen: int  # steering notes the lead has read; the rest reach the writer
     result: ResearchResult
     report: Report
 
@@ -126,6 +131,10 @@ def _no_middleware(agent: str, emit: Emit | None = None, **data: Any) -> list:
     return []
 
 
+async def _no_notes() -> list[str]:
+    return []
+
+
 @dataclass
 class Deps:
     """The runtime context: what the nodes need that is not state."""
@@ -135,6 +144,10 @@ class Deps:
     emit: Emit = _noop
     middleware: Middleware = _no_middleware
     limits: Limits = field(default_factory=Limits.deep)
+    # What the user has said to this run since it started, oldest first: a
+    # changed mind, a corrected assumption. Read fresh on every lead turn, not
+    # carried in state, so a note sent while a worker was down still arrives.
+    notes: Callable[[], Awaitable[list[str]]] = _no_notes
 
 
 @dataclass
@@ -172,10 +185,12 @@ async def lead_node(state: DeepState, runtime: Runtime[Deps]) -> dict:
         researchers=settings.deep_max_researchers - len(findings),
         seconds=window - time.time(),
     )
+    notes = await deps.notes()
     decision = await lead(
         state["question"],
         rounds,
         findings,
+        notes=notes,
         model=deps.model,
         emit=deps.emit,
         cap=min(deps.limits.cap, left.researchers),
@@ -186,14 +201,19 @@ async def lead_node(state: DeepState, runtime: Runtime[Deps]) -> dict:
         final=bool(rounds) and left.spent,
     )
     if isinstance(decision, WriteReportArgs):
-        return {"window": window, "outline": decision.outline}
+        return {
+            "window": window,
+            "outline": decision.outline,
+            "notes_seen": len(notes),
+        }
     deadline = min(time.time() + deps.limits.budget, window)
     round_ = Round(
         reasoning=decision.reasoning,
         sub_questions=decision.sub_questions,
         deadline=deadline,
+        notes_seen=len(notes),
     )
-    return {"window": window, "rounds": [round_]}
+    return {"window": window, "rounds": [round_], "notes_seen": len(notes)}
 
 
 @traced_step("lead")
@@ -208,6 +228,7 @@ async def lead(
     left: Left,
     retry_cap: int = 2,
     final: bool = False,
+    notes: list[str] | None = None,
 ) -> Decision:
     """The lead's next move: another round of sub-questions, or the report.
 
@@ -215,7 +236,9 @@ async def lead(
     Past the retries an over-cap round is clamped; a lead that still has no
     usable answer writes from what it has, unless it has nothing at all.
     """
-    messages = _conversation(question, rounds, findings, cap=cap, left=left)
+    messages = _conversation(
+        question, rounds, findings, cap=cap, left=left, notes=notes or []
+    )
     if final:
         messages.append(HumanMessage(_LAST_STEP))
     tools = [WriteReportArgs] if final else [DispatchResearchersArgs, WriteReportArgs]
@@ -268,12 +291,24 @@ def _conversation(
     *,
     cap: int,
     left: Left,
+    notes: list[str] | None = None,
 ) -> list[BaseMessage]:
     """The lead's conversation so far: its prompt, then every round as the tool
     call it made and the findings that answered it. Only the latest result says
-    what is left, since only that one is still true."""
+    what is left, since only that one is still true.
+
+    The user's steering notes go in where they arrived: before the round that
+    first read them, and any the lead has not read yet at the end, where they
+    bear on the decision it is about to make.
+    """
+    notes = notes or []
     messages = prompt_messages(LEAD, question, cap=cap)
+    seen = 0
     for number, round_ in enumerate(rounds, start=1):
+        upto = round_.get("notes_seen", 0)
+        if notes[seen:upto]:
+            messages.append(HumanMessage(_steering(notes[seen:upto])))
+        seen = max(seen, upto)
         call_id = f"round-{number}"
         messages.append(
             AIMessage(
@@ -294,7 +329,19 @@ def _conversation(
         if number == len(rounds):
             body += f"\n\n{left}"
         messages.append(ToolMessage(content=body, tool_call_id=call_id))
+    if notes[seen:]:
+        messages.append(HumanMessage(_steering(notes[seen:])))
     return messages
+
+
+def _steering(notes: list[str]) -> str:
+    """What the user said to the run while it worked, as the lead reads it."""
+    said = "\n".join(f"- {note}" for note in notes)
+    return (
+        "The user added this while the research was running. It overrides "
+        "anything it contradicts, in the brief or in your plan so far; research "
+        f"already done stays usable where it still applies.\n{said}"
+    )
 
 
 def render_round(outcomes: list[Outcome]) -> str:
@@ -456,10 +503,25 @@ async def write_node(state: DeepState, runtime: Runtime[Deps]) -> dict:
         result,
         model=deps.model,
         emit=deps.emit,
-        guidance=state.get("outline", ""),
+        guidance=_with_late_notes(
+            state.get("outline", ""), (await deps.notes())[state.get("notes_seen", 0) :]
+        ),
         timeout=settings.deep_writer_timeout,
     )
     return {"result": result, "report": report}
+
+
+def _with_late_notes(outline: str, late: list[str]) -> str:
+    """The outline, plus anything the user said after the lead stopped
+    researching. Too late to research, but not to shape how it is written."""
+    if not late:
+        return outline
+    said = "\n".join(f"- {note}" for note in late)
+    return (
+        f"{outline}\n\nThe user added this after the research was done. Follow "
+        "it in how the report is framed where the findings allow, and say plainly "
+        f"where they cannot support it:\n{said}"
+    ).strip()
 
 
 def build_graph() -> StateGraph:

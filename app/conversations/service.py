@@ -14,7 +14,7 @@ from langchain_core.language_models import BaseChatModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import jobs
-from app.agents.schemas import ResearchResult, Turn
+from app.agents.schemas import AgentEvent, ResearchResult, Turn
 from app.agents.supervisor import Document, Output, respond
 from app.agents.tools import SearchBackend
 from app.billing.service import has_budget
@@ -24,7 +24,7 @@ from app.core.config import settings
 from app.db import session as db_session
 from app.documents import repository as documents_repository
 from app.models.conversation import Conversation, Message, MessageRole
-from app.models.query import Query, QueryKind
+from app.models.query import Query, QueryKind, QueryStatus
 from app.research import repository as research_repository
 from app.research.deep import run_deep_research_job
 from app.research.factcheck import run_fact_check_job
@@ -185,6 +185,14 @@ async def route_message(
                 db, conversation_id
             )
         ]
+        running = [
+            Output(id=q.id, title=q.title or q.prompt, content="")
+            for q in await research_repository.list_conversation_artifacts(
+                db, conversation_id
+            )
+            if q.kind == QueryKind.deep_research
+            and q.status in (QueryStatus.pending, QueryStatus.running)
+        ]
 
     async def work(run: Run) -> None:
         answer = await respond(
@@ -201,6 +209,8 @@ async def route_message(
             emit=run.emit,
             max_iters=settings.supervisor_max_iters,
             mode=mode,
+            running=running,
+            steer_deep_research=_steerer(conversation_id),
         )
         result = ResearchResult(
             points=[],
@@ -269,6 +279,57 @@ def _fact_check_starter(run: Run, conversation_id: int, documents: list[Document
         return FACT_CHECK_STARTED.format(filename=document.filename)
 
     return start
+
+
+STEERED_NEXT = (
+    "Noted on the run. Its lead reads the note before its next step, usually "
+    "within a few minutes, and adjusts what it researches from there; what is "
+    "already found stays in the report where it still applies. Tell the user "
+    "that in a sentence. Do not claim the report has already changed."
+)
+STEERED_LATE = (
+    "The run has finished researching and is writing its report. The note goes "
+    "to the writer, who will frame the report by it where the findings allow, "
+    "but nothing new will be researched for it. Tell the user that, and offer "
+    "to start a new deep research run if the change needs new research."
+)
+
+
+def _steerer(conversation_id: int):
+    """The supervisor's steer_deep_research tool: a note stored on a running
+    deep run, which its lead reads before its next step. Checked here rather
+    than trusted: the run has to belong to this conversation and still be
+    working, and the reply says honestly how much the note can still change."""
+
+    async def steer(run_id: int, note: str) -> str:
+        if not note.strip():
+            return "The note was empty. Pass what the user wants changed."
+        async with db_session.SessionLocal() as db:
+            query = await db.get(Query, run_id)
+            if (
+                query is None
+                or query.conversation_id != conversation_id
+                or query.kind != QueryKind.deep_research
+            ):
+                return (
+                    f"No deep research run with id {run_id} belongs to this "
+                    "conversation."
+                )
+            if query.status not in (QueryStatus.pending, QueryStatus.running):
+                return (
+                    f"Run {run_id} is no longer running ({query.status}), so it "
+                    "cannot be changed. Offer to start a new run with the change."
+                )
+            events = await research_repository.list_events(db, run_id, 0)
+            writing = any(e.type in ("lead_done", "writer_start") for e in events)
+            await research_repository.add_event(
+                db,
+                run_id,
+                AgentEvent(type=research_repository.STEERED, message=note.strip()),
+            )
+        return STEERED_LATE if writing else STEERED_NEXT
+
+    return steer
 
 
 async def _start_run(
