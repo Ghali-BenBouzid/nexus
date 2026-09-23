@@ -332,6 +332,7 @@ const en = {
     answered: "Answered",
     readingDocument: (name: string) => `reading ${name}`,
     steering: "passing your change to the running research",
+    listingClaims: "listing the claims to check",
     deepStarted: (title: string) => `Started deep research${title ? `: ${title}` : ""}`,
     factCheckStarted: (name: string) => `Started a fact check${name ? `: ${name}` : ""}`,
     inOutputs: "in Outputs",
@@ -652,6 +653,7 @@ const fr: Dict = {
     answered: "Répondu",
     readingDocument: (name: string) => `lecture de ${name}`,
     steering: "transmission de votre changement à la recherche en cours",
+    listingClaims: "liste des affirmations à vérifier",
     deepStarted: (title: string) =>
       `Recherche approfondie lancée${title ? ` : ${title}` : ""}`,
     factCheckStarted: (name: string) => `Vérification lancée${name ? ` : ${name}` : ""}`,

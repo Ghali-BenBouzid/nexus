@@ -60,6 +60,7 @@ async def run_fact_check_job(
             emit=run.emit,
             focus=focus,
             max_iters=settings.factcheck_max_iters,
+            most_iters=settings.factcheck_most_iters,
         )
         result = ResearchResult(
             points=[],

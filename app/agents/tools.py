@@ -154,6 +154,31 @@ class SubmitFindingArgs(BaseModel):
     found_info: bool = Field(description="False if no relevant info was found")
 
 
+class DocumentClaim(BaseModel):
+    claim: str = Field(description="the claim as the document makes it, in a sentence")
+    passage: str = Field(
+        description="a few words quoted from the passage the claim comes from"
+    )
+
+
+class LeftOut(BaseModel):
+    passage: str = Field(description="a few words quoted from the passage")
+    why: str = Field(description="why it holds nothing to check")
+
+
+class SubmitClaimsArgs(BaseModel):
+    claims: list[DocumentClaim] = Field(
+        description="every distinct claim the document makes that can be checked"
+    )
+    left_out: list[LeftOut] = Field(
+        description="the passages no claim covers, each with why; empty if none"
+    )
+    confirmed: bool = Field(
+        description="true only once you have reviewed this exact list against "
+        "the review you were given and it is final"
+    )
+
+
 class WebSearchArgs(BaseModel):
     query: str = Field(description="The search query to run against the web")
     max_results: int = Field(default=5, description="How many results to return")

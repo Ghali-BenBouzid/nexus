@@ -206,13 +206,19 @@ async def test_a_run_is_not_started_with_nothing_left_to_spend(
 
 
 class _FactChecker(ScriptedModel):
-    """A fact checker that searches once, then writes its verdict."""
+    """A fact checker that lists its claim, confirms it after the review,
+    searches once, then writes its verdict."""
 
-    searched: bool = False
+    step: int = 0
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        if not self.searched:
-            self.searched = True
+        claims = [{"claim": "it is true", "passage": "it is true"}]
+        self.step += 1
+        if self.step <= 2:
+            reply = call(
+                "submit_claims", claims=claims, left_out=[], confirmed=self.step == 2
+            )
+        elif self.step == 3:
             reply = call("web_search", query="is it true", max_results=5)
         else:
             reply = says("## The claim\n\n**Contradicted**. The sources disagree.[1]")
