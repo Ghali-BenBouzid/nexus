@@ -229,7 +229,7 @@ const en = {
     retry: "Try again",
     drop: "Drop to attach",
     dropHint: "PDF, Word or text",
-    unsupported: (name: string) => `${name} is not a kind of file Nexus can read.`,
+    unsupported: "This file format is not supported. Try another one.",
   },
   preview: {
     open: (name: string) => `Open ${name}`,
@@ -533,7 +533,7 @@ const fr: Dict = {
     retry: "Réessayer",
     drop: "Déposez pour joindre",
     dropHint: "PDF, Word ou texte",
-    unsupported: (name: string) => `Nexus ne sait pas lire ${name}.`,
+    unsupported: "Ce format de fichier n'est pas pris en charge. Essayez-en un autre.",
   },
   preview: {
     open: (name: string) => `Ouvrir ${name}`,

@@ -1002,7 +1002,7 @@ html[data-theme="light"] .tour-hole {
   .pv-pdf { padding: 12px 8px 24px; gap: 8px; }
 }
 
-/* A refused file. It sits just above the bar it is about, in red, because it
+/* A refused file. It sits just above the bar it is about, in red words, as it
    is something the user tried to do that did not happen: a quiet grey note at
    the top of the window was missed. It fades itself out on the same clock the
    component unmounts it on. */
@@ -1011,18 +1011,18 @@ html[data-theme="light"] .tour-hole {
 .notice { position: absolute; left: 50%; bottom: calc(100% + 10px); z-index: 6;
   display: flex; align-items: center; gap: 8px; width: max-content;
   max-width: min(520px, calc(100vw - 32px));
-  padding: 8px 14px 8px 11px; border-radius: 12px; color: #fff;
-  /* The light theme's red in both: dark mode's --bad is a pale rose made for
-     text on black, and white on it falls under readable contrast. */
-  background: #dc2626;
+  padding: 8px 14px 8px 11px; border-radius: 12px;
+  /* Red words on the page's own surface: the message is what needs noticing,
+     not the box it comes in. --bad is tuned per theme for text. */
+  background: var(--surface-solid); border: 1px solid var(--line-strong); color: var(--bad);
   font-size: 13.5px; font-weight: 500; line-height: 1.4; pointer-events: none;
-  box-shadow: 0 2px 6px rgb(0 0 0 / 0.2), 0 12px 30px -10px rgb(220 38 38 / 0.55);
-  animation: notice 2.2s var(--ease) forwards; }
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.2), 0 12px 30px -10px rgb(0 0 0 / 0.4);
+  animation: notice 3.5s var(--ease) forwards; }
 .notice-ic { display: grid; flex: none; }
 .notice-ic svg { width: 16px; height: 16px; }
 @keyframes notice {
   0% { opacity: 0; transform: translate(-50%, 6px); }
-  10%, 82% { opacity: 1; transform: translate(-50%, 0); }
+  6%, 88% { opacity: 1; transform: translate(-50%, 0); }
   100% { opacity: 0; transform: translate(-50%, 0); }
 }
 

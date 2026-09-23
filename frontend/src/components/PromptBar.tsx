@@ -36,7 +36,7 @@ type PromptBarProps = {
 };
 
 // How long a passing notice stays up, fade included.
-const NOTICE_MS = 2200;
+const NOTICE_MS = 3500;
 
 // Dropping a file on the page attaches it. The listeners are on the window
 // rather than on the bar, because the whole window is what people aim at: a
@@ -124,7 +124,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
   const fileRef = useRef<HTMLInputElement>(null);
   const attachments = staged ?? [];
 
-  // A file the parser cannot read is refused here, with its name, rather than
+  // A file the parser cannot read is refused here, rather than
   // being sent up to come back as a server error. It is a passing remark, not
   // a state the bar is in: it says so briefly and goes. The id restarts the
   // timer when the same file is refused twice in a row.
@@ -137,8 +137,8 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
   const take = (picked: File[]) => {
     if (!onAttach || !picked.length) return;
     const good = picked.filter(isSupported);
-    const bad = picked.find((f) => !isSupported(f));
-    if (bad) setRejected({ text: t.uploads.unsupported(bad.name), id: Date.now() });
+    const bad = picked.some((f) => !isSupported(f));
+    if (bad) setRejected({ text: t.uploads.unsupported, id: Date.now() });
     if (good.length) onAttach(good);
   };
   const dropping = useFileDrop(onAttach ? take : undefined);
