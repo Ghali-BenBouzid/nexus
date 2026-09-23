@@ -965,7 +965,29 @@ html[data-theme="light"] .tour-hole {
    ever showed on a real document. */
 .pv-page { flex: none; width: min(100%, 780px); background: #fff; border-radius: 3px;
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.18), 0 6px 18px -8px rgb(0 0 0 / 0.35); overflow: hidden; }
+.pv-page { position: relative; }
 .pv-page canvas { display: block; width: 100%; height: 100%; }
+/* pdf.js's text layer, the part of its viewer stylesheet it depends on: the
+   words sit over the canvas at the size they were drawn, invisible until
+   selected. */
+.pv-page .textLayer { position: absolute; inset: 0; overflow: clip; line-height: 1;
+  text-align: initial; transform-origin: 0 0; text-size-adjust: none; forced-color-adjust: none;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size)); }
+.pv-page .textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre;
+  cursor: text; transform-origin: 0% 0%; }
+.pv-page .textLayer > :not(.markedContent),
+.pv-page .textLayer .markedContent span:not(.markedContent) { z-index: 1; --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1; --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); }
+.pv-page .textLayer .markedContent { display: contents; }
+.pv-page .textLayer span[role="img"] { user-select: none; cursor: default; }
+.pv-page .textLayer ::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
+.pv-page .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0;
+  z-index: 0; cursor: default; user-select: none; }
+.pv-page .textLayer.selecting .endOfContent { top: 0; }
 .pv-doc { padding: 28px 40px 48px; font-size: 15px; line-height: 1.65; color: var(--fg); }
 .pv-text { margin: 0; padding: 22px 26px 40px; font-family: var(--font-mono); font-size: 12.5px;
   line-height: 1.6; color: var(--fg); white-space: pre-wrap; word-break: break-word; }
@@ -980,18 +1002,27 @@ html[data-theme="light"] .tour-hole {
   .pv-pdf { padding: 12px 8px 24px; gap: 8px; }
 }
 
-/* A passing remark (a file that cannot be attached): top centre, clear of the
-   composer and of the corner the report toasts use. It fades itself out on
-   the same clock the component unmounts it on. */
-.notice { position: fixed; top: 16px; left: 50%; z-index: 85; max-width: min(460px, calc(100vw - 32px));
-  padding: 8px 14px; border-radius: 999px; background: var(--surface-solid);
-  border: 1px solid var(--line-strong); color: var(--fg); font-size: 13px; line-height: 1.4;
-  text-align: center; pointer-events: none;
-  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18), 0 12px 32px -10px rgb(0 0 0 / 0.45);
+/* A refused file. It sits just above the bar it is about, in red, because it
+   is something the user tried to do that did not happen: a quiet grey note at
+   the top of the window was missed. It fades itself out on the same clock the
+   component unmounts it on. */
+/* Its own layer above the jump-to-latest pill, which sits in the same spot. */
+.cinput { position: relative; z-index: 6; }
+.notice { position: absolute; left: 50%; bottom: calc(100% + 10px); z-index: 6;
+  display: flex; align-items: center; gap: 8px; width: max-content;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 8px 14px 8px 11px; border-radius: 12px; color: #fff;
+  /* The light theme's red in both: dark mode's --bad is a pale rose made for
+     text on black, and white on it falls under readable contrast. */
+  background: #dc2626;
+  font-size: 13.5px; font-weight: 500; line-height: 1.4; pointer-events: none;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.2), 0 12px 30px -10px rgb(220 38 38 / 0.55);
   animation: notice 2.2s var(--ease) forwards; }
+.notice-ic { display: grid; flex: none; }
+.notice-ic svg { width: 16px; height: 16px; }
 @keyframes notice {
-  0% { opacity: 0; transform: translate(-50%, -4px); }
-  10%, 80% { opacity: 1; transform: translate(-50%, 0); }
+  0% { opacity: 0; transform: translate(-50%, 6px); }
+  10%, 82% { opacity: 1; transform: translate(-50%, 0); }
   100% { opacity: 0; transform: translate(-50%, 0); }
 }
 

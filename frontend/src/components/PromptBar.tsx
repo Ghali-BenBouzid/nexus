@@ -291,14 +291,14 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
 
   // Over the whole window, because the drop is: it says the page will take the
   // file, which is the only thing a drag needs told.
-  const notice =
-    rejected &&
-    createPortal(
-      <div key={rejected.id} className="notice" role="status">
-        {rejected.text}
-      </div>,
-      document.body,
-    );
+  // Anchored to the bar it is about, just above it, where the eye already is
+  // when the file was picked.
+  const notice = rejected && (
+    <div key={rejected.id} className="notice" role="alert">
+      <span className="notice-ic" aria-hidden="true">{I.warn}</span>
+      {rejected.text}
+    </div>
+  );
 
   const veil =
     dropping &&
@@ -346,13 +346,13 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
     return (
       <>
       {veil}
-      {notice}
       <div
         className={"cinput" + (mode !== "answer" ? " deep" : "")}
         onClick={(e) => {
           if (!(e.target as HTMLElement).closest("button, textarea")) taRef.current?.focus();
         }}
       >
+        {notice}
         {chips}
         <textarea
           ref={taRef}
@@ -389,8 +389,8 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
   return (
     <div className="prompt-wrap">
       {veil}
-      {notice}
       <div className={"prompt" + (chips ? " with-staged" : "")}>
+        {notice}
         {chips}
         <div className="prompt-row">
         <div className="cinput-left">
