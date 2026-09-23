@@ -165,12 +165,15 @@ export function Tour({
     const key = (e: KeyboardEvent) => {
       // The card owns the keyboard while it is up: the page behind it is dimmed
       // and not meant to be typed into.
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
       if (e.key === "ArrowRight" || e.key === "Enter") setI((n) => n + 1);
       if (e.key === "ArrowLeft") setI((n) => Math.max(0, n - 1));
     };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
   });
 
   useEffect(() => {

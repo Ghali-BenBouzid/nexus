@@ -1,4 +1,4 @@
-import { Children, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import { Children, Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
@@ -56,7 +56,10 @@ function CiteGroup({ ns, sources, onCite }: CiteProps & { ns: number[] }) {
       }
     };
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
     };
     document.addEventListener("mousedown", away);
     document.addEventListener("keydown", key);
@@ -72,7 +75,11 @@ function CiteGroup({ ns, sources, onCite }: CiteProps & { ns: number[] }) {
     };
   }, [open]);
 
-  const toggle = () => {
+  const toggle = (e: React.MouseEvent) => {
+    // Checking a source is not selecting the message it sits in. Left to bubble,
+    // the click also focused the turn, and that re-render is what used to take
+    // the panel down with it.
+    e.stopPropagation();
     if (open) return setAt(null);
     const box = chip.current?.getBoundingClientRect();
     if (!box) return;
@@ -255,10 +262,18 @@ type MarkdownProps = {
 // never overflows the report column.
 export function Markdown({ text, onCite, sources = [] }: MarkdownProps) {
   const doc = useRef<HTMLDivElement>(null);
-  const cp: CiteProps = { onCite, sources };
-  const kids = (children: ReactNode) => withCites(children, cp);
+  // Read through a ref, so the component map below can be built once. Built per
+  // render, every override is a new function, React reads that as a new element
+  // type, and it throws away the whole rendered answer and mounts a fresh one.
+  // Every citation loses its open panel with it, which is why the first click on
+  // one did nothing: the click focused the turn, that re-rendered, and the panel
+  // it had just opened was destroyed before it could paint.
+  const cp = useRef<CiteProps>({ onCite, sources });
+  cp.current = { onCite, sources };
 
-  const components: Components = {
+  const components = useMemo<Components>(() => {
+    const kids = (children: ReactNode) => withCites(children, cp.current);
+    return {
     // Reports start at ## in the data; demote any stray h1 so the hierarchy holds.
     // Every heading carries its anchor, so a report can link to its own sections.
     h1: ({ children }) => <h2 id={anchor(children)}>{kids(children)}</h2>,
@@ -296,7 +311,10 @@ export function Markdown({ text, onCite, sources = [] }: MarkdownProps) {
         <table>{children}</table>
       </div>
     ),
-  };
+    };
+    // Built once and never rebuilt: the overrides read the current props off the
+    // ref, so they never need new identities.
+  }, []);
 
   return (
     <div className="doc" ref={doc}>

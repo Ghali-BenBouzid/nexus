@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
-import type { Turn } from "../types";
+import type { Doc, Turn } from "../types";
 import { Markdown } from "./Markdown";
 import { Activity } from "./Activity";
 import { FileTile } from "./FileTile";
@@ -15,6 +15,7 @@ type TurnCardProps = {
   focused?: boolean;
   onSelect?: () => void; // split: focus this turn in the side panel
   onRerun: (query: string) => void;
+  onPreview?: (doc: Doc) => void;
 };
 
 // One conversation turn rendered as chat: the user's question, the run's live
@@ -27,6 +28,7 @@ export function TurnCard({
   focused,
   onSelect,
   onRerun,
+  onPreview,
 }: TurnCardProps) {
   const [showSources, setShowSources] = useState(false);
   const [activeCite, setActiveCite] = useState<number | null>(null);
@@ -66,7 +68,14 @@ export function TurnCard({
         <div className="msg-row user">
           <div className="bubble-files">
             {turn.attachments!.map((doc) => (
-              <FileTile key={doc.id} name={doc.filename} bytes={doc.sizeBytes} />
+              <FileTile
+                key={doc.id}
+                name={doc.filename}
+                bytes={doc.sizeBytes}
+                state={doc.state}
+                error={doc.error}
+                onOpen={onPreview && !doc.state ? () => onPreview(doc) : undefined}
+              />
             ))}
           </div>
         </div>

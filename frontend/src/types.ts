@@ -120,4 +120,11 @@ export type Doc = {
   chars: number;
   truncated: boolean;
   ocr: boolean;
+  // Client-side only, and only while a file is on its way to the server: the
+  // tile exists the moment the file is picked and says how it is going, rather
+  // than appearing minutes later when the parse finishes. A document the server
+  // has confirmed carries no state at all. Placeholders hold a negative id, so
+  // nothing mistakes one for something that can be fetched or deleted.
+  state?: "uploading" | "failed";
+  error?: string;
 };

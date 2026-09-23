@@ -29,6 +29,19 @@ html[data-theme="dark"] {
   --faint: rgba(255, 255, 255, 0.6);
   --line: rgba(255, 255, 255, 0.10);
   --line-strong: rgba(255, 255, 255, 0.18);
+  /* A citation sits inside a sentence and has to hold its own edge against the
+     prose. The general surface tokens are too faint for that: on black, a 10%
+     border over a 7% fill is barely a shape at all. */
+  /* A mid grey chip on the dark page: most favicons are drawn for a white tab
+     bar, and a dark mark on a dark chip simply vanished. Grey first, with 4%
+     of the accent so it belongs to the brand without reading as a pale
+     accent itself. The words go dark to sit on it. */
+  --cite-line: color-mix(in srgb, #c2c2c2 96%, var(--accent));
+  --cite-fill: color-mix(in srgb, #a3a3a3 96%, var(--accent));
+  --cite-line-hover: color-mix(in srgb, #d6d6d6 96%, var(--accent));
+  --cite-fill-hover: color-mix(in srgb, #b3b3b3 96%, var(--accent));
+  --cite-text: #1a1a1a;
+  --cite-muted: rgba(26, 26, 26, 0.72);
   --surface: rgba(255, 255, 255, 0.045);
   --surface-2: rgba(255, 255, 255, 0.07);
   --surface-solid: #150e00;
@@ -57,6 +70,14 @@ html[data-theme="light"] {
   --faint: rgba(10, 7, 5, 0.62);
   --line: rgba(28, 18, 8, 0.12);
   --line-strong: rgba(28, 18, 8, 0.20);
+  /* On paper the fill has to go darker, not lighter: --surface-2 is white at
+     86%, which is brighter than the page, so the chip disappeared into it. */
+  --cite-line: rgba(28, 18, 8, 0.30);
+  --cite-fill: rgba(28, 18, 8, 0.07);
+  --cite-line-hover: rgba(28, 18, 8, 0.46);
+  --cite-fill-hover: rgba(28, 18, 8, 0.12);
+  --cite-text: var(--fg);
+  --cite-muted: var(--faint);
   --surface: rgba(255, 255, 255, 0.66);
   --surface-2: rgba(255, 255, 255, 0.86);
   --surface-solid: #ffffff;
@@ -126,6 +147,23 @@ button:focus-visible, a:focus-visible, textarea:focus-visible,
   opacity: 0;
   transition: opacity 0.8s var(--ease);
 }
+/* The chat is lifted off the landing page's void, in dark mode only. They are
+   different rooms: the landing page is a showpiece where the fluid blob is the
+   whole point and black is what it needs behind it, while the chat is a surface
+   you read on for a long stretch, and white text on near-black turns every
+   border, glyph edge and antialiased curve into a hard line.
+
+   Set on body, not on the root: applyBackground writes the landing values
+   inline on <html>, and a declaration on body wins over what it inherits from
+   there. Light mode keeps one background for both, where the contrast was never
+   the problem. */
+html[data-theme="dark"] body[data-stage="chat"] {
+  --bg: #090705;
+  --bg-2: #0d0b09;
+  --surface-solid: #171613;
+  --panel: rgba(17, 15, 13, 0.74);
+}
+
 body[data-stage="run"], body[data-stage="report"], body[data-stage="chat"] { --fluid-op: 0.12; }
 body[data-stage="run"] #fluid-canvas,
 body[data-stage="report"] #fluid-canvas,
@@ -799,18 +837,31 @@ html[data-theme="light"] .tour-hole {
    number says a source exists, a domain says whether it is worth doubting. */
 .cites-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 15em;
   padding: 1px 7px 1px 5px; margin: 0 2px; vertical-align: baseline;
-  border: 1px solid var(--line); border-radius: 7px; background: var(--surface-2);
+  border: 1px solid var(--cite-line); border-radius: 7px; background: var(--cite-fill);
   font-family: var(--font-mono); font-size: 0.74em; font-weight: 500; line-height: 1.7;
-  color: var(--muted); cursor: pointer; text-decoration: none;
+  color: var(--cite-text); cursor: pointer; text-decoration: none;
   transition: background 0.15s, color 0.15s, border-color 0.15s; }
-.cites-chip:hover { border-color: var(--line-strong); background: var(--surface); color: var(--fg); }
-.cites-chip.active { border-color: var(--accent); color: var(--fg); background: var(--surface); }
+.cites-chip:hover { border-color: var(--cite-line-hover); background: var(--cite-fill-hover); }
+.cites-chip.active { border-color: var(--accent); background: var(--cite-fill-hover); }
 .cites-domain { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.cites-more { flex: none; color: var(--faint); }
+.cites-more { flex: none; color: var(--cite-muted); }
 
 /* The panel, drawn at the top of the page against the viewport: a report body
    scrolls and a wide table scrolls sideways, and a panel drawn inside either of
    them would be cut off at its edge. Placed by the chip that opened it. */
+/* In the dark theme the list a chip opens is the chip's own grey, for the same
+   reason: its favicons are the ones that went missing. The popover's colours
+   are redefined here, so everything inside it follows without overrides. */
+html[data-theme="dark"] .cites-pop {
+  --surface-solid: var(--cite-fill);
+  --surface-2: var(--cite-fill-hover);
+  --line: rgba(0, 0, 0, 0.14);
+  --line-strong: var(--cite-line);
+  --fg: var(--cite-text);
+  --muted: rgba(26, 26, 26, 0.8);
+  --faint: rgba(26, 26, 26, 0.64);
+  color: var(--fg);
+}
 .cites-pop { position: fixed; z-index: 60;
   display: flex; flex-direction: column; width: max-content; max-width: min(340px, 78vw);
   border: 1px solid var(--line-strong); border-radius: 14px;
@@ -879,6 +930,12 @@ html[data-theme="light"] .tour-hole {
   width: 20px; height: 20px; border: none; border-radius: 50%; cursor: pointer;
   background: var(--surface-solid); color: var(--muted); opacity: 0; transition: opacity 0.15s, color 0.15s;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.3); }
+/* The whole tile opens the file; the remove button sits above it. */
+.ftile-hit { position: absolute; inset: 0; z-index: 1; padding: 0; border: none;
+  background: none; border-radius: inherit; cursor: pointer; }
+.ftile-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ftile:has(.ftile-hit):hover { border-color: var(--line-strong); }
+.ftile-x { z-index: 2; }
 .ftile:hover .ftile-x, .ftile-x:focus-visible { opacity: 1; }
 .ftile-x:hover { color: var(--fg); }
 .ftile-x svg { width: 12px; height: 12px; }
@@ -886,6 +943,125 @@ html[data-theme="light"] .tour-hole {
 /* Files picked in a bar, waiting to go with the next message. */
 .staged { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; }
 .staged-error { width: 100%; font-size: 12.5px; color: var(--bad); }
+
+/* A file on its way up. The tile is there from the first frame, so it reads as
+   half-there until the server has actually read the file. */
+.ftile-meta { display: flex; align-items: center; gap: 5px; }
+.ftile-meta .spin { width: 10px; height: 10px; border-width: 1.5px; }
+.ftile[data-state="uploading"] .ftile-page { opacity: 0.55; }
+.ftile[data-state="failed"] { border-color: var(--bad); }
+.ftile[data-state="failed"] .ftile-page { opacity: 0.4; }
+.ftile[data-state="failed"] .ftile-meta { color: var(--bad); }
+.upload-item[data-state="uploading"] .upload-name { color: var(--muted); }
+.upload-item[data-state="failed"] .upload-meta { color: var(--bad); }
+.upload-item .upload-ic .spin { width: 14px; height: 14px; }
+
+/* An attached file, opened. Over everything and as large as the window lets
+   it be: a PDF is for reading, and a side panel is too narrow to read one in. */
+.pv-veil { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
+  padding: 28px; background: color-mix(in srgb, var(--bg) 70%, transparent);
+  backdrop-filter: blur(4px); animation: fadeIn 0.16s var(--ease); }
+.pv-card { display: flex; flex-direction: column; width: min(920px, 100%); height: min(92vh, 1100px);
+  border-radius: 18px; overflow: hidden; background: var(--surface-solid);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.22), 0 30px 80px -20px rgb(0 0 0 / 0.6); }
+.pv-head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 16px;
+  border-bottom: 1px solid var(--line); }
+.pv-ic { display: grid; place-items: center; color: var(--faint); }
+.pv-ic svg { width: 17px; height: 17px; }
+.pv-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.pv-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 14px; font-weight: 600; color: var(--fg); }
+.pv-meta { flex: none; font-family: var(--font-mono); font-size: 11px; color: var(--faint); }
+.pv-head a.icon-btn { text-decoration: none; }
+.pv-body { position: relative; flex: 1; min-height: 0; }
+.pv-frame { display: block; width: 100%; height: 100%; border: none; background: var(--surface-solid); }
+.pv-scroll { height: 100%; overflow: auto; }
+/* Pages on a desk: the sheet stays white in either theme, because it is the
+   document's own paper, and the space around it is a shade under the card. */
+.pv-pdf { display: flex; flex-direction: column; align-items: center; gap: 14px;
+  padding: 22px 28px 40px; background: var(--bg-2); }
+/* flex: none, or the column squeezes every page to fit the card: a flex item
+   shrinks by default, and that beats aspect-ratio. One page fits, so it only
+   ever showed on a real document. */
+.pv-page { flex: none; width: min(100%, 780px); background: #fff; border-radius: 3px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.18), 0 6px 18px -8px rgb(0 0 0 / 0.35); overflow: hidden; }
+.pv-page { position: relative; }
+.pv-page canvas { display: block; width: 100%; height: 100%; }
+/* pdf.js's text layer, the part of its viewer stylesheet it depends on: the
+   words sit over the canvas at the size they were drawn, invisible until
+   selected. */
+.pv-page .textLayer { position: absolute; inset: 0; overflow: clip; line-height: 1;
+  text-align: initial; transform-origin: 0 0; text-size-adjust: none; forced-color-adjust: none;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size)); }
+.pv-page .textLayer :is(span, br) { color: transparent; position: absolute; white-space: pre;
+  cursor: text; transform-origin: 0% 0%; }
+.pv-page .textLayer > :not(.markedContent),
+.pv-page .textLayer .markedContent span:not(.markedContent) { z-index: 1; --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1; --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv)); }
+.pv-page .textLayer .markedContent { display: contents; }
+.pv-page .textLayer span[role="img"] { user-select: none; cursor: default; }
+.pv-page .textLayer ::selection { background: color-mix(in srgb, var(--accent) 32%, transparent); }
+.pv-page .textLayer .endOfContent { display: block; position: absolute; inset: 100% 0 0;
+  z-index: 0; cursor: default; user-select: none; }
+.pv-page .textLayer.selecting .endOfContent { top: 0; }
+.pv-doc { padding: 28px 40px 48px; font-size: 15px; line-height: 1.65; color: var(--fg); }
+.pv-text { margin: 0; padding: 22px 26px 40px; font-family: var(--font-mono); font-size: 12.5px;
+  line-height: 1.6; color: var(--fg); white-space: pre-wrap; word-break: break-word; }
+.pv-state { height: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 24px; text-align: center; font-size: 13.5px; color: var(--muted); }
+.pv-state.bad { color: var(--bad); }
+@media (max-width: 640px) {
+  .pv-veil { padding: 0; }
+  .pv-card { width: 100%; height: 100%; border-radius: 0; border: none; }
+  .pv-doc { padding: 20px 16px 40px; }
+  .pv-text { padding: 16px; }
+  .pv-pdf { padding: 12px 8px 24px; gap: 8px; }
+}
+
+/* A refused file. It sits just above the bar it is about, in red words, as it
+   is something the user tried to do that did not happen: a quiet grey note at
+   the top of the window was missed. It fades itself out on the same clock the
+   component unmounts it on. */
+/* Its own layer above the jump-to-latest pill, which sits in the same spot. */
+.cinput { position: relative; z-index: 6; }
+/* 11px from inside the bar's 1px border: 10px clear of it, like the jump pill. */
+.notice { position: absolute; left: 50%; bottom: calc(100% + 11px); z-index: 6;
+  display: flex; align-items: center; gap: 8px; width: max-content;
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 8px 14px 8px 11px; border-radius: 12px;
+  /* Red words on the page's own surface: the message is what needs noticing,
+     not the box it comes in. --bad is tuned per theme for text. */
+  background: var(--surface-solid); border: 1px solid var(--line-strong); color: var(--bad);
+  font-size: 13.5px; font-weight: 500; line-height: 1.4; pointer-events: none;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.2), 0 12px 30px -10px rgb(0 0 0 / 0.4);
+  animation: notice 3.5s var(--ease) forwards; }
+.notice-ic { display: grid; flex: none; }
+.notice-ic svg { width: 16px; height: 16px; }
+@keyframes notice {
+  0% { opacity: 0; transform: translate(-50%, 6px); }
+  6%, 88% { opacity: 1; transform: translate(-50%, 0); }
+  100% { opacity: 0; transform: translate(-50%, 0); }
+}
+
+/* Dropping a file anywhere on the window attaches it, so the whole window says
+   so. It is a statement, not a target: nothing here has to be hit. */
+.drop-veil { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center;
+  background: color-mix(in srgb, var(--bg) 62%, transparent);
+  backdrop-filter: blur(3px); pointer-events: none;
+  animation: fadeIn 0.14s var(--ease); }
+.drop-card { display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 26px 34px; border-radius: 18px; background: var(--surface-solid);
+  border: 1.5px dashed var(--accent);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.2), 0 24px 60px -16px rgb(0 0 0 / 0.5); }
+.drop-ic { color: var(--accent); }
+.drop-ic svg { width: 22px; height: 22px; }
+.drop-title { font-size: 15px; font-weight: 600; color: var(--fg); }
+.drop-hint { font-family: var(--font-mono); font-size: 11px; color: var(--faint); }
 .prompt.with-staged { flex-direction: column; align-items: stretch; gap: 10px;
   border-radius: var(--r-lg); padding: 12px 10px 10px 12px; }
 .prompt-row { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; }
@@ -1031,6 +1207,8 @@ html[data-theme="light"] .tour-hole {
   }
   .ev-dot.pulse, .run-status.running .sd { box-shadow: none !important; }
   .spin { border-top-color: var(--accent); }
+  /* Its fade is how it leaves; squeezed to nothing it would never be seen. */
+  .notice { animation: none !important; transform: translateX(-50%); }
 }
 
 /* ============================================================
@@ -1118,6 +1296,63 @@ html[data-theme="light"] .tour-hole {
 .ch-foot { flex: none; display: flex; align-items: center; gap: 4px; padding: 8px 10px;
   border-top: 1px solid var(--line); }
 .ch-rail-foot { margin-top: auto; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+/* The signed-in account, under the settings, as a chat app shows it. */
+.ch-account-slot { flex: none; padding: 4px 8px 10px; }
+.ch-account { display: flex; align-items: center; gap: 9px; width: 100%; min-width: 0;
+  padding: 7px 8px; border: 1px solid transparent; border-radius: 10px; background: none;
+  font: inherit; font-size: 13.5px; text-align: left; cursor: pointer; }
+.ch-account:hover, .ch-account[aria-expanded="true"] { background: var(--surface-2); border-color: var(--line); }
+.ch-avatar { flex: none; display: grid; place-items: center; width: 26px; height: 26px;
+  border-radius: 50%; background: var(--surface-2); border: 1px solid var(--line-strong);
+  color: var(--fg); font-size: 11px; font-weight: 600; letter-spacing: 0.02em; }
+/* One line of text, so a long name is cut with the plan still beside it. */
+.ch-account-who { flex: 1; display: flex; min-width: 0; white-space: pre; }
+.ch-account-name { min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  font-weight: 500; color: var(--fg); }
+.ch-account-plan { flex: none; color: var(--faint); }
+/* The menu opens upward, so the chevron points that way. */
+.ch-account-chev { flex: none; display: grid; color: var(--faint); transform: rotate(180deg); }
+.ch-account-chev svg { width: 14px; height: 14px; }
+.ch-rail-avatar { display: grid; place-items: center; padding: 3px; margin-bottom: 6px;
+  border: none; border-radius: 50%; background: none; cursor: pointer; }
+.ch-rail-avatar:hover .ch-avatar, .ch-rail-avatar[aria-expanded="true"] .ch-avatar { border-color: var(--fg); }
+
+/* The account menu: credits and sign out, drawn over the page. */
+.acct-menu { position: fixed; z-index: 70; width: 272px; padding: 6px;
+  border-radius: 14px; background: var(--surface-solid); border: 1px solid var(--line-strong);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18), 0 16px 40px -12px rgb(0 0 0 / 0.5);
+  animation: fadeIn 0.14s var(--ease); }
+.acct-head { display: flex; align-items: center; gap: 10px; padding: 8px 8px 10px; }
+.acct-head .ch-avatar { width: 32px; height: 32px; font-size: 12.5px; }
+.acct-who { display: flex; flex-direction: column; min-width: 0; }
+.acct-name { font-size: 14px; font-weight: 600; color: var(--fg);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acct-kind { font-size: 12px; color: var(--faint); }
+.acct-section { padding: 10px 8px; border-top: 1px solid var(--line); }
+.acct-row { display: flex; justify-content: space-between; align-items: baseline;
+  font-size: 13px; color: var(--fg); }
+.acct-num { font-family: var(--font-mono); font-size: 11.5px; color: var(--muted); }
+.acct-bar { height: 6px; margin-top: 8px; border-radius: 999px; background: var(--surface-2);
+  border: 1px solid var(--line); overflow: hidden; }
+.acct-bar span { display: block; height: 100%; border-radius: inherit; background: var(--accent);
+  transition: width 0.4s var(--ease); }
+.acct-bar.low span { background: var(--bad); }
+.acct-note { margin: 8px 0 0; font-size: 12px; line-height: 1.45; color: var(--faint); }
+.acct-section .acct-note:first-child { margin-top: 0; }
+.acct-item { display: flex; align-items: center; gap: 9px; width: calc(100% + 8px); margin: 8px -4px 0;
+  padding: 8px; border: none; border-radius: 8px; background: none; font: inherit; font-size: 13.5px;
+  color: var(--fg); text-align: left; cursor: pointer; }
+.acct-item:hover { background: var(--surface-2); }
+.acct-item svg { width: 16px; height: 16px; color: var(--muted); }
+.acct-warn { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--fg); }
+.acct-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
+.acct-btn { padding: 6px 12px; border-radius: 8px; border: 1px solid var(--line-strong);
+  background: none; font: inherit; font-size: 13px; color: var(--fg); cursor: pointer; }
+.acct-btn:hover { background: var(--surface-2); }
+/* The deep red in both themes, as the upload notice once learned: dark mode's
+   --bad is a pale rose for text, and white on it is hard to read. */
+.acct-btn.danger { border-color: transparent; background: #dc2626; color: #fff; }
+.acct-btn.danger:hover { background: #b91c1c; }
 .lang-btn { font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em; }
 .ch-newchat { flex: none; display: flex; align-items: center; gap: 9px; margin: 10px; padding: 10px 12px;
   font-family: var(--font-display); font-weight: 500; font-size: 13.5px; color: var(--fg); cursor: pointer;
@@ -1179,12 +1414,16 @@ html[data-theme="light"] .tour-hole {
 
 /* "jump to latest" pill */
 .jump-latest {
-  position: absolute; left: 50%; bottom: 118px; transform: translateX(-50%); z-index: 5;
+  /* The composer's 10px top padding is the gap: the same one the notice keeps. */
+  position: absolute; left: 50%; bottom: 100%; transform: translateX(-50%); z-index: 5;
   display: inline-flex; align-items: center; gap: 7px;
   font-size: 13px; font-weight: 500; color: var(--fg); cursor: pointer;
-  padding: 8px 15px 8px 12px; border-radius: 999px;
-  background: var(--panel); border: 1px solid var(--line-strong);
-  box-shadow: var(--shadow); backdrop-filter: blur(18px) saturate(1.4);
+  /* Lifted the way the upload notice is, since the two share this spot: a
+     solid surface and two shadows, a tight one for the edge and a wide one for
+     the height. */
+  padding: 8px 15px 8px 12px; border-radius: 12px;
+  background: var(--surface-solid); border: 1px solid var(--line-strong);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.18), 0 12px 30px -10px rgb(0 0 0 / 0.4);
   animation: jumpIn 0.25s var(--ease);
 }
 .jump-latest:hover { border-color: var(--accent); color: var(--accent-text); }
@@ -1192,7 +1431,7 @@ html[data-theme="light"] .tour-hole {
 @keyframes jumpIn { from { opacity: 0; transform: translate(-50%, 8px); } }
 
 /* composer: sits inside the conversation column, no bar chrome of its own */
-.composer { flex: none; padding: 10px 0 16px; }
+.composer { position: relative; flex: none; padding: 10px 0 16px; }
 .composer-inner { max-width: 680px; margin-inline: auto; padding-inline: 24px; }
 /* Under the hero's bar the note sits between two small lines, so it needs its
    own air; in the chat composer it is the last thing on the screen. */
@@ -1355,7 +1594,11 @@ html[data-theme="light"] .tour-hole {
 .upload-item:hover { background: var(--surface-2); border-color: var(--line); }
 .upload-ic { display: grid; place-items: center; color: var(--faint); }
 .upload-ic svg { width: 16px; height: 16px; }
-.upload-main { min-width: 0; }
+.upload-main { min-width: 0; padding: 0; border: none; background: none; color: inherit;
+  font: inherit; text-align: left; cursor: pointer; }
+.upload-main:disabled { cursor: default; }
+.upload-main:not(:disabled):hover .upload-name { text-decoration: underline;
+  text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 .upload-name { font-size: 13.5px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .upload-meta { font-family: var(--font-mono); font-size: 11px; color: var(--faint); margin-top: 2px; }
 /* The actions appear on hover or focus, so a list of files stays quiet. */

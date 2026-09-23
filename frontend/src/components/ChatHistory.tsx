@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { I } from "../icons";
 import { listConversations, type ConversationSummary } from "../lib/api";
 import { lang, setLang, t } from "../lib/i18n";
+import type { Account } from "../lib/api";
+import { AccountMenu } from "./AccountMenu";
 import type { Theme } from "../types";
 import { NexusLockup, NexusMark } from "./NexusLogo";
 
@@ -27,6 +29,8 @@ type ChatHistoryProps = {
   isMobile?: boolean;
   theme: Theme;
   toggleTheme: () => void;
+  // Who is signed in, shown under the settings. Absent without a live account.
+  account?: Account | null;
 };
 
 // The chat workspace's left column, laid out like a chat app's: the brand in the
@@ -43,6 +47,7 @@ export function ChatHistory({
   isMobile,
   theme,
   toggleTheme,
+  account,
 }: ChatHistoryProps) {
   const [items, setItems] = useState<ConversationSummary[] | null>(null);
   const listed = onOpen != null;
@@ -109,6 +114,13 @@ export function ChatHistory({
               <div className="ch-space" />
             )}
             <div className="ch-foot">{settings}</div>
+            {/* Who this is, the way a chat app says it: a round initial, the
+                name and the kind of account, opening onto credits and sign out. */}
+            {account && (
+              <div className="ch-account-slot">
+                <AccountMenu account={account} />
+              </div>
+            )}
           </>
         ) : (
           <div className="ch-rail">
@@ -121,7 +133,10 @@ export function ChatHistory({
             <button className="icon-btn" onClick={onNewChat} aria-label={t.history.newChat} title={t.history.newChat}>
               {I.plus}
             </button>
-            <div className="ch-rail-foot">{settings}</div>
+            <div className="ch-rail-foot">
+              {settings}
+              {account && <AccountMenu account={account} compact />}
+            </div>
           </div>
         )}
       </aside>

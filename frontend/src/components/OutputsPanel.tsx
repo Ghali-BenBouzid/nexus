@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
+import { UPLOAD_ACCEPT } from "../lib/uploads";
 import type { Doc, Output, Result } from "../types";
 import { Artifact } from "./Artifact";
 
@@ -19,6 +20,7 @@ type OutputsPanelProps = {
   onUpload: (file: File) => void;
   onRemove: (doc: Doc) => void;
   onFactCheck: (doc: Doc) => void;
+  onPreview: (doc: Doc) => void;
   uploadError?: string | null;
   isMobile?: boolean;
   // The quick tour points here when the panel is open; at the fab when it is not.
@@ -31,9 +33,14 @@ const kb = (bytes: number) =>
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 function docMeta(doc: Doc): string {
+  if (doc.state === "uploading") return t.uploads.reading;
+  if (doc.state === "failed") return doc.error ?? t.uploads.failedFile;
+  // Size and length, and nothing about how the text was got out. Whether a page
+  // came back through OCR is our problem, not something to hand the reader.
   const parts = [kb(doc.sizeBytes)];
   if (doc.pages) parts.push(t.uploads.pages(doc.pages));
-  if (doc.ocr) parts.push(t.uploads.ocr);
+  // Truncation stays: it is not how the file was read but how much of it was,
+  // and it is the reason an answer can miss what is in the last chapter.
   if (doc.truncated) parts.push(t.uploads.truncated);
   return parts.join(" · ");
 }
@@ -62,6 +69,7 @@ export function OutputsPanel({
   onUpload,
   onRemove,
   onFactCheck,
+  onPreview,
   uploadError,
   isMobile,
   tourAnchor,
@@ -148,7 +156,7 @@ export function OutputsPanel({
             ref={fileInput}
             type="file"
             className="visually-hidden"
-            accept=".pdf,.docx,.doc,.txt,.md"
+            accept={UPLOAD_ACCEPT}
             onChange={(e) => {
               const file = e.target.files?.[0];
               if (file) onUpload(file);
@@ -160,21 +168,35 @@ export function OutputsPanel({
             <div className="drawer-empty">{t.uploads.empty}</div>
           )}
           {documents.map((doc) => (
-            <div key={doc.id} className="upload-item">
-              <span className="upload-ic">{I.doc}</span>
-              <div className="upload-main">
+            <div key={doc.id} className="upload-item" data-state={doc.state}>
+              <span className="upload-ic">
+                {doc.state === "uploading" ? <span className="spin" /> : I.doc}
+              </span>
+              {/* The name opens the file. Nothing to open until the server has
+                  it, so a file on its way up is plain text. */}
+              <button
+                type="button"
+                className="upload-main"
+                onClick={() => onPreview(doc)}
+                disabled={!!doc.state}
+                aria-label={t.preview.open(doc.filename)}
+              >
                 <div className="upload-name">{doc.filename}</div>
                 <div className="upload-meta">{docMeta(doc)}</div>
-              </div>
+              </button>
               <div className="upload-actions">
-                <button
-                  className="icon-btn"
-                  onClick={() => onFactCheck(doc)}
-                  aria-label={t.uploads.factCheck}
-                  title={t.uploads.factCheck}
-                >
-                  {I.shield}
-                </button>
+                {/* There is nothing to check until the server has read the
+                    file, so the action waits rather than failing. */}
+                {!doc.state && (
+                  <button
+                    className="icon-btn"
+                    onClick={() => onFactCheck(doc)}
+                    aria-label={t.uploads.factCheck}
+                    title={t.uploads.factCheck}
+                  >
+                    {I.clipboardCheck}
+                  </button>
+                )}
                 {confirming === doc.id ? (
                   <button
                     className="icon-btn danger"

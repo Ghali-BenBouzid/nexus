@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import { useIsMobile } from "../lib/useIsMobile";
+import type { Account } from "../lib/api";
 import type { Doc, LayoutMode, Mode, Output, Result, Theme, Turn } from "../types";
 import { OutputsPanel } from "./OutputsPanel";
 import { ChatHistory } from "./ChatHistory";
@@ -39,6 +40,9 @@ type ConversationProps = {
   onUnstage: (index: number) => void;
   onRemoveDocument: (doc: Doc) => void;
   onFactCheck: (doc: Doc) => void;
+  // Open an attached file to read it: one the server has, or one still staged.
+  onPreviewDoc: (doc: Doc) => void;
+  onPreviewFile: (file: File) => void;
   uploadError?: string | null;
   running: boolean;
   onNewChat: () => void;
@@ -51,6 +55,7 @@ type ConversationProps = {
   // The chat has no nav bar, so the theme switch lives in the left column.
   theme: Theme;
   toggleTheme: () => void;
+  account?: Account | null;
 };
 
 export function Conversation({
@@ -78,6 +83,8 @@ export function Conversation({
   onUnstage,
   onRemoveDocument,
   onFactCheck,
+  onPreviewDoc,
+  onPreviewFile,
   uploadError,
   running,
   onNewChat,
@@ -86,6 +93,7 @@ export function Conversation({
   onToggleHistory,
   onOpenHistory,
   theme,
+  account,
   toggleTheme,
 }: ConversationProps) {
   const isMobile = useIsMobile();
@@ -145,9 +153,12 @@ export function Conversation({
 
   // Esc stops a run while one is in flight, and otherwise leaves the chat back to
   // the landing page (the conversation stays saved and reopenable from Recent).
+  // Only an Escape nothing else wanted: a viewer, popover, menu or drawer that
+  // closes on it marks it handled, and listens on the document so it hears the
+  // key before this does. Otherwise closing a PDF would also stop the answer.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || e.defaultPrevented) return;
       if (document.querySelector("dialog[open]")) return; // Esc closes the dialog
       if (running) onStop();
       else onExit();
@@ -224,6 +235,7 @@ export function Conversation({
             focused={t.id === focusedId}
             onSelect={() => onFocus(t.id)}
             onRerun={submit}
+            onPreview={onPreviewDoc}
           />
         ))}
       </div>
@@ -291,6 +303,7 @@ export function Conversation({
           isMobile={isMobile}
           theme={theme}
           toggleTheme={toggleTheme}
+          account={account}
         />
 
         {/* The conversation column owns the composer, so the prompt bar stays
@@ -298,13 +311,15 @@ export function Conversation({
         <div className="chat-center">
           {chatColumn}
 
-          {!atBottom && turns.length > 0 && (
-            <button className="jump-latest" onClick={scrollToBottom} aria-label={t.chat.jumpLatest}>
-              {I.arrowDown}{t.chat.jumpLatest}
-            </button>
-          )}
-
           <div className="composer">
+            {/* Inside the composer, so it rides on its top edge: the bar changes
+                height with a mode line, an attachment or a wrapped message, and
+                anything measuring it in pixels goes stale the first time it does. */}
+            {!atBottom && turns.length > 0 && (
+              <button className="jump-latest" onClick={scrollToBottom} aria-label={t.chat.jumpLatest}>
+                {I.arrowDown}{t.chat.jumpLatest}
+              </button>
+            )}
             <div className="composer-inner" data-tour="composer">
               <PromptBar
                 variant="composer"
@@ -314,6 +329,7 @@ export function Conversation({
                 staged={staged}
                 onAttach={onAttach}
                 onUnstage={onUnstage}
+                onPreview={onPreviewFile}
                 attachError={uploadError}
                 mode={mode}
                 onMode={onMode}
@@ -345,6 +361,7 @@ export function Conversation({
               onUpload={onUpload}
               onRemove={onRemoveDocument}
               onFactCheck={onFactCheck}
+              onPreview={onPreviewDoc}
               uploadError={uploadError}
               isMobile={isMobile}
             />

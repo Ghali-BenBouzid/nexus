@@ -9,8 +9,8 @@ import type { Mode } from "../types";
 // it names itself in the bar and stays named while it is on.
 const MODES: { id: Mode; icon: keyof typeof I }[] = [
   { id: "answer", icon: "spark" },
-  { id: "deep", icon: "telescope" },
-  { id: "factcheck", icon: "shield" },
+  { id: "deep", icon: "microscope" },
+  { id: "factcheck", icon: "clipboardCheck" },
 ];
 
 export function ModePicker({
@@ -33,7 +33,10 @@ export function ModePicker({
       if (!box.current?.contains(e.target as Node)) setOpen(false);
     };
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+      }
     };
     document.addEventListener("mousedown", away);
     document.addEventListener("keydown", key);
