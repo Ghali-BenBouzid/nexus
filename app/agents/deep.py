@@ -33,20 +33,21 @@ from dataclasses import dataclass, field
 from typing import Annotated, Any, TypedDict
 
 from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.runtime import Runtime
-from langgraph.types import Send
+from langgraph.types import RetryPolicy, Send
 from pydantic import ValidationError
 
 from app.agents.curate import curate
 from app.agents.planner import feed_back, prompt_messages
 from app.agents.report import write_report
 from app.agents.research import Limits, Middleware, consolidate, research_task
+from app.agents.retry import is_transient
 from app.agents.schemas import AgentEvent, Finding, Report, ResearchResult, Source
 from app.agents.sources import Sources
 from app.agents.tools import (
@@ -64,6 +65,11 @@ Emit = Callable[[AgentEvent], Awaitable[None]]
 
 _DISPATCH = "DispatchResearchersArgs"  # the schema's name is the tool's name
 _WRITE = "WriteReportArgs"
+_LAST_STEP = (
+    "This is your last step: the research budget is spent and no more rounds can "
+    "be sent. Call write_report now, with the outline from what the findings "
+    "support, and name what stays open."
+)
 # A round with less than this left of the window would be cut off before its
 # researchers read anything.
 _MIN_ROUND_SECONDS = 90.0
@@ -166,12 +172,6 @@ async def lead_node(state: DeepState, runtime: Runtime[Deps]) -> dict:
         researchers=settings.deep_max_researchers - len(findings),
         seconds=window - time.time(),
     )
-    if rounds and left.spent:
-        await deps.emit(
-            AgentEvent(type="lead_done", message="Out of budget: writing the report")
-        )
-        return {"window": window, "outline": ""}
-
     decision = await lead(
         state["question"],
         rounds,
@@ -180,6 +180,10 @@ async def lead_node(state: DeepState, runtime: Runtime[Deps]) -> dict:
         emit=deps.emit,
         cap=min(deps.limits.cap, left.researchers),
         left=left,
+        # Out of budget, the lead still gets a last turn, told it is the last:
+        # the report is written to its outline, which says how long it should
+        # be. Skipping the lead here wrote reports with no shape and no length.
+        final=bool(rounds) and left.spent,
     )
     if isinstance(decision, WriteReportArgs):
         return {"window": window, "outline": decision.outline}
@@ -203,6 +207,7 @@ async def lead(
     cap: int,
     left: Left,
     retry_cap: int = 2,
+    final: bool = False,
 ) -> Decision:
     """The lead's next move: another round of sub-questions, or the report.
 
@@ -211,9 +216,10 @@ async def lead(
     usable answer writes from what it has, unless it has nothing at all.
     """
     messages = _conversation(question, rounds, findings, cap=cap, left=left)
-    bound = model.bind_tools(
-        [DispatchResearchersArgs, WriteReportArgs], tool_choice="any"
-    )
+    if final:
+        messages.append(HumanMessage(_LAST_STEP))
+    tools = [WriteReportArgs] if final else [DispatchResearchersArgs, WriteReportArgs]
+    bound = model.bind_tools(tools, tool_choice="any")
     first = not rounds
     if first:
         await emit(AgentEvent(type="planner_start", message=f"Planning: {question}"))
@@ -230,11 +236,15 @@ async def lead(
             )
             reply = await bound.ainvoke(messages)
             decision = _parse(reply)
-            why = _why(decision, cap, first)
+            why = _why(decision, cap, first, final)
             if decision is not None and why is None:
                 await _announce(emit, decision, len(rounds) + 1)
                 return decision
-            if isinstance(decision, DispatchResearchersArgs) and decision.sub_questions:
+            if (
+                isinstance(decision, DispatchResearchersArgs)
+                and decision.sub_questions
+                and not final
+            ):
                 over_cap = decision
             feed_back(messages, reply, why)
 
@@ -324,8 +334,12 @@ def _parse(reply: AIMessage) -> Decision | None:
     return None
 
 
-def _why(decision: Decision | None, cap: int, first: bool) -> str | None:
+def _why(
+    decision: Decision | None, cap: int, first: bool, final: bool = False
+) -> str | None:
     """What is wrong with the decision, fed back to the lead; None if nothing."""
+    if final and not isinstance(decision, WriteReportArgs):
+        return "No research is left. Call write_report."
     if decision is None:
         return (
             "That was not a valid call. Call dispatch_researchers with a non-empty "
@@ -450,9 +464,13 @@ async def write_node(state: DeepState, runtime: Runtime[Deps]) -> dict:
 
 def build_graph() -> StateGraph:
     graph = StateGraph(DeepState, context_schema=Deps)
-    graph.add_node("lead", lead_node)
+    # A node that dies on a dropped connection is run again: one reset from
+    # the provider used to fail a run minutes in. Researchers catch their own
+    # failures, so only the lead and the writer need it.
+    retry = RetryPolicy(max_attempts=3, retry_on=is_transient)
+    graph.add_node("lead", lead_node, retry_policy=retry)
     graph.add_node("researcher", researcher_node)
-    graph.add_node("write", write_node)
+    graph.add_node("write", write_node, retry_policy=retry)
     graph.add_edge(START, "lead")
     graph.add_conditional_edges("lead", _next, ["researcher", "write"])
     graph.add_edge("researcher", "lead")  # waits for every researcher in the round

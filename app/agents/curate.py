@@ -19,6 +19,7 @@ can put words into the report that no researcher stood behind.
 """
 
 import asyncio
+import itertools
 import logging
 from collections.abc import Awaitable, Callable
 
@@ -55,11 +56,13 @@ async def curate(
 ) -> ResearchResult:
     """The findings worth reporting, renumbered.
 
-    Never fails a run: a curator that runs out of time or returns nothing usable
-    leaves the result as it was, because an uncurated report is worse than a
-    curated one and far better than no report. Measured on a real run this call
-    took five minutes to read 134 claims, so its own budget is not optional: the
-    writer still has to be paid for out of what is left.
+    Never fails a run, and never hands the writer more than ``cap``: a curator
+    that runs out of time or returns nothing usable falls back to an even share
+    of every sub-question's claims. It used to fall back to everything, and a
+    deep run whose curator timed out wrote a 22,000-word report from every
+    claim its researchers made. Measured on a real run this call took five
+    minutes to read 134 claims, so its own budget is not optional: the writer
+    still has to be paid for out of what is left.
     """
     claims = [claim for point in result.points for claim in point.claims]
     if len(claims) <= cap:
@@ -70,14 +73,14 @@ async def curate(
                 _choose(result, model, emit, cap), timeout=timeout
             )
     except TimeoutError:
-        logger.warning("the curator ran out of time; reporting every finding")
+        logger.warning("the curator ran out of time; keeping an even share")
         await emit(
-            AgentEvent(type="curated", message="Out of time: reporting every finding")
+            AgentEvent(type="curated", message="Out of time: keeping an even share")
         )
-        return result
+        return _pruned(result, _even_share(result, cap))
     if not keep:
-        logger.warning("the curator kept nothing; reporting every finding")
-        return result
+        logger.warning("the curator kept nothing; keeping an even share")
+        return _pruned(result, _even_share(result, cap))
     await emit(
         AgentEvent(
             type="curated",
@@ -139,6 +142,19 @@ def _numbered(result: ResearchResult) -> tuple[str, int]:
             lines.append(f"[{number}] {claim.text} (sources: {backing})")
         lines.append("")
     return "\n".join(lines), number
+
+
+def _even_share(result: ResearchResult, cap: int) -> set[int]:
+    """Claim numbers taken one per sub-question in turn, in the order each
+    researcher gave them, until ``cap``: no angle is dropped, and none crowds
+    the others out. Numbered the way ``_numbered`` numbers them."""
+    numbers: list[list[int]] = []
+    start = 1
+    for point in result.points:
+        numbers.append(list(range(start, start + len(point.claims))))
+        start += len(point.claims)
+    turns = itertools.chain.from_iterable(itertools.zip_longest(*numbers))
+    return set(itertools.islice((n for n in turns if n is not None), cap))
 
 
 def _pruned(result: ResearchResult, keep: set[int]) -> ResearchResult:

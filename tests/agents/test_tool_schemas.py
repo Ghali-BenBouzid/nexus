@@ -60,6 +60,7 @@ def test_a_finding_must_list_its_claims() -> None:
     parameters = convert_to_openai_tool(SubmitFindingArgs)["function"]["parameters"]
 
     assert set(parameters["required"]) == {"claims", "found_info"}
+    assert parameters["properties"]["claims"]["maxItems"] == 10
 
 
 def test_every_field_the_agents_depend_on_is_described() -> None:

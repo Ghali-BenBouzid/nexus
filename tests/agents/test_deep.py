@@ -23,7 +23,7 @@ async def _run(lead, *, cap: int = 12) -> tuple[dict, ScriptedModel]:
     lead's conversation and returns its reply."""
 
     def respond(messages: list[BaseMessage], tools: list[str]) -> AIMessage:
-        if "DispatchResearchersArgs" in tools:
+        if "WriteReportArgs" in tools:  # the lead, offered both or only this
             return lead(messages)
         if "SubmitFindingArgs" in tools:
             return _finding(messages)
@@ -79,16 +79,22 @@ async def test_a_lead_that_never_stops_is_stopped_and_still_reports(
     monkeypatch.setattr(settings, "deep_max_rounds", 3)
 
     def lead(messages):
+        if "This is your last step" in str(messages[-1].content):
+            return call("WriteReportArgs", reasoning="out", outline="short, 3 parts")
         return call(
             "DispatchResearchersArgs",
             reasoning="more",
             sub_questions=[f"q{_rounds(messages)}"],
         )
 
-    final, _ = await _run(lead)
+    final, model = await _run(lead)
 
     assert len(final["rounds"]) == 3
     assert final["report"].content == "THE REPORT"
+    # Out of budget, the lead is told it is its last step and can only write,
+    # so the report still follows its outline.
+    assert model.bound_tools[-2] == ["WriteReportArgs"]
+    assert "short, 3 parts" in str(model.seen[-1][-1].content)
 
 
 async def test_the_lead_cannot_report_before_anything_was_researched() -> None:

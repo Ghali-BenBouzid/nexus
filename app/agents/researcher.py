@@ -24,11 +24,16 @@ from langchain_core.messages import HumanMessage
 from pydantic import ValidationError
 
 from app.agents.language import detect_language
-from app.agents.model import Deadline
+from app.agents.model import Deadline, LastStep
 from app.agents.planner import feed_back
 from app.agents.schemas import AgentEvent, Claim, Finding
 from app.agents.sources import Sources
-from app.agents.tools import SearchBackend, SubmitFindingArgs, retrieval_tools
+from app.agents.tools import (
+    MAX_CLAIMS,
+    SearchBackend,
+    SubmitFindingArgs,
+    retrieval_tools,
+)
 from app.observability import traced_step
 from app.prompts import render
 from app.prompts.common import today
@@ -76,6 +81,7 @@ async def research_one(
             # researcher still has findings worth submitting, which the forced
             # finish below collects.
             Deadline(deadline),
+            LastStep(max_iters, LAST_STEP),
             ModelCallLimitMiddleware(run_limit=max_iters, exit_behavior="end"),
         ],
     )
@@ -88,6 +94,12 @@ async def research_one(
         submission = await _forced_finish(model, state["messages"])
 
     return _finding(sub_question, submission, sources)
+
+
+LAST_STEP = (
+    "This is your last step: there are no more searches or pages after it. "
+    "Call submit_finding now with what you have already read."
+)
 
 
 def _system_prompt(sub_question: str) -> str:
@@ -149,7 +161,7 @@ def _finding(sub_question: str, submission: Any, sources: Sources) -> Finding:
         Claim(text=claim.text, source_ids=sources.valid(claim.cited_source_ids))
         for claim in submission.claims
         if claim.text.strip()
-    ]
+    ][:MAX_CLAIMS]
     return Finding(
         sub_question=sub_question,
         claims=claims,

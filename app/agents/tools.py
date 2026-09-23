@@ -113,10 +113,10 @@ class DispatchResearchersArgs(BaseModel):
 
 
 class WriteReportArgs(BaseModel):
-    reasoning: str = Field(description="why the subject is now covered")
+    reasoning: str = Field(description="why the question is now answered")
     outline: str = Field(
-        description="how the report should be organised, from what the findings "
-        "support, and what stays open"
+        description="how the report should be organised and how long it should "
+        "be, from what the findings support, and what stays open"
     )
 
 
@@ -135,6 +135,11 @@ class SubmitFindingClaim(BaseModel):
     )
 
 
+# Per finding. Researchers told "at most 10" in the prompt still sent 30 to 50,
+# and a deep run's curator then timed out reading them all.
+MAX_CLAIMS = 10
+
+
 class SubmitFindingArgs(BaseModel):
     # Required, not defaulted to empty: a default makes it optional in the
     # schema the model sees, and after a long read a model will leave it out
@@ -142,6 +147,9 @@ class SubmitFindingArgs(BaseModel):
     claims: list[SubmitFindingClaim] = Field(
         description="the answer broken into individual claims, each with the "
         "source numbers that support it; empty if no relevant info was found",
+        # Advertised, not validated: rejecting an eleventh claim would pay for
+        # a whole new submission, so the researcher keeps the first ten.
+        json_schema_extra={"maxItems": MAX_CLAIMS},
     )
     found_info: bool = Field(description="False if no relevant info was found")
 

@@ -141,22 +141,27 @@ async def test_a_document_brings_its_tools_with_it() -> None:
 
 
 async def test_a_background_run_is_started_once_and_not_waited_for() -> None:
-    started: list[tuple[str, str]] = []
+    started: list[tuple[str, str, str]] = []
 
-    async def start(question: str, title: str) -> str:
-        started.append((question, title))
+    async def start(question: str, title: str, goal: str) -> str:
+        started.append((question, title, goal))
         return "Deep research has started."
 
     model = ScriptedModel(
         [
-            call("deep_research", question="all about X", title="About X"),
+            call(
+                "deep_research",
+                question="all about X",
+                title="About X",
+                goal="an overview",
+            ),
             says("I have started a deep run on that."),
         ]
     )
 
     answer = await _respond(model, start_deep_research=start)
 
-    assert started == [("all about X", "About X")]
+    assert started == [("all about X", "About X", "an overview")]
     assert answer.text == "I have started a deep run on that."
 
 

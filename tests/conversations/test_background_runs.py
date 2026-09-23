@@ -81,7 +81,10 @@ class _StartsDeepResearch(ScriptedModel):
         elif "deep_research" in names and not self.started:
             self.started = True
             reply = call(
-                "deep_research", question="everything about X", title="All of X"
+                "deep_research",
+                question="everything about X",
+                title="All of X",
+                goal="to decide whether X is worth learning",
             )
         elif "deep_research" in names:
             reply = says("I have started a deep run; it will appear in Outputs.")
@@ -141,6 +144,10 @@ async def test_a_deep_run_becomes_its_own_artifact(
     [artifact] = artifacts.json()
     assert artifact["kind"] == "deep_research"
     assert artifact["title"] == "All of X"
+    # the lead reads what the run is for, so it knows how deep to go
+    assert artifact["prompt"].endswith(
+        "What it is for: to decide whether X is worth learning"
+    )
     assert artifact["conversation_id"] == conversation_id
     assert artifact["status"] == "complete"
 
@@ -371,6 +378,41 @@ async def test_a_greeting_in_deep_mode_starts_nothing(
         f"/conversations/{created.json()['id']}", headers=auth_headers
     )
     assert detail.json()["messages"][1]["query"]["reply"].startswith("Hi.")
+
+
+class _ClaimsARunItNeverStarted(_StartsDeepResearch):
+    """A supervisor that says a deep run is underway without calling the tool,
+    as the live model did, and calls it once told no run exists."""
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        told = any("was not called" in str(m.content) for m in messages)
+        names = {
+            tool.get("function", {}).get("name") or tool.get("name", "")
+            for tool in (kwargs.get("tools") or [])
+        }
+        if "deep_research" in names and not told and not self.started:
+            reply = says("A deep research run on this is now underway.")
+            return ChatResult(generations=[ChatGeneration(message=reply)])
+        return super()._generate(messages, stop, run_manager, **kwargs)
+
+
+async def test_a_run_announced_but_never_started_is_caught(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    """Told in its prompt that a run exists only once its tool has started it,
+    the supervisor still announced runs it never started. Ending a deep-mode
+    turn without a run now sends the reply back once, with that fact."""
+    _use(lambda: _ClaimsARunItNeverStarted(), monkeypatch=monkeypatch)
+
+    await client.post(
+        "/conversations",
+        headers=auth_headers,
+        json={"prompt": "go deep on X", "mode": "deep"},
+    )
+    await drain()
+
+    [artifact] = (await client.get("/research/artifacts", headers=auth_headers)).json()
+    assert artifact["kind"] == "deep_research"
 
 
 def test_the_mode_is_told_to_the_supervisor_and_nothing_else_is() -> None:

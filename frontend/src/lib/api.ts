@@ -49,7 +49,7 @@ type QueryDetail = {
 // The backend bounds a run (research budget, timeouts); this only stops a stream
 // that would otherwise never end, such as a run whose job died unnoticed. It has
 // to outlast the longest run there is, which is a deep one: settings.deep_timeout
-// is 45 minutes, and cutting the stream first would read the still-running query
+// is 35 minutes, and cutting the stream first would read the still-running query
 // row and report a finished run as failed.
 const MAX_STREAM_MS = 50 * 60_000;
 

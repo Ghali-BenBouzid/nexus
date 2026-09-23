@@ -216,6 +216,40 @@ async def test_a_forced_finish_that_forgets_its_claims_is_asked_again() -> None:
     assert cited(finding) == ["http://a"]
 
 
+async def test_a_finding_keeps_at_most_ten_claims() -> None:
+    """Told "at most 10", researchers sent up to 49. The first ten are kept
+    rather than paying for another submission."""
+    many = [{"text": f"c{n}", "cited_source_ids": [1]} for n in range(14)]
+    model = ScriptedModel([_search(), _submit(claims=many, found_info=True)])
+
+    finding = await research_one("sub q", model=model, backend=FakeSearchBackend())
+
+    assert [c.text for c in finding.claims] == [f"c{n}" for n in range(10)]
+
+
+async def test_a_researcher_is_told_when_its_next_step_is_its_last() -> None:
+    """Cut off without warning, a researcher was mid-search when its rounds ran
+    out. On its last call it is told so, and submits on its own."""
+    model = ScriptedModel(
+        respond=lambda messages, tools: (
+            _submit(claims=[{"text": "done", "cited_source_ids": [1]}], found_info=True)
+            if "This is your last step" in str(messages[-1].content)
+            else _search()
+        )
+    )
+    events: list[AgentEvent] = []
+
+    async def collect(event: AgentEvent) -> None:
+        events.append(event)
+
+    finding = await research_one(
+        "sub q", model=model, backend=FakeSearchBackend(), emit=collect, max_iters=3
+    )
+
+    assert finding.answer == "done"
+    assert events == []  # it finished itself: no forced submission was needed
+
+
 async def test_out_of_time_is_reported_as_the_reason() -> None:
     events: list[AgentEvent] = []
 

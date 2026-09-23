@@ -16,9 +16,14 @@ than a stitched-together pipeline.
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
+from typing import Any
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import ModelCallLimitMiddleware
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    ModelCallLimitMiddleware,
+    hook_config,
+)
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
@@ -31,7 +36,7 @@ from pydantic import BaseModel, Field
 
 from app.agents.citations import finalize
 from app.agents.language import detect_language
-from app.agents.model import REASONING, STAGE_KEY
+from app.agents.model import REASONING, STAGE_KEY, LastStep
 from app.agents.report import text_of
 from app.agents.research import Limits, Middleware, render_findings, run_research
 from app.agents.schemas import AgentEvent, ResearchResult, Source, Turn
@@ -83,8 +88,12 @@ class ResearchArgs(BaseModel):
 
 class DeepResearchArgs(BaseModel):
     question: str = Field(
-        description="A clear, self-contained research question, in the user's "
-        "language, for a run that will take several minutes"
+        description="The user's question, self-contained and in their language, "
+        "as they would ask it: not a syllabus or a list of topics to cover"
+    )
+    goal: str = Field(
+        description="What the user wants to achieve with the answer and how deep "
+        "they need to go, from the conversation; say what you assumed"
     )
     title: str = Field(
         description="A short title, a few words in the user's language, naming "
@@ -125,7 +134,7 @@ async def respond(
     sources: Sources,
     documents: list[Document] | None = None,
     outputs: list[Output] | None = None,
-    start_deep_research: Callable[[str, str], Awaitable[str]] | None = None,
+    start_deep_research: Callable[[str, str, str], Awaitable[str]] | None = None,
     start_fact_check: Callable[[int, str], Awaitable[str]] | None = None,
     on_research: Callable[[ResearchResult], None] | None = None,
     middleware: Middleware = _no_middleware,
@@ -160,7 +169,15 @@ async def respond(
         system_prompt=_system_prompt(message, documents, outputs, mode=mode),
         middleware=[
             *middleware("supervisor", emit),
-            # Out of rounds means answer with what it has, not fail the turn.
+            # Out of rounds means answer with what it has, not fail the turn,
+            # and it is told so on the last one rather than cut off.
+            LastStep(
+                max_iters,
+                "This is your last step: no more tool calls after it. Answer the "
+                "user now with what you have, and say plainly what you could not "
+                "finish.",
+            ),
+            *([RunClaimCheck(mode)] if mode in _STARTERS else []),
             ModelCallLimitMiddleware(run_limit=max_iters, exit_behavior="end"),
         ],
     )
@@ -236,19 +253,30 @@ def _system_prompt(
 _DEEP_MODE = """\
 <mode>
 The user has switched to deep research mode for this message. They want a \
-subject covered properly, so when this message is a subject or question worth \
-researching in depth, start deep_research on it, with a short title that names \
-the subject. Do not answer it with a quick research pass instead: choosing \
-this mode is the user asking for depth.
+question answered properly, so when this message is a subject or question \
+worth researching in depth, start deep_research on it, with a short title that \
+names the subject. Do not answer it with a quick research pass instead: \
+choosing this mode is the user asking for depth.
+
+A deep run goes deep on what matters for the user's goal, so it needs to know \
+the goal. When the message or the conversation already makes it clear, or the \
+question is specific enough that the goal is obvious, start at once. When the \
+request is broad (a whole field, "educate me on X", "everything about Y") and \
+nothing says what it is for, ask one short question about what they want to \
+achieve or who it is for, not about the plan, and offer two or three concrete \
+options so answering takes a second. Assume sensible defaults for everything \
+else. Pass the goal, including what you assumed, in the goal argument, and \
+keep the question the user's own question rather than a list of topics.
 
 When this message is not something to research (a greeting, small talk, a \
 question about Nexus, or a request not to research), do not start a run. \
 Answer it as you normally would, and say in a sentence what deep research is \
 for and what to send to start one.
 
-When it is worth researching but too vague to research well, ask one short \
+When the subject itself is too vague to research at all, ask one short \
 question to pin it down before starting: a deep run takes several minutes, and \
-a report built on a guess about what they meant wastes all of them.
+a report built on a guess about what they meant wastes all of them. Ask one \
+question, never a list.
 </mode>"""
 
 # The same principle for fact checking: the mode says what the user is after,
@@ -271,6 +299,57 @@ would, and say in a sentence what fact check mode is for.
 </mode>"""
 
 _MODES = {"deep": _DEEP_MODE, "factcheck": _FACTCHECK_MODE}
+
+# The tool that starts each mode's run, and what to call the run.
+_STARTERS = {
+    "deep": ("deep_research", "deep research run"),
+    "factcheck": ("fact_check", "fact check"),
+}
+
+
+class RunClaimCheck(AgentMiddleware):
+    """In a mode that starts a background run, a reply that ends the turn
+    without starting one is sent back once to be checked.
+
+    The prompt says a run exists only once its tool has started it, and the
+    supervisor still told users "deep research is now running" without ever
+    calling deep_research, twice in a handful of live runs. Whether to start a
+    run stays the supervisor's call: this only makes sure the reply it sends
+    is one it made with the fact in front of it. A greeting or a question back
+    to the user costs one more model call, which the interface shows as a
+    fresh attempt at the reply.
+    """
+
+    def __init__(self, mode: str) -> None:
+        super().__init__()
+        self.tool, self.run = _STARTERS[mode]
+        self.checked = False
+
+    @hook_config(can_jump_to=["model"])
+    async def aafter_model(self, state, runtime) -> dict[str, Any] | None:
+        messages = state["messages"]
+        if self.checked or not messages or getattr(messages[-1], "tool_calls", None):
+            return None
+        turn = []
+        for message in reversed(messages):
+            if isinstance(message, HumanMessage):
+                break
+            turn.append(message)
+        if any(getattr(m, "name", None) == self.tool for m in turn):
+            return None
+        self.checked = True
+        return {
+            "jump_to": "model",
+            "messages": [
+                HumanMessage(
+                    f"(A check from Nexus, not from the user.) No {self.run} has "
+                    f"been started in this turn: {self.tool} was not called. If "
+                    "your reply says one is starting, running or underway, it is "
+                    f"not, so call {self.tool} now. If you meant to reply without "
+                    "starting one, send your reply again."
+                )
+            ],
+        }
 
 
 def _attachments(documents: list[Document]) -> str:
@@ -320,7 +399,7 @@ def _tools(
     model: BaseChatModel,
     middleware: Middleware,
     emit: Emit,
-    start_deep_research: Callable[[str, str], Awaitable[str]] | None,
+    start_deep_research: Callable[[str, str, str], Awaitable[str]] | None,
     start_fact_check: Callable[[int, str], Awaitable[str]] | None,
     on_research: Callable[[ResearchResult], None] | None,
 ) -> list[StructuredTool]:
@@ -367,10 +446,10 @@ def _tools(
             )
         return render_findings(result)
 
-    async def deep_research(question: str, title: str) -> str:
+    async def deep_research(question: str, title: str, goal: str) -> str:
         if start_deep_research is None:
             return "Deep research is not available here. Use research instead."
-        return await start_deep_research(question, title)
+        return await start_deep_research(question, title, goal)
 
     async def fact_check(document_id: int, focus: str = "") -> str:
         if start_fact_check is None:
@@ -439,7 +518,7 @@ def _tools(
                 coroutine=deep_research,
                 name="deep_research",
                 description=(
-                    "Start a deep research run: much wider than research, several "
+                    "Start a deep research run: deeper than research, several "
                     "minutes long, and it writes its own report into the user's "
                     "Outputs. It runs in the background and returns at once with a "
                     "note to pass on. Do not wait for it or invent its findings."
