@@ -1,3 +1,5 @@
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -128,10 +130,15 @@ async def download(
         data = await storage.get(document.storage_key)
     except storage.StorageError as exc:
         raise HTTPException(status_code=502, detail="File storage failed.") from exc
+    name = quote(document.filename)
     return Response(
         content=data,
         media_type=document.media_type,
-        headers={"Content-Disposition": f'inline; filename="{document.filename}"'},
+        # Headers are Latin-1, and a filename is whatever the user called it: an
+        # en dash or an accent put raw into the header crashed the response. The
+        # RFC 5987 form carries any name, and encoding it also means a quote in
+        # the name cannot close the value early.
+        headers={"Content-Disposition": f"inline; filename*=utf-8''{name}"},
     )
 
 

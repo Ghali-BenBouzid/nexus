@@ -73,6 +73,32 @@ async def test_uploading_a_pdf_keeps_its_text_and_its_file(
     assert download.content == pdf
 
 
+async def test_a_file_with_any_name_can_be_downloaded(
+    client: AsyncClient, auth_headers: dict[str, str], bucket: dict[str, bytes]
+) -> None:
+    # Headers are Latin-1. A name with an en dash, an accent or a quote used to
+    # crash the response before it was sent, which the browser only ever saw as
+    # "Failed to fetch".
+    conversation_id = await _conversation(client, auth_headers)
+    pdf = _pdf(pages=1)
+    name = 'Consultant – IA & Agents "CTO" résumé.pdf'
+    created = await client.post(
+        f"/conversations/{conversation_id}/documents",
+        files=_upload(name, pdf, "application/pdf"),
+        headers=auth_headers,
+    )
+
+    download = await client.get(
+        f"/documents/{created.json()['id']}/file", headers=auth_headers
+    )
+
+    assert download.status_code == 200
+    assert download.content == pdf
+    disposition = download.headers["content-disposition"]
+    assert disposition.startswith("inline; filename*=utf-8''")
+    assert "%E2%80%93" in disposition  # the en dash, encoded rather than dropped
+
+
 async def test_the_conversation_lists_what_is_attached_to_it(
     client: AsyncClient, auth_headers: dict[str, str], bucket: dict[str, bytes]
 ) -> None:
