@@ -32,15 +32,16 @@ html[data-theme="dark"] {
   /* A citation sits inside a sentence and has to hold its own edge against the
      prose. The general surface tokens are too faint for that: on black, a 10%
      border over a 7% fill is barely a shape at all. */
-  /* A light chip on the dark page: most favicons are drawn for a white tab
-     bar, and a dark mark on a dark chip simply vanished. The words go dark to
+  /* A mid grey chip on the dark page: most favicons are drawn for a white tab
+     bar, and a dark mark on a dark chip simply vanished. Neutral rather than
+     warm, so it reads as grey and not as a pale accent. The words go dark to
      sit on it. */
-  --cite-line: #c4bfb7;
-  --cite-fill: #a8a299;
-  --cite-line-hover: #d9d5cf;
-  --cite-fill-hover: #b8b2a9;
-  --cite-text: #1c1915;
-  --cite-muted: rgba(28, 25, 21, 0.72);
+  --cite-line: #c2c2c2;
+  --cite-fill: #a3a3a3;
+  --cite-line-hover: #d6d6d6;
+  --cite-fill-hover: #b3b3b3;
+  --cite-text: #1a1a1a;
+  --cite-muted: rgba(26, 26, 26, 0.72);
   --surface: rgba(255, 255, 255, 0.045);
   --surface-2: rgba(255, 255, 255, 0.07);
   --surface-solid: #150e00;
@@ -848,6 +849,19 @@ html[data-theme="light"] .tour-hole {
 /* The panel, drawn at the top of the page against the viewport: a report body
    scrolls and a wide table scrolls sideways, and a panel drawn inside either of
    them would be cut off at its edge. Placed by the chip that opened it. */
+/* In the dark theme the list a chip opens is the chip's own grey, for the same
+   reason: its favicons are the ones that went missing. The popover's colours
+   are redefined here, so everything inside it follows without overrides. */
+html[data-theme="dark"] .cites-pop {
+  --surface-solid: var(--cite-fill);
+  --surface-2: var(--cite-fill-hover);
+  --line: rgba(0, 0, 0, 0.14);
+  --line-strong: var(--cite-line);
+  --fg: var(--cite-text);
+  --muted: rgba(26, 26, 26, 0.8);
+  --faint: rgba(26, 26, 26, 0.64);
+  color: var(--fg);
+}
 .cites-pop { position: fixed; z-index: 60;
   display: flex; flex-direction: column; width: max-content; max-width: min(340px, 78vw);
   border: 1px solid var(--line-strong); border-radius: 14px;
