@@ -52,6 +52,7 @@ export default function PdfPages({ data }: { data: Blob }) {
 function PdfPage({ doc, n }: { doc: PDFDocumentProxy; n: number }) {
   const box = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
+  const textBox = useRef<HTMLDivElement>(null);
   // Held at A4 until the page says otherwise, so the scrollbar is roughly
   // right before anything has been drawn.
   const [ratio, setRatio] = useState(1.414);
@@ -60,6 +61,7 @@ function PdfPage({ doc, n }: { doc: PDFDocumentProxy; n: number }) {
     const el = box.current;
     if (!el) return;
     let task: RenderTask | null = null;
+    let text: pdfjs.TextLayer | null = null;
     let started = false;
     const io = new IntersectionObserver(
       async ([entry]) => {
@@ -71,28 +73,54 @@ function PdfPage({ doc, n }: { doc: PDFDocumentProxy; n: number }) {
         setRatio(base.height / base.width);
         // ponytail: drawn once at the width it opened at. A window resized
         // while reading gets a scaled bitmap; redraw on resize if that shows.
-        const scale = (el.clientWidth / base.width) * (window.devicePixelRatio || 1);
-        const viewport = page.getViewport({ scale });
+        const fit = el.clientWidth / base.width;
+        const viewport = page.getViewport({ scale: fit * (window.devicePixelRatio || 1) });
         const c = canvas.current;
-        if (!c) return;
+        const layer = textBox.current;
+        if (!c || !layer) return;
         c.width = Math.floor(viewport.width);
         c.height = Math.floor(viewport.height);
         task = page.render({ canvas: c, viewport });
-        await task.promise.catch(() => {});
+        // The page's words, laid invisibly over the picture of it in CSS pixels,
+        // so they can be selected and copied the way a document's should be.
+        // A scanned page has none, and simply stays a picture.
+        layer.style.setProperty("--total-scale-factor", String(fit));
+        text = new pdfjs.TextLayer({
+          textContentSource: page.streamTextContent(),
+          container: layer,
+          viewport: page.getViewport({ scale: fit }),
+        });
+        await Promise.all([task.promise, text.render()]).catch(() => {});
+        // What pdf.js's own viewer adds: a floor under the text. Without it a
+        // drag that strays between lines selects to the end of the page.
+        const end = document.createElement("div");
+        end.className = "endOfContent";
+        layer.append(end);
       },
       // Measured against the card's own scroll, and a screen ahead of it.
       { root: el.closest(".pv-scroll"), rootMargin: "100% 0px" },
     );
     io.observe(el);
+    // While a selection is being dragged the floor rises to cover the page,
+    // which is what keeps the selection following the pointer.
+    const done = () => textBox.current?.classList.remove("selecting");
+    document.addEventListener("pointerup", done);
     return () => {
       io.disconnect();
       task?.cancel();
+      text?.cancel();
+      document.removeEventListener("pointerup", done);
     };
   }, [doc, n]);
 
   return (
     <div ref={box} className="pv-page" style={{ aspectRatio: `1 / ${ratio}` }}>
       <canvas ref={canvas} aria-label={`${n} / ${doc.numPages}`} />
+      <div
+        ref={textBox}
+        className="textLayer"
+        onPointerDown={(e) => e.currentTarget.classList.add("selecting")}
+      />
     </div>
   );
 }
