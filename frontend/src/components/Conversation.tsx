@@ -306,9 +306,11 @@ export function Conversation({
           onOpen={onOpenHistory}
           onNewChat={onNewChat}
           onHome={onExit}
-          // Reload the list when a turn is added and again once a title lands, so
-          // a freshly named conversation shows its title instead of "Untitled".
-          refreshKey={turns.length + turns.filter((t) => t.title).length}
+          // Reload the list as each turn moves on, not just when it is added: a
+          // new conversation is only listed once its first message is stored,
+          // which is after the turn appears. A landed title reloads it too, so a
+          // freshly named conversation shows its title instead of "Untitled".
+          refreshKey={turns.map((t) => `${t.queryId ?? ""}:${t.status}:${t.title ?? ""}`).join("|")}
           isMobile={isMobile}
           theme={theme}
           toggleTheme={toggleTheme}
