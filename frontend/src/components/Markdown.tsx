@@ -56,7 +56,10 @@ function CiteGroup({ ns, sources, onCite }: CiteProps & { ns: number[] }) {
       }
     };
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
     };
     document.addEventListener("mousedown", away);
     document.addEventListener("keydown", key);

@@ -33,7 +33,10 @@ export function ModePicker({
       if (!box.current?.contains(e.target as Node)) setOpen(false);
     };
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setOpen(false);
+      if (e.key === "Escape") {
+        e.preventDefault();
+        setOpen(false);
+      }
     };
     document.addEventListener("mousedown", away);
     document.addEventListener("keydown", key);

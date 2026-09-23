@@ -150,9 +150,12 @@ export function Conversation({
 
   // Esc stops a run while one is in flight, and otherwise leaves the chat back to
   // the landing page (the conversation stays saved and reopenable from Recent).
+  // Only an Escape nothing else wanted: a viewer, popover, menu or drawer that
+  // closes on it marks it handled, and listens on the document so it hears the
+  // key before this does. Otherwise closing a PDF would also stop the answer.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape") return;
+      if (e.key !== "Escape" || e.defaultPrevented) return;
       if (document.querySelector("dialog[open]")) return; // Esc closes the dialog
       if (running) onStop();
       else onExit();
