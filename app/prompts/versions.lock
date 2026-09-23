@@ -1,19 +1,19 @@
 {
   "supervisor": {
-    "version": 7,
-    "sha256": "86100c1d2b964a3b75796102a805cad19331fe4fa4c1c00087384b54b962a8b0"
+    "version": 10,
+    "sha256": "5330d75f33fc9b8cdf4e9311486fad719dd383f928609481bb5295a77321bf38"
   },
   "planner": {
     "version": 6,
     "sha256": "e229a8032f5fbff4648cee47deccf6f506d5395adf3b84d6b552821db629756d"
   },
-  "deep_planner": {
-    "version": 1,
-    "sha256": "f085c7d8c66636d743b6fc1a4f5e37e4001589af707a06f64fe435fb5ff18063"
+  "deep_lead": {
+    "version": 3,
+    "sha256": "632d5420134981f00379874d121a080f6af6cd114b6de0e0dbd17221af72ca94"
   },
   "researcher": {
-    "version": 5,
-    "sha256": "dbad993ff7128223bcceb718282fd0ef9cd3cccd4eda2e9a56155c5d5809ea1a"
+    "version": 6,
+    "sha256": "57f359005b19974c1f1e161e0aae6c6d880c50693acc07fa19bbbabfa639e643"
   },
   "report": {
     "version": 1,

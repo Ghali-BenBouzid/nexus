@@ -152,6 +152,34 @@ async def test_a_refused_search_is_a_search_error(status: int) -> None:
     assert isinstance(caught.value.__cause__, httpx.HTTPStatusError)
 
 
+async def test_every_engine_refusing_is_a_failed_search_not_an_empty_one() -> None:
+    """SearXNG answers 200 with no results when the engines behind it are rate
+    limiting us. Researchers took that for "nothing is written about this" and
+    a deep run came back hollow; it has to reach them as a failure."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "results": [],
+                "unresponsive_engines": [
+                    ["brave", "Suspended: too many requests"],
+                    ["duckduckgo", "CAPTCHA"],
+                ],
+            },
+        )
+
+    with pytest.raises(SearchError, match="brave: Suspended: too many requests"):
+        await _backend(handler).search("anything", max_results=5)
+
+
+async def test_nothing_found_with_every_engine_answering_is_just_nothing() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"results": [], "unresponsive_engines": []})
+
+    assert await _backend(handler).search("zxqv nonsense", max_results=5) == []
+
+
 async def test_a_page_that_will_not_load_is_a_fetch_error() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(502, text="bad gateway")
@@ -172,9 +200,7 @@ async def test_the_backend_refuses_to_work_unopened() -> None:
 
 
 async def test_opening_and_closing_it_manages_one_client() -> None:
-    async with SelfHostedBackend(
-        searxng_url=SEARXNG, crawl4ai_url=CRAWL4AI
-    ) as backend:
+    async with SelfHostedBackend(searxng_url=SEARXNG, crawl4ai_url=CRAWL4AI) as backend:
         assert backend._client is not None
     assert backend._client is None
 

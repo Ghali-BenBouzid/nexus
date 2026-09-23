@@ -15,6 +15,10 @@ export type Outcome = "ok" | "empty" | "failed";
 // hand the work to a background run that writes its own report.
 export type Mode = "answer" | "deep" | "factcheck";
 
+// What the API calls a conversation: an opaque UUID, never the database's
+// integer key, so a chat's URL gives nothing away and cannot be guessed.
+export type ConversationId = string;
+
 export type Source = { title: string; url: string };
 
 export type Result = {
@@ -46,6 +50,8 @@ export type AgentEvent =
   | { kind: "tool"; action: "search"; text: string; index?: number }
   | { kind: "tool"; action: "read"; domain: string; index?: number }
   | { kind: "tool"; action: "error"; text: string; index?: number }
+  // The supervisor passed a change of mind to a deep run that is still working.
+  | { kind: "tool"; action: "steer" }
   // The supervisor read a file attached to the conversation.
   | { kind: "tool"; action: "document"; text: string }
   // A run the supervisor started in the background, which finishes on its own.
@@ -100,7 +106,7 @@ export type Output = {
   title: string;
   prompt: string;
   status: Status;
-  conversationId: number | null;
+  conversationId: ConversationId | null;
   error: string | null;
   createdAt: string;
   completedAt: string | null;

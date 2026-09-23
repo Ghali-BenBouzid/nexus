@@ -9,7 +9,8 @@ export type Activity =
   | { kind: "thinking"; at: number | null }
   | { kind: "search"; text: string; at: number | null }
   | { kind: "read"; domain: string; at: number | null }
-  | { kind: "document"; text: string; at: number | null };
+  | { kind: "document"; text: string; at: number | null }
+  | { kind: "steer"; at: number | null };
 
 export type ResearcherOutcome = "running" | "found" | "empty" | "failed";
 
@@ -106,6 +107,7 @@ export function summarize(events: TimelineEvent[]): Progress {
         if (e.action === "search") act(e.index, { kind: "search", text: e.text, at });
         else if (e.action === "read") act(e.index, { kind: "read", domain: e.domain, at });
         else if (e.action === "document") act(undefined, { kind: "document", text: e.text, at });
+        else if (e.action === "steer") act(undefined, { kind: "steer", at });
         break;
       case "started":
         started.push({ run: e.run, text: e.text });

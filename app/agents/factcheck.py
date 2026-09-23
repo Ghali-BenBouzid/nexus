@@ -22,7 +22,7 @@ from langchain_core.messages import AIMessage
 
 from app.agents.citations import finalize
 from app.agents.language import detect_language
-from app.agents.model import Deadline
+from app.agents.model import Deadline, LastStep
 from app.agents.report import text_of
 from app.agents.schemas import AgentEvent, Report
 from app.agents.sources import Sources
@@ -77,6 +77,12 @@ async def fact_check(
             # Out of time or out of rounds means write the report from what it
             # has read, not fail: the searching is already paid for.
             Deadline(deadline),
+            LastStep(
+                max_iters,
+                "This is your last step: there are no more searches after it. "
+                "Write your verdicts now from what you have already found, and "
+                "say which claims you could not check.",
+            ),
             ModelCallLimitMiddleware(run_limit=max_iters, exit_behavior="end"),
         ],
     )

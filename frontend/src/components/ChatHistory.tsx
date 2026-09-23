@@ -5,7 +5,7 @@ import { listConversations, type ConversationSummary } from "../lib/api";
 import { lang, setLang, t } from "../lib/i18n";
 import type { Account } from "../lib/api";
 import { AccountMenu } from "./AccountMenu";
-import type { Theme } from "../types";
+import type { ConversationId, Theme } from "../types";
 import { NexusLockup, NexusMark } from "./NexusLogo";
 
 function when(iso: string): string {
@@ -18,7 +18,7 @@ type ChatHistoryProps = {
   open: boolean;
   onToggle: () => void;
   // Opens a past conversation. Absent without a live account: no list to show.
-  onOpen?: (id: number) => void;
+  onOpen?: (id: ConversationId) => void;
   onNewChat: () => void;
   onHome: () => void;
   // Bumped by the caller (e.g. turn count) to re-pull the list as queries run.

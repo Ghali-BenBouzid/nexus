@@ -14,7 +14,6 @@ import {
   cancelQuery,
   createConversation,
   deleteDocument,
-  factCheckDocument,
   getAccount,
   listDocuments,
   listOutputs,
@@ -44,7 +43,17 @@ import { isLive, LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/re
 import { tourSeen } from "./lib/tour";
 import { isUnread, loadSeen, markSeen, saveSeen, type Seen } from "./lib/unread";
 import { DocPreview, type PreviewTarget } from "./components/DocPreview";
-import type { Doc, LayoutMode, Mode, Output, Result, Theme, Turn, View } from "./types";
+import type {
+  ConversationId,
+  Doc,
+  LayoutMode,
+  Mode,
+  Output,
+  Result,
+  Theme,
+  Turn,
+  View,
+} from "./types";
 
 // Which outputs this browser has already announced. A per-viewer convenience,
 // so it lives in localStorage and a failure to read it is not worth a thought.
@@ -146,8 +155,10 @@ export default function App() {
   // The live conversation this chat belongs to (null = a fresh, unsaved chat).
   // A page refresh starts fresh and lands on home; the previous conversation
   // stays saved server-side and is reopened on demand from Recent/history.
-  const [activeConversationId, setActiveConversationId] = useState<number | null>(null);
-  const setActiveConversation = (id: number | null) => setActiveConversationId(id);
+  const [activeConversationId, setActiveConversationId] = useState<ConversationId | null>(
+    null,
+  );
+  const setActiveConversation = (id: ConversationId | null) => setActiveConversationId(id);
 
   // Live research needs an invite (see lib/api). Without one, or once it has been
   // revoked or has expired, a live build asks for a demo account instead.
@@ -442,6 +453,22 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Files staged in a chat belong to that chat's composer. Leaving the chat, by
+  // whatever route (the exit button, the logo, the browser's back button),
+  // leaves them behind rather than carrying them into the landing page's bar,
+  // where they sat looking attached to a question nobody had asked. Watching
+  // the view instead of each exit is what keeps a future exit from missing it.
+  // The other direction is untouched: a file staged on the landing page is
+  // meant to go with the first message into the chat it creates.
+  const lastView = useRef(view);
+  useEffect(() => {
+    if (lastView.current === "chat" && view !== "chat") {
+      setStaged([]);
+      setUploadError(null);
+    }
+    lastView.current = view;
+  }, [view]);
+
   // Update only one turn; turns run independently and never clobber each other.
   const patchTurn = (id: number, fn: (t: Turn) => Turn) =>
     setTurns((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
@@ -564,7 +591,7 @@ export default function App() {
     startResearch(prompt, { fresh: true });
   }
 
-  async function startResearch(prompt: string, opts?: { fresh?: boolean }) {
+  async function startResearch(prompt: string, opts?: { fresh?: boolean; mode?: Mode }) {
     if (askForDemoAccount()) return;
     const fresh = opts?.fresh ?? false;
     // One run at a time: ignore a follow-up while another is in flight. A fresh
@@ -574,10 +601,10 @@ export default function App() {
     // A fresh submission from the hero starts a new chat, and the hero has no
     // mode control: whatever the last chat was switched into does not follow
     // the user here, any more than it follows them into an existing one.
-    const deepRun = mode === "deep" && !fresh && isLive();
-    // Fact check is not a turn: it reads a file and writes its own report. The
-    // message is only what to focus on, so the send path forks here.
-    const checking = mode === "factcheck" && !fresh && isLive() && staged.length > 0;
+    // Every mode is a message to the supervisor, which decides what it calls
+    // for and answers in the thread: the mode says what the user is after, it
+    // never starts a run behind the supervisor's back.
+    const runMode: Mode = fresh || !isLive() ? "answer" : (opts?.mode ?? mode);
     const turn: Turn = {
       id,
       query: prompt,
@@ -625,25 +652,14 @@ export default function App() {
         }
         attached = await uploadStaged(conversationId, files, holding, id);
       }
-      if (checking) {
-        // The report is the output; the thread just records that it started, so
-        // the turn resolves immediately rather than sitting on a spinner while
-        // a background run it does not own works for minutes.
-        for (const doc of attached) await startFactCheck(doc);
-        applyOutcome(id, {
-          reply: t.modes.factcheck.started(attached.map((d) => d.filename).join(", ")),
-          result: { report: "", sources: [], consulted: [], gaps: [] },
-          outcome: "ok",
-        });
-        setMode("answer");
-        return;
-      }
+      // A fact check is one document's; the next message is back to normal.
+      if (runMode === "factcheck") setMode("answer");
       const res = await runResearch(
         prompt,
         callbacksFor(id),
         conversationId,
         attached.map((doc) => doc.id),
-        deepRun,
+        runMode,
       );
       if (cancelled.current.has(id)) return;
       applyOutcome(id, res);
@@ -656,7 +672,7 @@ export default function App() {
   // A file that fails keeps its tile and says so: dropping it would leave the
   // user asking about a document that is not there. Returns what landed.
   async function uploadStaged(
-    conversationId: number,
+    conversationId: ConversationId,
     files: File[],
     holding: Doc[],
     turnId: number,
@@ -774,20 +790,11 @@ export default function App() {
     if (!pending(doc)) await deleteDocument(doc.id);
   }
 
-  // Fact-check a document from the panel: the same sub-agent the supervisor
-  // calls, started from the file itself. It lands in Outputs like any other run.
-  async function startFactCheck(doc: Doc) {
-    const output = await factCheckDocument(doc.id);
-    setOutputs((current) => [output, ...current]);
-  }
-
-  async function factCheck(doc: Doc) {
-    try {
-      await startFactCheck(doc);
-      setLayout("split");
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : t.uploads.failed);
-    }
+  // Fact-check a document from the panel. It is a message like any other, so
+  // the request and the supervisor's answer sit in the thread where the user
+  // can see what was asked and what happened.
+  function factCheck(doc: Doc) {
+    startResearch(t.modes.factcheck.request(doc.filename), { mode: "factcheck" });
   }
 
   const chooseLayout = (m: LayoutMode) => {
@@ -836,7 +843,7 @@ export default function App() {
 
   // Open a past conversation from the sidebar: load its whole thread and make it
   // the active conversation. Anything running in the current chat is cancelled.
-  async function openHistory(conversationId: number) {
+  async function openHistory(conversationId: ConversationId) {
     setHistoryOpen(false);
     const conv = await loadConversation(conversationId);
     // Missing or not owned by this user: the API 404s and we land back on home

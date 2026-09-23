@@ -16,7 +16,8 @@ those numbers and cite the specific sources that support each part of your \
 answer, using only the numbers you were shown.
 - When you have enough to answer well, call submit_finding. Break your answer \
 into individual claims, and give each claim the numbers of the sources that \
-back it.
+back it. Submit at most 10 claims: the ones that carry the answer, each saying \
+something the others do not. Leave out background and minor details.
 - If you cannot find relevant information, call submit_finding with \
 found_info=false and say so plainly. Never invent facts or sources.
 - Write your answer in the same language as the sub-question."""
@@ -28,5 +29,5 @@ PROMPT = ChatPromptTemplate(
     ],
     template_format="mustache",
     name="researcher",
-    metadata={"version": 5},
+    metadata={"version": 6},
 )

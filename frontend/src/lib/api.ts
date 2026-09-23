@@ -6,7 +6,9 @@
 // planner/researcher/writer progress (real "researcher k/N"), not a placeholder.
 import type {
   AgentEvent,
+  ConversationId,
   Doc,
+  Mode,
   Output,
   OutputKind,
   Result,
@@ -49,7 +51,7 @@ type QueryDetail = {
 // to outlast the longest run there is, which is a deep one: settings.deep_timeout
 // is 35 minutes, and cutting the stream first would read the still-running query
 // row and report a finished run as failed.
-const MAX_STREAM_MS = 40 * 60_000;
+const MAX_STREAM_MS = 50 * 60_000;
 
 export function hasInvite(): boolean {
   try {
@@ -160,30 +162,6 @@ async function authedGet(path: string): Promise<Response | null> {
   return res;
 }
 
-// Authenticated POST with the same 401 self-heal as authedGet, and it throws on a
-// non-OK response so callers can't silently proceed against a request that never
-// took effect (e.g. a 409 confirm/revise on a query no longer awaiting a plan).
-async function authedPost(path: string, body?: object): Promise<Response> {
-  const init = (token: string): RequestInit => ({
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
-    },
-    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-  });
-  let token = await ensureToken();
-  let res = await fetch(`${BASE}${path}`, init(token));
-  if (res.status === 401) {
-    localStorage.removeItem(TOKEN_KEY);
-    token = await ensureToken();
-    res = await fetch(`${BASE}${path}`, init(token));
-  }
-  if (res.status === 403) forgetAccess(); // the account expired
-  if (!res.ok) throw new Error(await errorMessage(res, `Request failed (${res.status}).`));
-  return res;
-}
-
 async function getQuery(id: number, token: string): Promise<QueryDetail> {
   const res = await fetch(`${BASE}/research/query/${id}?include_provenance=true`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -246,6 +224,7 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
       if (d.tool === "read_document" || d.tool === "read_report") {
         return { kind: "tool", action: "document", text: e.message };
       }
+      if (d.tool === "steer_deep_research") return { kind: "tool", action: "steer" };
       if (d.tool === "deep_research" || d.tool === "fact_check") {
         return { kind: "started", run: d.tool, text: String(args.title ?? "") };
       }
@@ -302,7 +281,7 @@ type ConvMessageQuery = {
 type BackendOutput = {
   id: number;
   kind: string;
-  conversation_id: number | null;
+  conversation_id: ConversationId | null;
   title: string | null;
   prompt: string;
   status: Status;
@@ -360,7 +339,7 @@ function toDoc(raw: BackendDoc): Doc {
 }
 
 type ConvDetail = {
-  id: number;
+  id: ConversationId;
   title: string | null;
   created_at: string;
   messages: ConvMessage[];
@@ -395,23 +374,23 @@ async function postConvJson(path: string, body: object, token: string): Promise<
 
 const startTurn = (
   prompt: string,
-  conversationId: number | null,
+  conversationId: ConversationId | null,
   documentIds: number[],
   token: string,
-  deep: boolean,
+  mode: Mode,
 ) =>
   conversationId == null
-    ? postConvJson(`/conversations`, { prompt, document_ids: documentIds, deep }, token)
+    ? postConvJson(`/conversations`, { prompt, document_ids: documentIds, mode }, token)
     : postConvJson(
         `/conversations/${conversationId}/messages`,
-        { content: prompt, document_ids: documentIds, deep },
+        { content: prompt, document_ids: documentIds, mode },
         token,
       );
 
 // Create a conversation with no message in it. A file belongs to a conversation,
 // so attaching one before the first message needs somewhere to put it; the
 // message that carries it follows.
-export async function createConversation(): Promise<number> {
+export async function createConversation(): Promise<ConversationId> {
   const token = await ensureToken();
   const detail = await postConvJson(`/conversations`, { prompt: "" }, token);
   return detail.id;
@@ -420,21 +399,21 @@ export async function createConversation(): Promise<number> {
 export async function runLiveResearch(
   prompt: string,
   cb: ResearchCallbacks,
-  conversationId: number | null,
+  conversationId: ConversationId | null,
   documentIds: number[] = [],
-  deep = false,
+  mode: Mode = "answer",
 ): Promise<ResearchOutcome | null> {
   cb.onStatus("running");
 
   let token = await ensureToken();
   let detail: ConvDetail;
   try {
-    detail = await startTurn(prompt, conversationId, documentIds, token, deep);
+    detail = await startTurn(prompt, conversationId, documentIds, token, mode);
   } catch (err) {
     // One retry after a fresh session, only when the stored token went stale.
     if (!(err instanceof SessionExpiredError)) throw err;
     token = await ensureToken();
-    detail = await startTurn(prompt, conversationId, documentIds, token, deep);
+    detail = await startTurn(prompt, conversationId, documentIds, token, mode);
   }
   cb.onConversation?.(detail.id);
 
@@ -629,7 +608,7 @@ export async function openQuery(id: number): Promise<LoadedQuery | null> {
 // --- conversation history ----------------------------------------------------
 
 export type ConversationSummary = {
-  id: number;
+  id: ConversationId;
   title: string | null;
   updated_at: string;
 };
@@ -653,7 +632,7 @@ export type LoadedTurn = {
   reply?: string; // the answer, which is what a turn produces
 };
 export type LoadedConversation = {
-  id: number;
+  id: ConversationId;
   title: string | null;
   turns: LoadedTurn[];
   documents: Doc[];
@@ -663,7 +642,7 @@ export type LoadedConversation = {
 // Rehydrate a whole conversation thread into turns (used on reload and when
 // opening a past conversation). Each assistant message that carries a research
 // run becomes a turn, with the preceding user message as its prompt.
-export async function loadConversation(id: number): Promise<LoadedConversation | null> {
+export async function loadConversation(id: ConversationId): Promise<LoadedConversation | null> {
   const res = await authedGet(`/conversations/${id}`);
   if (!res || !res.ok) return null;
   const detail = (await res.json()) as ConvDetail;
@@ -742,7 +721,7 @@ export async function openOutput(id: number): Promise<Result | null> {
 
 // --- uploads ------------------------------------------------------------------
 
-export async function listDocuments(conversationId: number): Promise<Doc[]> {
+export async function listDocuments(conversationId: ConversationId): Promise<Doc[]> {
   const res = await authedGet(`/conversations/${conversationId}/documents`);
   if (!res || !res.ok) return [];
   return ((await res.json()) as BackendDoc[]).map(toDoc);
@@ -750,7 +729,7 @@ export async function listDocuments(conversationId: number): Promise<Doc[]> {
 
 // Upload one file into a conversation. Throws with the server's own reason (too
 // large, unreadable, too many), which is written to be shown as it is.
-export async function uploadDocument(conversationId: number, file: File): Promise<Doc> {
+export async function uploadDocument(conversationId: ConversationId, file: File): Promise<Doc> {
   const token = await ensureToken();
   const body = new FormData();
   body.append("file", file);
@@ -783,11 +762,4 @@ export async function deleteDocument(id: number): Promise<void> {
     method: "DELETE",
     headers: { Authorization: `Bearer ${token}` },
   });
-}
-
-// Start a fact check from the document itself, rather than by asking for one in
-// the conversation. The same sub-agent either way; this one just skips the turn.
-export async function factCheckDocument(id: number): Promise<Output> {
-  const res = await authedPost(`/documents/${id}/fact-check`, { focus: "" });
-  return toOutput((await res.json()) as BackendOutput);
 }

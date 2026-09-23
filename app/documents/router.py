@@ -1,22 +1,17 @@
 from urllib.parse import quote
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import jobs
 from app.auth.dependencies import get_current_user
-from app.billing.service import ensure_budget
 from app.conversations import repository as conversations
 from app.db.session import get_db
 from app.documents import repository, service, storage
-from app.documents.schemas import DocumentSummary, FactCheckRequest
+from app.documents.schemas import DocumentSummary
 from app.models.document import Document
-from app.models.query import QueryKind
 from app.models.user import User
-from app.research import repository as research_repository
-from app.research.factcheck import run_fact_check_job
-from app.research.schemas import ArtifactSummary
 
 router = APIRouter(tags=["documents"])
 
@@ -49,7 +44,7 @@ async def _own_document(document_id: int, db: AsyncSession, user: User) -> Docum
     status_code=201,
 )
 async def upload(
-    conversation_id: int,
+    conversation_id: UUID,
     file: UploadFile,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
@@ -59,7 +54,7 @@ async def upload(
         raise HTTPException(status_code=404, detail="Conversation not found.")
     try:
         document = await service.upload(
-            db, file, conversation_id=conversation_id, user_id=user.id
+            db, file, conversation_id=conversation.id, user_id=user.id
         )
     except service.UploadError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -71,49 +66,15 @@ async def upload(
     response_model=list[DocumentSummary],
 )
 async def list_documents(
-    conversation_id: int,
+    conversation_id: UUID,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> list[DocumentSummary]:
     conversation = await conversations.get_conversation(db, conversation_id, user.id)
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found.")
-    documents = await repository.list_for_conversation(db, conversation_id)
+    documents = await repository.list_for_conversation(db, conversation.id)
     return [summary(document) for document in documents]
-
-
-@router.post(
-    "/documents/{document_id}/fact-check",
-    response_model=ArtifactSummary,
-    status_code=202,
-)
-async def start_fact_check(
-    document_id: int,
-    payload: FactCheckRequest | None = None,
-    db: AsyncSession = Depends(get_db),
-    user: User = Depends(get_current_user),
-) -> ArtifactSummary:
-    """Check this document against the web. The same sub-agent the supervisor
-    calls, started from the document instead of from a sentence: it runs in the
-    background and its report lands in Outputs like any other."""
-    document = await _own_document(document_id, db, user)
-    await ensure_budget(db, user)
-    focus = (payload.focus if payload else "") or ""
-    query = await research_repository.create_pending_query(
-        db=db,
-        user_id=user.id,
-        prompt=focus or f"Fact check of {document.filename}",
-        title=f"Fact check: {document.filename}",
-        kind=QueryKind.fact_check,
-        conversation_id=document.conversation_id,
-    )
-    await jobs.spawn(
-        run_fact_check_job,
-        query_id=query.id,
-        document_id=document.id,
-        focus=focus,
-    )
-    return ArtifactSummary.model_validate(query)
 
 
 @router.get("/documents/{document_id}/file")

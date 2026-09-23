@@ -152,6 +152,16 @@ class SelfHostedBackend:
             payload = await retry_async(_call, policy=self.retry)
         except Exception as exc:
             raise SearchError("web search failed") from exc
+        results = payload.get("results") or []
+        # SearXNG answers 200 even when every engine behind it refused the
+        # query (rate limited, CAPTCHA, timed out). Read as "no results", that
+        # told researchers their subject had nothing written about it, and a
+        # deep run spent minutes concluding so. An empty page with engines that
+        # failed is a failed search.
+        refused = payload.get("unresponsive_engines") or []
+        if not results and refused:
+            reasons = ", ".join(f"{name}: {why}" for name, why in refused)
+            raise SearchError(f"web search failed, the engines refused ({reasons})")
         # SearXNG returns a page of results, not a count we can ask for, so the
         # cap is applied here.
         return [
@@ -160,7 +170,7 @@ class SelfHostedBackend:
                 url=result.get("url") or "",
                 content=result.get("content") or "",
             )
-            for result in (payload.get("results") or [])[:max_results]
+            for result in results[:max_results]
         ]
 
     async def extract(self, url: str) -> str:

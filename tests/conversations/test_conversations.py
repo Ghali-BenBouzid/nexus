@@ -1,3 +1,5 @@
+import uuid
+
 import httpx
 from httpx import AsyncClient
 from langchain_core.outputs import ChatGeneration, ChatResult
@@ -189,6 +191,29 @@ async def test_conversation_hidden_from_other_users(client: AsyncClient) -> None
             json={"content": "x"},
         )
     ).status_code == 404
+
+
+async def test_a_conversation_is_named_by_an_id_that_gives_nothing_away(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    """Integer ids counted up across every account and were the URL: /chat/26
+    told anyone how many chats everyone had, and the next was one guess away.
+    Outside the database, a conversation is a random UUID and nothing else."""
+    _use_fake_pipeline(sub_questions=["q1"])
+
+    created = await client.post(
+        "/conversations", headers=auth_headers, json={"prompt": "hello"}
+    )
+    public_id = created.json()["id"]
+    [listed] = (await client.get("/conversations", headers=auth_headers)).json()
+
+    assert uuid.UUID(public_id).version == 4
+    assert listed["id"] == public_id
+    ok = await client.get(f"/conversations/{public_id}", headers=auth_headers)
+    assert ok.status_code == 200
+    # The row's own integer key is not a way in.
+    guessed = await client.get("/conversations/1", headers=auth_headers)
+    assert guessed.status_code in (404, 422)
 
 
 async def test_spent_budget_refuses_the_message_up_front(client: AsyncClient) -> None:

@@ -102,6 +102,24 @@ class SubmitPlanArgs(BaseModel):
     sub_questions: list[str] = Field(description="The list of sub-questions")
 
 
+class DispatchResearchersArgs(BaseModel):
+    reasoning: str = Field(
+        description="what the findings so far show, what is still missing or "
+        "unclear, and why these sub-questions are the next step"
+    )
+    sub_questions: list[str] = Field(
+        description="self-contained sub-questions, one researcher each"
+    )
+
+
+class WriteReportArgs(BaseModel):
+    reasoning: str = Field(description="why the question is now answered")
+    outline: str = Field(
+        description="how the report should be organised and how long it should "
+        "be, from what the findings support, and what stays open"
+    )
+
+
 class SubmitSelectionArgs(BaseModel):
     keep: list[int] = Field(
         default_factory=list,
@@ -117,11 +135,21 @@ class SubmitFindingClaim(BaseModel):
     )
 
 
+# Per finding. Researchers told "at most 10" in the prompt still sent 30 to 50,
+# and a deep run's curator then timed out reading them all.
+MAX_CLAIMS = 10
+
+
 class SubmitFindingArgs(BaseModel):
+    # Required, not defaulted to empty: a default makes it optional in the
+    # schema the model sees, and after a long read a model will leave it out
+    # and send only found_info=true, throwing away every page it read.
     claims: list[SubmitFindingClaim] = Field(
-        default_factory=list,
         description="the answer broken into individual claims, each with the "
         "source numbers that support it; empty if no relevant info was found",
+        # Advertised, not validated: rejecting an eleventh claim would pay for
+        # a whole new submission, so the researcher keeps the first ten.
+        json_schema_extra={"maxItems": MAX_CLAIMS},
     )
     found_info: bool = Field(description="False if no relevant info was found")
 

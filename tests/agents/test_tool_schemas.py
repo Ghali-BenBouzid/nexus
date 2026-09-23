@@ -55,6 +55,14 @@ def test_submit_finding_spells_out_the_claim_shape() -> None:
     assert claim["required"] == ["text"]
 
 
+def test_a_finding_must_list_its_claims() -> None:
+    # Optional in the schema, the list was left out after long reads.
+    parameters = convert_to_openai_tool(SubmitFindingArgs)["function"]["parameters"]
+
+    assert set(parameters["required"]) == {"claims", "found_info"}
+    assert parameters["properties"]["claims"]["maxItems"] == 10
+
+
 def test_every_field_the_agents_depend_on_is_described() -> None:
     # A field with no description is a field the model guesses at.
     for schema in SCHEMAS:

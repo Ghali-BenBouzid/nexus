@@ -200,7 +200,6 @@ const en = {
     // "consulted" means: the old label counted only the uncited leftovers.
     allConsulted: (n: number) => `All ${n} consulted`,
     onlyCited: (n: number) => `Only the ${n} cited`,
-    unanswered: (n: number) => `Unanswered · ${n}`,
     emptyFailed: "This run didn't produce a report.",
     emptyNoCite: "No report: the agents found nothing to cite for this question.",
     emptyPending: "The report will appear here once the agents finish.",
@@ -298,14 +297,14 @@ const en = {
       label: "Fact check",
       note: "Tests a document's claims against the web.",
       needsFile: "Attach a document first",
-      started: (files: string) => `Checking ${files}. The report lands in Outputs when it is done.`,
+      request: (file: string) => `Fact-check ${file}`,
     },
   },
   // What the bar asks for once a mode changes what sending means.
   modePlaceholder: {
     answer: "",
     deep: "What should the report cover?",
-    factcheck: "Anything to focus the check on? Optional.",
+    factcheck: "Which document, and what should the check focus on?",
   } as Record<string, string>,
   cites: {
     label: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
@@ -332,6 +331,7 @@ const en = {
     answering: "Writing the answer",
     answered: "Answered",
     readingDocument: (name: string) => `reading ${name}`,
+    steering: "passing your change to the running research",
     deepStarted: (title: string) => `Started deep research${title ? `: ${title}` : ""}`,
     factCheckStarted: (name: string) => `Started a fact check${name ? `: ${name}` : ""}`,
     inOutputs: "in Outputs",
@@ -519,7 +519,6 @@ const fr: Dict = {
     cited: (n: number) => `${n} citée${n > 1 ? "s" : ""}`,
     allConsulted: (n: number) => `Les ${n} consultées`,
     onlyCited: (n: number) => `Les ${n} citées seulement`,
-    unanswered: (n: number) => `Sans réponse · ${n}`,
     emptyFailed: "Cette recherche n'a pas produit de rapport.",
     emptyNoCite: "Pas de rapport : les agents n'ont rien trouvé à citer pour cette question.",
     emptyPending: "Le rapport apparaîtra ici une fois les agents terminés.",
@@ -614,13 +613,13 @@ const fr: Dict = {
       label: "Vérification",
       note: "Confronte au web ce qu'affirme un document.",
       needsFile: "Joignez d'abord un document",
-      started: (files: string) => `Vérification de ${files}. Le rapport arrivera dans Sorties une fois terminé.`,
+      request: (file: string) => `Vérifie ${file}`,
     },
   },
   modePlaceholder: {
     answer: "",
     deep: "Que doit couvrir le rapport ?",
-    factcheck: "Un point sur lequel concentrer la vérification ? Facultatif.",
+    factcheck: "Quel document, et sur quoi concentrer la vérification ?",
   } as Record<string, string>,
   cites: {
     label: (n: number) => (n === 1 ? "1 source" : `${n} sources`),
@@ -652,6 +651,7 @@ const fr: Dict = {
     answering: "Rédaction de la réponse",
     answered: "Répondu",
     readingDocument: (name: string) => `lecture de ${name}`,
+    steering: "transmission de votre changement à la recherche en cours",
     deepStarted: (title: string) =>
       `Recherche approfondie lancée${title ? ` : ${title}` : ""}`,
     factCheckStarted: (name: string) => `Vérification lancée${name ? ` : ${name}` : ""}`,

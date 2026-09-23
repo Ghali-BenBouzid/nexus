@@ -15,6 +15,9 @@ services:
     # Built, not pulled, because the settings file has to be inside the image:
     # JSON output has no environment variable, and this is the same image the
     # deployment uses, so local and production cannot drift.
+    # After editing settings.yml, rebuild with -V: the image keeps /etc/searxng
+    # in a volume, and without it the old file outlives the new image.
+    #   docker compose -f docker-compose.search.yml up -d --build -V searxng
     build: ./deploy/searxng
     ports:
       - "8080:8080"

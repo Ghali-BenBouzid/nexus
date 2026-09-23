@@ -1,4 +1,5 @@
 from typing import Any
+from uuid import UUID
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -78,7 +79,7 @@ async def _detail(db: AsyncSession, conversation: Conversation) -> ConversationD
         db, conversation.id
     )
     return ConversationDetail(
-        id=conversation.id,
+        id=conversation.public_id,
         title=conversation.title,
         created_at=conversation.created_at,
         messages=_to_responses(messages, queries, documents),
@@ -104,7 +105,8 @@ async def create(
     # An empty prompt creates the conversation and nothing else: what a file
     # attached before the first message needs, since it has to be uploaded into
     # a conversation before the message that carries it can be sent.
-    if payload.prompt.strip():
+    # A file is a message on its own, so files with no text still send.
+    if payload.prompt.strip() or payload.document_ids:
         await service.submit_message(
             db,
             conversation,
@@ -113,7 +115,7 @@ async def create(
             backend=backend,
             background_tasks=background_tasks,
             document_ids=payload.document_ids,
-            deep=payload.deep,
+            mode=payload.mode,
         )
     return await _detail(db, conversation)
 
@@ -128,7 +130,7 @@ async def list_all(
 
 @router.get("/{conversation_id}", response_model=ConversationDetail)
 async def detail(
-    conversation_id: int,
+    conversation_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -142,7 +144,7 @@ async def detail(
 
 @router.post("/{conversation_id}/messages", response_model=ConversationDetail)
 async def add_message(
-    conversation_id: int,
+    conversation_id: UUID,
     payload: MessageCreate,
     background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
@@ -157,6 +159,10 @@ async def add_message(
     )
     if conversation is None:
         raise HTTPException(status_code=404, detail="Conversation not found")
+    # Text, files or both, but never neither: the client should not send one,
+    # and an empty turn would hand the supervisor nothing to answer.
+    if not payload.content.strip() and not payload.document_ids:
+        raise HTTPException(status_code=422, detail="A message needs text or a file.")
     await ensure_budget(db, current_user)
     await service.submit_message(
         db,
@@ -166,6 +172,6 @@ async def add_message(
         backend=backend,
         background_tasks=background_tasks,
         document_ids=payload.document_ids,
-        deep=payload.deep,
+        mode=payload.mode,
     )
     return await _detail(db, conversation)

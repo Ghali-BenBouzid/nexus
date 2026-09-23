@@ -4,7 +4,16 @@ import { I } from "../icons";
 import { t } from "../lib/i18n";
 import { useIsMobile } from "../lib/useIsMobile";
 import type { Account } from "../lib/api";
-import type { Doc, LayoutMode, Mode, Output, Result, Theme, Turn } from "../types";
+import type {
+  ConversationId,
+  Doc,
+  LayoutMode,
+  Mode,
+  Output,
+  Result,
+  Theme,
+  Turn,
+} from "../types";
 import { OutputsPanel } from "./OutputsPanel";
 import { ChatHistory } from "./ChatHistory";
 import { NexusLockup } from "./NexusLogo";
@@ -51,7 +60,7 @@ type ConversationProps = {
   // The left column: open state + toggle, and the conversation loader (live only).
   historyOpen: boolean;
   onToggleHistory: () => void;
-  onOpenHistory?: (id: number) => void;
+  onOpenHistory?: (id: ConversationId) => void;
   // The chat has no nav bar, so the theme switch lives in the left column.
   theme: Theme;
   toggleTheme: () => void;
@@ -333,6 +342,7 @@ export function Conversation({
                 attachError={uploadError}
                 mode={mode}
                 onMode={onMode}
+                hasDocuments={documents.length > 0}
                 autoFocus
                 placeholder={running ? t.chat.runningPlaceholder : t.chat.idlePlaceholder}
               />

@@ -201,16 +201,6 @@ export function Artifact({
           onToggle={() => setSourcesOpen((o) => !o)}
           listRef={listRef}
         />
-        {result.gaps.length > 0 && (
-          <section className="art-gaps">
-            <h3>{I.warn}{t.artifact.unanswered(result.gaps.length)}</h3>
-            <ul>
-              {result.gaps.map((g, i) => (
-                <li key={i}>{g}</li>
-              ))}
-            </ul>
-          </section>
-        )}
       </div>
     </div>
   );

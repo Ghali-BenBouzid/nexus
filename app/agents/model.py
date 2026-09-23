@@ -37,7 +37,7 @@ from langchain.agents.middleware import (
     hook_config,
 )
 from langchain_core.callbacks import AsyncCallbackHandler
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.outputs import LLMResult
 from langchain_openai import ChatOpenAI
 from langgraph.types import Command
@@ -221,6 +221,41 @@ class Deadline(AgentMiddleware):
         return self.before_model(state, runtime)
 
 
+class LastStep(AgentMiddleware):
+    """Tells an agent that the model call it is about to make is its last, so
+    it finishes on purpose instead of being cut off mid-thought: a researcher
+    submits what it read, a supervisor answers with what it has. Pair it with
+    the ModelCallLimitMiddleware whose limit it mirrors.
+
+    The note rides on that one request only; nothing is added to the agent's
+    state, so the conversation it leaves behind is the one it actually had.
+    """
+
+    def __init__(self, limit: int, note: str) -> None:
+        super().__init__()
+        self.limit = limit
+        self.note = note
+
+    async def awrap_model_call(self, request: ModelRequest, handler) -> ModelResponse:
+        if _calls_this_run(request.messages) == self.limit - 1:
+            request = request.override(
+                messages=[*request.messages, HumanMessage(self.note)]
+            )
+        return await handler(request)
+
+
+def _calls_this_run(messages: list) -> int:
+    """Model calls made since the user's message: every AI turn after the last
+    human one. Earlier turns of a conversation come before it, so they are not
+    counted."""
+    count = 0
+    for message in reversed(messages):
+        if isinstance(message, HumanMessage):
+            break
+        count += isinstance(message, AIMessage)
+    return count
+
+
 class Errors(AgentMiddleware):
     """Turns a provider failure into one of our two errors, so a user sees
     "credits ran out" or "provider unavailable" and never an SDK traceback that
@@ -273,6 +308,14 @@ class Progress(AgentMiddleware):
         try:
             return await handler(request)
         except Exception as exc:
+            # Every tool of every agent passes through here, so this is the one
+            # place that sees them all: research, the document and report
+            # readers, the runs the supervisor starts. The event carries a
+            # summary for the user; the cause carries the stack, a status code
+            # and sometimes a host, so it goes to the log and nowhere else.
+            # (web_search and fetch_page never reach this: they answer the
+            # agent with their failure instead of raising, and log their own.)
+            logger.warning("tool %s failed for %s", name, self.agent, exc_info=exc)
             await self.emit(
                 AgentEvent(
                     type="tool_error",

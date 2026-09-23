@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from uuid import UUID
 
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,12 +19,13 @@ async def create_conversation(
 
 
 async def get_conversation(
-    db: AsyncSession, conversation_id: int, user_id: int
+    db: AsyncSession, public_id: UUID, user_id: int
 ) -> Conversation | None:
-    """User-scoped: a non-owner gets None (the router turns it into a 404)."""
+    """By the id the API hands out, user-scoped: a non-owner gets None (the
+    router turns it into a 404)."""
     result = await db.execute(
         select(Conversation).where(
-            Conversation.id == conversation_id, Conversation.user_id == user_id
+            Conversation.public_id == public_id, Conversation.user_id == user_id
         )
     )
     return result.scalar_one_or_none()

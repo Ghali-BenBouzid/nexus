@@ -75,3 +75,18 @@ async def test_retry_reraises_permanent_400(monkeypatch):
 
     with pytest.raises(httpx.HTTPStatusError):
         await retry_async(boom, policy=RetryPolicy(max_attempts=3))
+
+
+def test_a_connection_the_provider_drops_is_transient():
+    """The OpenAI client speaks httpx2: its dropped connections used to be
+    read as permanent, and one killed a deep run minutes in."""
+    import httpx2
+    import openai
+
+    assert is_transient(httpx2.ReadError("reset")) is True
+    assert (
+        is_transient(
+            openai.APIConnectionError(request=httpx2.Request("GET", "http://x"))
+        )
+        is True
+    )

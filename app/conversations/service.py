@@ -14,16 +14,17 @@ from langchain_core.language_models import BaseChatModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import jobs
-from app.agents.schemas import ResearchResult, Turn
+from app.agents.schemas import AgentEvent, ResearchResult, Turn
 from app.agents.supervisor import Document, Output, respond
 from app.agents.tools import SearchBackend
 from app.billing.service import has_budget
 from app.conversations import repository
+from app.conversations.schemas import Mode
 from app.core.config import settings
 from app.db import session as db_session
 from app.documents import repository as documents_repository
 from app.models.conversation import Conversation, Message, MessageRole
-from app.models.query import Query, QueryKind
+from app.models.query import Query, QueryKind, QueryStatus
 from app.research import repository as research_repository
 from app.research.deep import run_deep_research_job
 from app.research.factcheck import run_fact_check_job
@@ -38,15 +39,6 @@ _MAX_CONTEXT_MESSAGES = 12
 # is a sidebar label, and paying for a call to write one is not worth it.
 _TITLE_CHARS = 60
 
-# What the thread says when the user asked for deep research themselves. The
-# supervisor is not consulted: there is nothing for it to decide, and paying for
-# a model call to produce one predictable sentence is waste. The run announces
-# itself, and the report arrives in Outputs the way every other one does.
-DEEP_ANNOUNCED = (
-    "Starting deep research on that. It runs for several minutes, so I will not "
-    "wait for it here: the report appears in Outputs when it is ready, and you "
-    "are told wherever you happen to be."
-)
 DEEP_STARTED = (
     "Deep research has started on that. It takes several minutes and will appear "
     "in the user's Outputs when it is done. Tell them it is running; do not wait "
@@ -92,18 +84,18 @@ async def submit_message(
     backend: SearchBackend,
     background_tasks: BackgroundTasks,
     document_ids: list[int] | None = None,
-    deep: bool = False,
+    mode: Mode = "answer",
 ) -> Message:
     """Record the user's message and the assistant turn that will answer it, and
     queue the job; no model is called in the request. The turn's query tracks it
     from here: its events feed the live progress, and it ends complete or failed.
     The caller checks the account's budget first.
 
-    ``deep`` starts a deep research run instead of asking the supervisor what to
-    do. It is the same run the supervisor can start for itself and it ends in
-    the same place, Outputs; the only difference is who decided to start it. The
-    thread says it has begun and moves on, because nobody waits ten minutes for
-    a chat message.
+    ``mode`` says what the user switched the composer to. It never starts a run
+    itself: it tells the supervisor, which decides what this message calls for.
+    A mode that fired on anything the user typed started ten-minute runs on "hi"
+    and on "don't start a deep research"; judging the message is exactly what
+    the supervisor is for, and the thread stays the supervisor's either way.
     """
     user_message = await repository.add_message(
         db, conversation.id, MessageRole.user, content
@@ -116,29 +108,28 @@ async def submit_message(
         message_id=user_message.id,
         user_id=conversation.user_id,
     )
+    # What the supervisor is handed as the message. Usually what the user
+    # typed; for a file sent on its own, a plain note of what arrived, so the
+    # supervisor decides what the file is for rather than facing an empty turn.
+    # The stored message stays empty, and the thread shows the file alone.
+    prompt, title = content, content
+    if not content.strip():
+        names = ", ".join(
+            d.filename
+            for d in await documents_repository.list_for_conversation(
+                db, conversation.id
+            )
+            if d.message_id == user_message.id
+        )
+        prompt = f"(Sent without a message: {names})"
+        # The sidebar names a chat after what it is about, which is the file.
+        title = names
     if not conversation.title:
-        await repository.set_title(db, conversation.id, title_for(content))
-    if deep:
-        run = await research_repository.create_pending_query(
-            db=db,
-            user_id=conversation.user_id,
-            prompt=content,
-            kind=QueryKind.deep_research,
-            title=title_for(content),
-            conversation_id=conversation.id,
-        )
-        # Always the worker, never this process: a deep run takes minutes, and
-        # a BackgroundTask would hold a request handler open for all of them.
-        await jobs.spawn(run_deep_research_job, query_id=run.id)
-        # No query on this message: the turn is the sentence above, already
-        # written, and there is nothing for the thread to follow.
-        return await repository.add_message(
-            db, conversation.id, MessageRole.assistant, content=DEEP_ANNOUNCED
-        )
+        await repository.set_title(db, conversation.id, title_for(title))
     query = await research_repository.create_pending_query(
         db=db,
         user_id=conversation.user_id,
-        prompt=content,
+        prompt=prompt,
         kind=QueryKind.chat,
         conversation_id=conversation.id,
     )
@@ -153,6 +144,7 @@ async def submit_message(
         query_id=query.id,
         conversation_id=conversation.id,
         message_id=assistant.id,
+        mode=mode,
     )
     return assistant
 
@@ -164,6 +156,7 @@ async def route_message(
     *,
     model: BaseChatModel | None = None,
     backend: SearchBackend | None = None,
+    mode: Mode = "answer",
 ) -> None:
     """The job for a new message: the supervisor answers it, using whatever
     tools the answer needs. Every model call is billed to the thread's owner."""
@@ -192,6 +185,14 @@ async def route_message(
                 db, conversation_id
             )
         ]
+        running = [
+            Output(id=q.id, title=q.title or q.prompt, content="")
+            for q in await research_repository.list_conversation_artifacts(
+                db, conversation_id
+            )
+            if q.kind == QueryKind.deep_research
+            and q.status in (QueryStatus.pending, QueryStatus.running)
+        ]
 
     async def work(run: Run) -> None:
         answer = await respond(
@@ -207,6 +208,9 @@ async def route_message(
             middleware=run.middleware,
             emit=run.emit,
             max_iters=settings.supervisor_max_iters,
+            mode=mode,
+            running=running,
+            steer_deep_research=_steerer(conversation_id),
         )
         result = ResearchResult(
             points=[],
@@ -231,12 +235,15 @@ def _deep_starter(run: Run, conversation_id: int):
     hand back what to tell the user. The tool returns at once, because the point
     of a deep run is that nobody sits and waits for it."""
 
-    async def start(question: str, title: str) -> str:
+    async def start(question: str, title: str, goal: str) -> str:
+        # The goal travels with the question: the lead reads it to decide how
+        # deep to go, and a resumed run reads it back off the row.
+        prompt = f"{question}\n\nWhat it is for: {goal}" if goal.strip() else question
         query_id = await _start_run(
             run,
             conversation_id,
             kind=QueryKind.deep_research,
-            prompt=question,
+            prompt=prompt,
             title=title or question,
         )
         if query_id is None:
@@ -272,6 +279,57 @@ def _fact_check_starter(run: Run, conversation_id: int, documents: list[Document
         return FACT_CHECK_STARTED.format(filename=document.filename)
 
     return start
+
+
+STEERED_NEXT = (
+    "Noted on the run. Its lead reads the note before its next step, usually "
+    "within a few minutes, and adjusts what it researches from there; what is "
+    "already found stays in the report where it still applies. Tell the user "
+    "that in a sentence. Do not claim the report has already changed."
+)
+STEERED_LATE = (
+    "The run has finished researching and is writing its report. The note goes "
+    "to the writer, who will frame the report by it where the findings allow, "
+    "but nothing new will be researched for it. Tell the user that, and offer "
+    "to start a new deep research run if the change needs new research."
+)
+
+
+def _steerer(conversation_id: int):
+    """The supervisor's steer_deep_research tool: a note stored on a running
+    deep run, which its lead reads before its next step. Checked here rather
+    than trusted: the run has to belong to this conversation and still be
+    working, and the reply says honestly how much the note can still change."""
+
+    async def steer(run_id: int, note: str) -> str:
+        if not note.strip():
+            return "The note was empty. Pass what the user wants changed."
+        async with db_session.SessionLocal() as db:
+            query = await db.get(Query, run_id)
+            if (
+                query is None
+                or query.conversation_id != conversation_id
+                or query.kind != QueryKind.deep_research
+            ):
+                return (
+                    f"No deep research run with id {run_id} belongs to this "
+                    "conversation."
+                )
+            if query.status not in (QueryStatus.pending, QueryStatus.running):
+                return (
+                    f"Run {run_id} is no longer running ({query.status}), so it "
+                    "cannot be changed. Offer to start a new run with the change."
+                )
+            events = await research_repository.list_events(db, run_id, 0)
+            writing = any(e.type in ("lead_done", "writer_start") for e in events)
+            await research_repository.add_event(
+                db,
+                run_id,
+                AgentEvent(type=research_repository.STEERED, message=note.strip()),
+            )
+        return STEERED_LATE if writing else STEERED_NEXT
+
+    return steer
 
 
 async def _start_run(

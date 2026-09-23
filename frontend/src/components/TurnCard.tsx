@@ -80,9 +80,13 @@ export function TurnCard({
           </div>
         </div>
       )}
-      <div className="msg-row user">
-        <div className="bubble-user">{turn.query}</div>
-      </div>
+      {/* A message that was only a file has no words to put in a bubble: the
+          file above is the whole message, the way it is anywhere else. */}
+      {turn.query.trim() && (
+        <div className="msg-row user">
+          <div className="bubble-user">{turn.query}</div>
+        </div>
+      )}
 
       <div className="msg-row assistant">
         <div className="assistant-reply">

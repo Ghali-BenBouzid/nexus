@@ -96,14 +96,14 @@ async def test_a_number_that_means_nothing_is_ignored() -> None:
     assert [c.text for c in curated.points[0].claims] == ["b"]
 
 
-async def test_keeping_nothing_reports_everything() -> None:
-    """A curator that comes back empty must not empty the report: an uncurated
-    report beats no report."""
+async def test_keeping_nothing_keeps_an_even_share() -> None:
+    """A curator that comes back empty must not empty the report, and must not
+    hand the writer everything either."""
     result = _result(("q", [("a", [1]), ("b", [2]), ("c", [3])]))
 
     curated = await curate(result, model=_keeps(), cap=1)
 
-    assert curated is result
+    assert [c.text for p in curated.points for c in p.claims] == ["a"]
 
 
 async def test_the_curator_reads_claims_with_their_backing() -> None:
@@ -144,11 +144,17 @@ class _SlowModel(ScriptedModel):
         return SimpleNamespace(ainvoke=forever)
 
 
-async def test_running_out_of_time_reports_everything() -> None:
-    """Curating is worth minutes, but never the writer's minutes: past its
-    budget the report is built from everything rather than from nothing."""
-    result = _result(("q", [("a", [1]), ("b", [2]), ("c", [3])]))
+async def test_running_out_of_time_keeps_an_even_share_of_every_angle() -> None:
+    """Curating is worth minutes, but never the writer's minutes. Past its
+    budget it used to report everything, and a timed-out deep run wrote 22,000
+    words; now every sub-question keeps its first claims, in turn, to the cap."""
+    result = _result(
+        ("q1", [("a", [1]), ("b", [2]), ("c", [3])]),
+        ("q2", [("d", [4])]),
+        ("q3", [("e", [5]), ("f", [6])]),
+    )
 
-    curated = await curate(result, model=_SlowModel(), cap=1, timeout=0.05)
+    curated = await curate(result, model=_SlowModel(), cap=4, timeout=0.05)
 
-    assert curated is result
+    kept = {p.sub_question: [c.text for c in p.claims] for p in curated.points}
+    assert kept == {"q1": ["a", "b"], "q2": ["d"], "q3": ["e"]}

@@ -1,12 +1,16 @@
 import enum
+import uuid
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sqlalchemy import JSON, DateTime, Enum, ForeignKey, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
+
+if TYPE_CHECKING:
+    from app.models.conversation import Conversation
 
 
 class QueryStatus(enum.StrEnum):
@@ -49,6 +53,9 @@ class Query(Base):
     conversation_id: Mapped[int | None] = mapped_column(
         ForeignKey("conversations.id", ondelete="CASCADE"), nullable=True, index=True
     )
+    # Loaded only where asked for (selectinload), so a query that forgets to
+    # ask fails loudly instead of lazy-loading inside an async session.
+    conversation: Mapped["Conversation | None"] = relationship(lazy="raise")
     kind: Mapped[str] = mapped_column(
         String(32), nullable=False, default=QueryKind.chat, index=True
     )
@@ -81,6 +88,11 @@ class Query(Base):
     heartbeat_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+    @property
+    def conversation_public_id(self) -> uuid.UUID | None:
+        """The conversation as the API names it (Conversation.public_id)."""
+        return self.conversation.public_id if self.conversation else None
 
 
 class QueryEvent(Base):
