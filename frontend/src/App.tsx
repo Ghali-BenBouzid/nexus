@@ -43,6 +43,7 @@ import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
 import { isLive, LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
 import { tourSeen } from "./lib/tour";
 import { isUnread, loadSeen, markSeen, saveSeen, type Seen } from "./lib/unread";
+import { DocPreview, type PreviewTarget } from "./components/DocPreview";
 import type { Doc, LayoutMode, Mode, Output, Result, Theme, Turn, View } from "./types";
 
 // Which outputs this browser has already announced. A per-viewer convenience,
@@ -161,6 +162,12 @@ export default function App() {
   // user went; the panel only ever shows the open conversation's share of it.
   const [outputs, setOutputs] = useState<Output[]>([]);
   const [documents, setDocuments] = useState<Doc[]>([]);
+  // The file open in the viewer, if any. It sits over everything, so it lives
+  // here rather than in whichever of the four places it was opened from.
+  const [preview, setPreview] = useState<PreviewTarget | null>(null);
+  const previewDoc = (doc: Doc) =>
+    !doc.state && setPreview({ name: doc.filename, bytes: doc.sizeBytes, docId: doc.id });
+  const previewFile = (file: File) => setPreview({ name: file.name, bytes: file.size, file });
   const [openOutputId, setOpenOutputId] = useState<number | null>(null);
   const [openOutputResult, setOpenOutputResult] = useState<Result | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -923,6 +930,7 @@ export default function App() {
             staged={live ? staged : undefined}
             onAttach={(files) => setStaged((current) => [...current, ...files])}
             onUnstage={(index) => setStaged((current) => current.filter((_, i) => i !== index))}
+            onPreview={previewFile}
             attachError={uploadError}
           />
           <About />
@@ -930,6 +938,8 @@ export default function App() {
           <Footer />
         </Fragment>
       )}
+
+      {preview && <DocPreview target={preview} onClose={() => setPreview(null)} />}
 
       {tour && <Tour onView={tourView} onFinish={() => setTour(false)} />}
 
@@ -963,6 +973,8 @@ export default function App() {
           onUpload={addDocument}
           onRemoveDocument={removeDocument}
           onFactCheck={factCheck}
+          onPreviewDoc={previewDoc}
+          onPreviewFile={previewFile}
           uploadError={uploadError}
           running={anyRunning}
           onNewChat={newChat}

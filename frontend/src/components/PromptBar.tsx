@@ -18,6 +18,7 @@ type PromptBarProps = {
   staged?: File[];
   onAttach?: (files: File[]) => void;
   onUnstage?: (index: number) => void;
+  onPreview?: (file: File) => void;
   attachError?: string | null;
   placeholder?: string;
   autoFocus?: boolean;
@@ -108,6 +109,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
     staged,
     onAttach,
     onUnstage,
+    onPreview,
     attachError,
     mode = "answer",
     onMode,
@@ -239,6 +241,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
           key={file.name + i}
           name={file.name}
           bytes={file.size}
+          onOpen={onPreview && (() => onPreview(file))}
           onRemove={() => onUnstage?.(i)}
         />
       ))}

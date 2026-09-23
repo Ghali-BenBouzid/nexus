@@ -39,6 +39,9 @@ type ConversationProps = {
   onUnstage: (index: number) => void;
   onRemoveDocument: (doc: Doc) => void;
   onFactCheck: (doc: Doc) => void;
+  // Open an attached file to read it: one the server has, or one still staged.
+  onPreviewDoc: (doc: Doc) => void;
+  onPreviewFile: (file: File) => void;
   uploadError?: string | null;
   running: boolean;
   onNewChat: () => void;
@@ -78,6 +81,8 @@ export function Conversation({
   onUnstage,
   onRemoveDocument,
   onFactCheck,
+  onPreviewDoc,
+  onPreviewFile,
   uploadError,
   running,
   onNewChat,
@@ -224,6 +229,7 @@ export function Conversation({
             focused={t.id === focusedId}
             onSelect={() => onFocus(t.id)}
             onRerun={submit}
+            onPreview={onPreviewDoc}
           />
         ))}
       </div>
@@ -316,6 +322,7 @@ export function Conversation({
                 staged={staged}
                 onAttach={onAttach}
                 onUnstage={onUnstage}
+                onPreview={onPreviewFile}
                 attachError={uploadError}
                 mode={mode}
                 onMode={onMode}
@@ -347,6 +354,7 @@ export function Conversation({
               onUpload={onUpload}
               onRemove={onRemoveDocument}
               onFactCheck={onFactCheck}
+              onPreview={onPreviewDoc}
               uploadError={uploadError}
               isMobile={isMobile}
             />

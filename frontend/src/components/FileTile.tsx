@@ -25,6 +25,7 @@ export function FileTile({
   meta,
   state,
   error,
+  onOpen,
   onRemove,
 }: {
   name: string;
@@ -37,6 +38,10 @@ export function FileTile({
   // Anything already known about the file (pages, OCR, truncation). Falls back
   // to the size when there is nothing more interesting to say.
   meta?: string;
+  // Opens the file. A button over the whole tile rather than a click handler on
+  // it, because the tile already holds a button (remove), and a button inside
+  // something clickable is two targets pretending to be one.
+  onOpen?: () => void;
   onRemove?: () => void;
 }) {
   return (
@@ -56,6 +61,17 @@ export function FileTile({
               : (meta ?? (bytes != null ? kb(bytes) : ""))}
         </span>
       </div>
+      {onOpen && (
+        <button
+          type="button"
+          className="ftile-hit"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen();
+          }}
+          aria-label={t.preview.open(name)}
+        />
+      )}
       {onRemove && (
         <button
           type="button"

@@ -20,6 +20,7 @@ type OutputsPanelProps = {
   onUpload: (file: File) => void;
   onRemove: (doc: Doc) => void;
   onFactCheck: (doc: Doc) => void;
+  onPreview: (doc: Doc) => void;
   uploadError?: string | null;
   isMobile?: boolean;
   // The quick tour points here when the panel is open; at the fab when it is not.
@@ -68,6 +69,7 @@ export function OutputsPanel({
   onUpload,
   onRemove,
   onFactCheck,
+  onPreview,
   uploadError,
   isMobile,
   tourAnchor,
@@ -170,10 +172,18 @@ export function OutputsPanel({
               <span className="upload-ic">
                 {doc.state === "uploading" ? <span className="spin" /> : I.doc}
               </span>
-              <div className="upload-main">
+              {/* The name opens the file. Nothing to open until the server has
+                  it, so a file on its way up is plain text. */}
+              <button
+                type="button"
+                className="upload-main"
+                onClick={() => onPreview(doc)}
+                disabled={!!doc.state}
+                aria-label={t.preview.open(doc.filename)}
+              >
                 <div className="upload-name">{doc.filename}</div>
                 <div className="upload-meta">{docMeta(doc)}</div>
-              </div>
+              </button>
               <div className="upload-actions">
                 {/* There is nothing to check until the server has read the
                     file, so the action waits rather than failing. */}

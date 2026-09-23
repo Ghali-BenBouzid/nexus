@@ -757,6 +757,16 @@ export async function uploadDocument(conversationId: number, file: File): Promis
   return toDoc((await res.json()) as BackendDoc);
 }
 
+// The original file, as the user uploaded it. Fetched rather than linked: the
+// endpoint wants a Bearer token, and an <iframe src> cannot carry one.
+export async function fetchDocumentFile(id: number): Promise<Blob> {
+  const res = await authedGet(`/documents/${id}/file`);
+  if (!res || !res.ok) {
+    throw new Error(res ? await errorMessage(res, t.preview.failed) : t.preview.failed);
+  }
+  return res.blob();
+}
+
 export async function deleteDocument(id: number): Promise<void> {
   const token = await ensureToken();
   await fetch(`${BASE}/documents/${id}`, {

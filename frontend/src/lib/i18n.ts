@@ -231,6 +231,15 @@ const en = {
     dropHint: "PDF, Word or text",
     unsupported: (name: string) => `${name} is not a kind of file Nexus can read.`,
   },
+  preview: {
+    open: (name: string) => `Open ${name}`,
+    close: "Close",
+    download: "Download",
+    newTab: "Open in a new tab",
+    loading: "Opening the file",
+    failed: "The file could not be opened.",
+    none: "There is no preview for this kind of file. Download it to read it.",
+  },
   outputs: {
     ready: (title: string) => `${title} is ready.`,
     open: "Open",
@@ -525,6 +534,15 @@ const fr: Dict = {
     drop: "Déposez pour joindre",
     dropHint: "PDF, Word ou texte",
     unsupported: (name: string) => `Nexus ne sait pas lire ${name}.`,
+  },
+  preview: {
+    open: (name: string) => `Ouvrir ${name}`,
+    close: "Fermer",
+    download: "Télécharger",
+    newTab: "Ouvrir dans un nouvel onglet",
+    loading: "Ouverture du fichier",
+    failed: "Le fichier n'a pas pu être ouvert.",
+    none: "Pas d'aperçu pour ce type de fichier. Téléchargez-le pour le lire.",
   },
   outputs: {
     ready: (title: string) => `${title} est prêt.`,

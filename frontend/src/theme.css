@@ -909,6 +909,12 @@ html[data-theme="light"] .tour-hole {
   width: 20px; height: 20px; border: none; border-radius: 50%; cursor: pointer;
   background: var(--surface-solid); color: var(--muted); opacity: 0; transition: opacity 0.15s, color 0.15s;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.3); }
+/* The whole tile opens the file; the remove button sits above it. */
+.ftile-hit { position: absolute; inset: 0; z-index: 1; padding: 0; border: none;
+  background: none; border-radius: inherit; cursor: pointer; }
+.ftile-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.ftile:has(.ftile-hit):hover { border-color: var(--line-strong); }
+.ftile-x { z-index: 2; }
 .ftile:hover .ftile-x, .ftile-x:focus-visible { opacity: 1; }
 .ftile-x:hover { color: var(--fg); }
 .ftile-x svg { width: 12px; height: 12px; }
@@ -928,6 +934,40 @@ html[data-theme="light"] .tour-hole {
 .upload-item[data-state="uploading"] .upload-name { color: var(--muted); }
 .upload-item[data-state="failed"] .upload-meta { color: var(--bad); }
 .upload-item .upload-ic .spin { width: 14px; height: 14px; }
+
+/* An attached file, opened. Over everything and as large as the window lets
+   it be: a PDF is for reading, and a side panel is too narrow to read one in. */
+.pv-veil { position: fixed; inset: 0; z-index: 90; display: grid; place-items: center;
+  padding: 28px; background: color-mix(in srgb, var(--bg) 70%, transparent);
+  backdrop-filter: blur(4px); animation: fadeIn 0.16s var(--ease); }
+.pv-card { display: flex; flex-direction: column; width: min(920px, 100%); height: min(92vh, 1100px);
+  border-radius: 18px; overflow: hidden; background: var(--surface-solid);
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 2px 6px rgb(0 0 0 / 0.22), 0 30px 80px -20px rgb(0 0 0 / 0.6); }
+.pv-head { display: flex; align-items: center; gap: 8px; padding: 10px 10px 10px 16px;
+  border-bottom: 1px solid var(--line); }
+.pv-ic { display: grid; place-items: center; color: var(--faint); }
+.pv-ic svg { width: 17px; height: 17px; }
+.pv-title { flex: 1; min-width: 0; display: flex; align-items: baseline; gap: 10px; }
+.pv-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-size: 14px; font-weight: 600; color: var(--fg); }
+.pv-meta { flex: none; font-family: var(--font-mono); font-size: 11px; color: var(--faint); }
+.pv-head a.icon-btn { text-decoration: none; }
+.pv-body { position: relative; flex: 1; min-height: 0; }
+.pv-frame { display: block; width: 100%; height: 100%; border: none; background: var(--surface-solid); }
+.pv-scroll { height: 100%; overflow: auto; }
+.pv-doc { padding: 28px 40px 48px; font-size: 15px; line-height: 1.65; color: var(--fg); }
+.pv-text { margin: 0; padding: 22px 26px 40px; font-family: var(--font-mono); font-size: 12.5px;
+  line-height: 1.6; color: var(--fg); white-space: pre-wrap; word-break: break-word; }
+.pv-state { height: 100%; display: flex; align-items: center; justify-content: center; gap: 10px;
+  padding: 24px; text-align: center; font-size: 13.5px; color: var(--muted); }
+.pv-state.bad { color: var(--bad); }
+@media (max-width: 640px) {
+  .pv-veil { padding: 0; }
+  .pv-card { width: 100%; height: 100%; border-radius: 0; border: none; }
+  .pv-doc { padding: 20px 16px 40px; }
+  .pv-text { padding: 16px; }
+}
 
 /* Dropping a file anywhere on the window attaches it, so the whole window says
    so. It is a statement, not a target: nothing here has to be hit. */
@@ -1412,7 +1452,11 @@ html[data-theme="light"] .tour-hole {
 .upload-item:hover { background: var(--surface-2); border-color: var(--line); }
 .upload-ic { display: grid; place-items: center; color: var(--faint); }
 .upload-ic svg { width: 16px; height: 16px; }
-.upload-main { min-width: 0; }
+.upload-main { min-width: 0; padding: 0; border: none; background: none; color: inherit;
+  font: inherit; text-align: left; cursor: pointer; }
+.upload-main:disabled { cursor: default; }
+.upload-main:not(:disabled):hover .upload-name { text-decoration: underline;
+  text-decoration-color: var(--line-strong); text-underline-offset: 3px; }
 .upload-name { font-size: 13.5px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .upload-meta { font-family: var(--font-mono); font-size: 11px; color: var(--faint); margin-top: 2px; }
 /* The actions appear on hover or focus, so a list of files stays quiet. */
