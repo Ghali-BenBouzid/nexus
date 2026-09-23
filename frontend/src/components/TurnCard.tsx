@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
-import type { Turn } from "../types";
+import type { Doc, Turn } from "../types";
 import { Markdown } from "./Markdown";
 import { Activity } from "./Activity";
 import { FileTile } from "./FileTile";
@@ -15,6 +15,7 @@ type TurnCardProps = {
   focused?: boolean;
   onSelect?: () => void; // split: focus this turn in the side panel
   onRerun: (query: string) => void;
+  onPreview?: (doc: Doc) => void;
 };
 
 // One conversation turn rendered as chat: the user's question, the run's live
@@ -27,6 +28,7 @@ export function TurnCard({
   focused,
   onSelect,
   onRerun,
+  onPreview,
 }: TurnCardProps) {
   const [showSources, setShowSources] = useState(false);
   const [activeCite, setActiveCite] = useState<number | null>(null);
@@ -49,7 +51,6 @@ export function TurnCard({
   // and moves the view to it. The seq is what lets the same citation be clicked
   // twice and still bring its source back after scrolling away.
   const onCite = (n: number) => {
-    setShowSources(true);
     setActiveCite(n);
     setCiteSeq((k) => k + 1);
   };
@@ -67,7 +68,14 @@ export function TurnCard({
         <div className="msg-row user">
           <div className="bubble-files">
             {turn.attachments!.map((doc) => (
-              <FileTile key={doc.id} name={doc.filename} bytes={doc.sizeBytes} />
+              <FileTile
+                key={doc.id}
+                name={doc.filename}
+                bytes={doc.sizeBytes}
+                state={doc.state}
+                error={doc.error}
+                onOpen={onPreview && !doc.state ? () => onPreview(doc) : undefined}
+              />
             ))}
           </div>
         </div>
@@ -88,7 +96,7 @@ export function TurnCard({
 
           {answer.trim() && (
             <div className={"reply-text" + (streaming ? " streaming" : "")}>
-              <Markdown text={answer} onCite={onCite} activeCite={activeCite} sources={sources} />
+              <Markdown text={answer} onCite={onCite} sources={sources} />
             </div>
           )}
 

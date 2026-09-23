@@ -99,15 +99,26 @@ export const I: Record<string, ReactElement> = {
       <path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z" />
     </svg>
   ),
-  // Deep research: a telescope, for looking hard at something far away. Layers
-  // said "a stack of things", which is not what a deep run is.
-  telescope: (
+  // Deep research: the microscope, traced from the glyph the design calls for.
+  // Solid where the rest of the set is drawn in strokes, because that is the
+  // drawing: at 15px its silhouette reads instantly, which an outline of the
+  // same instrument does not.
+  microscope: (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path fillRule="evenodd" clipRule="evenodd" d="M8.5 22.5L5.8 22.5L5.8 22.2C5.8 22.0 5.8 21.8 5.8 21.7L5.8 21.5L12.1 21.5L18.3 21.5L18.3 22.0L18.3 22.5L14.7 22.5C12.8 22.5 10.0 22.5 8.5 22.5ZM7.6 21.0C6.6 21.0 5.9 21.0 5.8 21.0C5.8 21.0 6.3 20.3 6.8 19.9C7.4 19.3 7.8 19.0 8.6 18.5L8.8 18.4L8.7 18.4C8.7 18.4 8.6 18.3 8.5 18.3C8.0 18.0 7.0 17.1 6.6 16.6L6.5 16.4L5.1 16.4L3.7 16.4L3.7 15.7L3.7 14.9L7.7 14.9L11.6 14.9L11.6 15.7L11.6 16.4L11.0 16.4C10.7 16.4 10.1 16.4 9.7 16.4L9.1 16.4L9.3 16.6C11.2 17.8 13.6 17.7 15.3 16.4C17.5 14.8 17.6 11.7 15.6 9.9C15.2 9.6 15.2 9.6 15.7 9.5C16.1 9.5 16.4 9.2 16.4 8.7C16.5 8.4 16.6 8.3 16.8 8.5C17.7 9.2 18.6 10.5 18.9 11.6C19.1 12.5 19.1 13.8 18.9 14.6C18.4 16.1 17.4 17.4 16.0 18.3C15.6 18.5 15.6 18.5 15.6 18.5C15.7 18.5 15.8 18.6 15.9 18.7C16.7 19.2 17.4 19.8 18.0 20.5C18.2 20.8 18.3 21.0 18.3 21.0C18.3 21.0 11.8 21.0 7.6 21.0ZM10.7 12.5C10.6 12.5 9.3 11.2 9.3 11.1C9.2 10.9 9.2 10.8 9.8 10.2L10.3 9.8L11.1 10.7L12.0 11.5L11.6 12.0C11.0 12.6 10.9 12.6 10.7 12.5ZM12.5 11.2C12.4 11.1 10.7 9.4 10.6 9.2C10.5 9.1 10.5 9.0 10.6 8.9C10.9 8.5 15.3 4.1 15.7 3.8C15.7 3.8 15.7 3.8 15.8 3.8C16.0 3.9 17.7 5.6 18.0 6.0C18.1 6.1 18.0 6.1 16.9 7.3L16.1 8.1L16.0 8.0C15.2 7.6 14.5 8.4 14.9 9.2L14.9 9.3L14.0 10.2C12.8 11.4 12.8 11.4 12.5 11.2ZM15.4 9.3C15.0 9.1 14.9 8.6 15.2 8.3C15.6 7.9 16.4 8.4 16.1 9.0C16.0 9.2 15.7 9.4 15.4 9.3ZM17.3 4.4L16.5 3.6L17.2 2.8C18.5 1.5 18.6 1.5 18.7 1.5C19.0 1.7 20.1 2.8 20.2 3.1C20.3 3.2 20.3 3.2 20.1 3.4C20.0 3.6 18.3 5.3 18.2 5.3C18.2 5.3 17.8 4.9 17.3 4.4Z" />
+    </svg>
+  ),
+  // Fact check: a clipboard of claims with a check badge. Drawn in strokes to
+  // sit with the rest of the set, where the source was a solid glyph, and with
+  // one ruled line rather than its several, which blurred together small.
+  clipboardCheck: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M13.5 3.6l6.2 3.1a1.4 1.4 0 01.6 1.9l-1.3 2.6-8.7-4.4 1.3-2.6a1.4 1.4 0 011.9-.6z" />
-      <path d="M10.3 6.8L4.1 9.2a1.2 1.2 0 00-.6 1.7l1 2a1.2 1.2 0 001.6.6l6.5-2.1" />
-      <path d="M8.4 13.1L11 21" />
-      <path d="M13.6 11.4L17 19" />
-      <path d="M9 17h5" />
+      <path d="M9 3.2h6a1.1 1.1 0 0 1 1.1 1.1v1a1.1 1.1 0 0 1-1.1 1.1H9A1.1 1.1 0 0 1 7.9 5.3v-1A1.1 1.1 0 0 1 9 3.2Z" />
+      <path d="M16.1 4.8h1.4A1.5 1.5 0 0 1 19 6.3v3.9" />
+      <path d="M7.9 4.8H6.5A1.5 1.5 0 0 0 5 6.3v13.2A1.5 1.5 0 0 0 6.5 21h4.7" />
+      <path d="M8.4 10.2h4.2" />
+      <circle cx="17.2" cy="17.2" r="4.2" />
+      <path d="m15.4 17.2 1.3 1.3 2.5-2.7" />
     </svg>
   ),
   layers: (
@@ -165,6 +176,20 @@ export const I: Record<string, ReactElement> = {
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
       <path d="M10 11v6M14 11v6" />
+    </svg>
+  ),
+  signOut: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+      <path d="m16 17 5-5-5-5" />
+      <path d="M21 12H9" />
+    </svg>
+  ),
+  download: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 4v11" />
+      <path d="m7 10 5 5 5-5" />
+      <path d="M5 20h14" />
     </svg>
   ),
   paperclip: (

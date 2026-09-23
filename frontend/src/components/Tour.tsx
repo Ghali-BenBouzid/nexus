@@ -10,15 +10,35 @@ const PAD = 8;
 const GAP = 14;
 const CARD_W = 320;
 
+// How long the spotlight takes to travel between steps. A fixed duration meant
+// the velocity rose with the distance: the short hop from the mode pill to the
+// attach button read well, and the long one across to the Outputs panel covered
+// six times the ground in the same time and looked thrown rather than moved.
+// Time grows with distance now, so the speed has a ceiling.
+const MIN_MS = 400;
+const MAX_MS = 760;
+const MAX_SPEED = 1200; // pixels per second
 type Box = { top: number; left: number; width: number; height: number };
 
-function find(target: string | null): Box | null {
+// Only the duration is decided here. The curve is the one every other moving
+// thing in the app uses, set in the stylesheet: a tour that eased differently
+// from the rest of the interface would be the tour drawing attention to itself.
+function travelMs(from: Box | null, to: Box | null): number {
+  if (!from || !to) return MIN_MS;
+  const dist = Math.hypot(
+    to.left + to.width / 2 - (from.left + from.width / 2),
+    to.top + to.height / 2 - (from.top + from.height / 2),
+  );
+  return Math.min(MAX_MS, Math.max(MIN_MS, (dist / MAX_SPEED) * 1000));
+}
+
+function find(target: string | null, pad = PAD): Box | null {
   if (!target) return null;
   const el = document.querySelector<HTMLElement>(`[data-tour="${target}"]`);
   if (!el) return null;
   const r = el.getBoundingClientRect();
   if (r.width === 0 && r.height === 0) return null; // rendered but hidden
-  return { top: r.top - PAD, left: r.left - PAD, width: r.width + PAD * 2, height: r.height + PAD * 2 };
+  return { top: r.top - pad, left: r.left - pad, width: r.width + pad * 2, height: r.height + pad * 2 };
 }
 
 // Where the card goes relative to the lit area. Four placements, then a clamp,
@@ -73,6 +93,9 @@ export function Tour({
   // is before it can tell whether it fits above or below the target.
   const [cardH, setCardH] = useState(190);
   const cardRef = useRef<HTMLDivElement>(null);
+  // Where the spotlight was, so the next move knows how far it has to go.
+  const from = useRef<Box | null>(null);
+  const [moveMs, setMoveMs] = useState(MIN_MS);
   const step: TourStep | undefined = steps[i];
 
   const close = () => {
@@ -117,7 +140,12 @@ export function Tour({
   useLayoutEffect(() => {
     if (!step) return;
     let raf = 0;
-    const measure = () => setBox(find(step.target));
+    const measure = () => {
+      const next = find(step.target, step.pad);
+      setMoveMs(travelMs(from.current, next));
+      from.current = next;
+      setBox(next);
+    };
     // A frame later: a step that just changed view is pointing at something
     // React has not committed yet.
     raf = requestAnimationFrame(() => {
@@ -137,12 +165,15 @@ export function Tour({
     const key = (e: KeyboardEvent) => {
       // The card owns the keyboard while it is up: the page behind it is dimmed
       // and not meant to be typed into.
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
       if (e.key === "ArrowRight" || e.key === "Enter") setI((n) => n + 1);
       if (e.key === "ArrowLeft") setI((n) => Math.max(0, n - 1));
     };
-    window.addEventListener("keydown", key);
-    return () => window.removeEventListener("keydown", key);
+    document.addEventListener("keydown", key);
+    return () => document.removeEventListener("keydown", key);
   });
 
   useEffect(() => {
@@ -163,12 +194,22 @@ export function Tour({
         {box && (
           <div
             className="tour-hole"
-            style={{ top: box.top, left: box.left, width: box.width, height: box.height }}
+            style={{
+              top: box.top,
+              left: box.left,
+              width: box.width,
+              height: box.height,
+              transitionDuration: `${moveMs}ms`,
+            }}
           />
         )}
       </div>
 
-      <div className="tour-card" ref={cardRef} style={style}>
+      <div
+        className="tour-card"
+        ref={cardRef}
+        style={{ ...style, transitionDuration: `${moveMs}ms` }}
+      >
         <div className="tour-card-head">
           <h3>{step.title}</h3>
           <button type="button" className="tour-x" onClick={close} aria-label={t.tour.skip}>

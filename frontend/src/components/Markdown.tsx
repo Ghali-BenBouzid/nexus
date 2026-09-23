@@ -1,4 +1,4 @@
-import { Children, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import { Children, Fragment, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
@@ -14,7 +14,6 @@ import type { Source } from "../types";
 
 type CiteProps = {
   onCite: (n: number) => void;
-  activeCite: number | null;
   // What the numbers point at, so a citation can name its sources where it
   // stands. Index n - 1 is source [n]; an out-of-range number shows as a bare
   // number, because code numbers the sources and a stray one points nowhere.
@@ -32,7 +31,7 @@ const POP_MIN_H = 180;
 // backed by four pages is a claim with four receipts, not four separate marks
 // in the prose. The group collapses to a single chip and opens to the list,
 // which is the only way a reader checks a source they actually doubt.
-function CiteGroup({ ns, sources, onCite, activeCite }: CiteProps & { ns: number[] }) {
+function CiteGroup({ ns, sources, onCite }: CiteProps & { ns: number[] }) {
   // Each offset is measured from the edge it is pinned to, so the panel grows
   // away from the chip rather than back over it.
   const [at, setAt] = useState<{
@@ -57,7 +56,10 @@ function CiteGroup({ ns, sources, onCite, activeCite }: CiteProps & { ns: number
       }
     };
     const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") close();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        close();
+      }
     };
     document.addEventListener("mousedown", away);
     document.addEventListener("keydown", key);
@@ -73,7 +75,11 @@ function CiteGroup({ ns, sources, onCite, activeCite }: CiteProps & { ns: number
     };
   }, [open]);
 
-  const toggle = () => {
+  const toggle = (e: React.MouseEvent) => {
+    // Checking a source is not selecting the message it sits in. Left to bubble,
+    // the click also focused the turn, and that re-render is what used to take
+    // the panel down with it.
+    e.stopPropagation();
     if (open) return setAt(null);
     const box = chip.current?.getBoundingClientRect();
     if (!box) return;
@@ -91,7 +97,6 @@ function CiteGroup({ ns, sources, onCite, activeCite }: CiteProps & { ns: number
     });
   };
 
-  const lit = ns.some((n) => n === activeCite);
   const label = t.cites.label(ns.length);
   // Which of the group's sources the panel is showing. It resets whenever the
   // panel closes, so reopening a citation always starts at its first source.
@@ -107,7 +112,7 @@ function CiteGroup({ ns, sources, onCite, activeCite }: CiteProps & { ns: number
       <button
         ref={chip}
         type="button"
-        className={"cites-chip" + (open || lit ? " active" : "")}
+        className={"cites-chip" + (open ? " active" : "")}
         onClick={toggle}
         aria-expanded={open}
         aria-label={label}
@@ -249,19 +254,26 @@ function jumpTo(target: string, root: HTMLElement | null): void {
 type MarkdownProps = {
   text: string;
   onCite: (n: number) => void;
-  activeCite: number | null;
   sources?: Source[];
 };
 
 // Full Markdown via react-markdown + GFM (tables, lists, code, etc.), with our
 // [n] citations layered on top. Tables get a scroll wrapper so a wide comparison
 // never overflows the report column.
-export function Markdown({ text, onCite, activeCite, sources = [] }: MarkdownProps) {
+export function Markdown({ text, onCite, sources = [] }: MarkdownProps) {
   const doc = useRef<HTMLDivElement>(null);
-  const cp: CiteProps = { onCite, activeCite, sources };
-  const kids = (children: ReactNode) => withCites(children, cp);
+  // Read through a ref, so the component map below can be built once. Built per
+  // render, every override is a new function, React reads that as a new element
+  // type, and it throws away the whole rendered answer and mounts a fresh one.
+  // Every citation loses its open panel with it, which is why the first click on
+  // one did nothing: the click focused the turn, that re-rendered, and the panel
+  // it had just opened was destroyed before it could paint.
+  const cp = useRef<CiteProps>({ onCite, sources });
+  cp.current = { onCite, sources };
 
-  const components: Components = {
+  const components = useMemo<Components>(() => {
+    const kids = (children: ReactNode) => withCites(children, cp.current);
+    return {
     // Reports start at ## in the data; demote any stray h1 so the hierarchy holds.
     // Every heading carries its anchor, so a report can link to its own sections.
     h1: ({ children }) => <h2 id={anchor(children)}>{kids(children)}</h2>,
@@ -299,7 +311,10 @@ export function Markdown({ text, onCite, activeCite, sources = [] }: MarkdownPro
         <table>{children}</table>
       </div>
     ),
-  };
+    };
+    // Built once and never rebuilt: the overrides read the current props off the
+    // ref, so they never need new identities.
+  }, []);
 
   return (
     <div className="doc" ref={doc}>

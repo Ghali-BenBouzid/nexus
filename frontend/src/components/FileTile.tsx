@@ -23,25 +23,55 @@ export function FileTile({
   name,
   bytes,
   meta,
+  state,
+  error,
+  onOpen,
   onRemove,
 }: {
   name: string;
   bytes?: number;
+  // How far the file has got. A tile appears the instant a file is picked, so
+  // it has to be able to say "still reading this" and "this one did not work"
+  // as well as it says how big the file is.
+  state?: "uploading" | "failed";
+  error?: string;
   // Anything already known about the file (pages, OCR, truncation). Falls back
   // to the size when there is nothing more interesting to say.
   meta?: string;
+  // Opens the file. A button over the whole tile rather than a click handler on
+  // it, because the tile already holds a button (remove), and a button inside
+  // something clickable is two targets pretending to be one.
+  onOpen?: () => void;
   onRemove?: () => void;
 }) {
   return (
-    <div className="ftile" title={name}>
+    <div className="ftile" data-state={state} title={error ?? name}>
       <div className="ftile-page" aria-hidden="true">
         <span className="ftile-lines" />
         <span className="ftile-kind">{kindOf(name)}</span>
       </div>
       <div className="ftile-foot">
         <span className="ftile-name">{name}</span>
-        <span className="ftile-meta">{meta ?? (bytes != null ? kb(bytes) : "")}</span>
+        <span className="ftile-meta">
+          {state === "uploading" && <span className="spin" aria-hidden="true" />}
+          {state === "uploading"
+            ? t.uploads.reading
+            : state === "failed"
+              ? t.uploads.failedFile
+              : (meta ?? (bytes != null ? kb(bytes) : ""))}
+        </span>
       </div>
+      {onOpen && (
+        <button
+          type="button"
+          className="ftile-hit"
+          onClick={(e) => {
+            e.stopPropagation();
+            onOpen();
+          }}
+          aria-label={t.preview.open(name)}
+        />
+      )}
       {onRemove && (
         <button
           type="button"

@@ -74,6 +74,12 @@ function forgetAccess(): void {
   localStorage.removeItem(INVITE_KEY);
 }
 
+// Signing out on purpose is the same forgetting. The invite itself stays valid
+// on the server, which is what lets the same link sign the user back in.
+export function signOut(): void {
+  forgetAccess();
+}
+
 // A 401 on a request made with a stored access token: that token went stale, and
 // one retry with a fresh one is worth it. Any other refusal is final.
 class SessionExpiredError extends Error {}
@@ -734,6 +740,20 @@ export async function uploadDocument(conversationId: ConversationId, file: File)
   });
   if (!res.ok) throw new Error(await errorMessage(res, t.uploads.failed));
   return toDoc((await res.json()) as BackendDoc);
+}
+
+// The original file, as the user uploaded it. Fetched rather than linked: the
+// endpoint wants a Bearer token, and an <iframe src> cannot carry one.
+export async function fetchDocumentFile(id: number): Promise<Blob> {
+  // A request that never got an answer throws the browser's own wording
+  // ("Failed to fetch"), which means nothing to a reader.
+  const res = await authedGet(`/documents/${id}/file`).catch(() => {
+    throw new Error(t.preview.failed);
+  });
+  if (!res || !res.ok) {
+    throw new Error(res ? await errorMessage(res, t.preview.failed) : t.preview.failed);
+  }
+  return res.blob();
 }
 
 export async function deleteDocument(id: number): Promise<void> {

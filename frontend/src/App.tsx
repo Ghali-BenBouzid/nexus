@@ -42,7 +42,18 @@ import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
 import { isLive, LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
 import { tourSeen } from "./lib/tour";
 import { isUnread, loadSeen, markSeen, saveSeen, type Seen } from "./lib/unread";
-import type { ConversationId, Doc, LayoutMode, Mode, Output, Result, Theme, Turn, View } from "./types";
+import { DocPreview, type PreviewTarget } from "./components/DocPreview";
+import type {
+  ConversationId,
+  Doc,
+  LayoutMode,
+  Mode,
+  Output,
+  Result,
+  Theme,
+  Turn,
+  View,
+} from "./types";
 
 // Which outputs this browser has already announced. A per-viewer convenience,
 // so it lives in localStorage and a failure to read it is not worth a thought.
@@ -65,6 +76,27 @@ function rememberAnnounced(ids: Set<number>): void {
   }
 }
 
+// A file the user just picked, as a document, before the server has seen it.
+// Negative ids keep it apart from anything real: a placeholder can be listed and
+// removed, but never fetched, deleted or fact-checked.
+let heldSeq = 0;
+
+function placeholder(file: File): Doc {
+  return {
+    id: -++heldSeq,
+    filename: file.name,
+    mediaType: file.type || "application/octet-stream",
+    sizeBytes: file.size,
+    pages: null,
+    chars: 0,
+    truncated: false,
+    ocr: false,
+    state: "uploading",
+  };
+}
+
+const pending = (doc: Doc) => doc.id < 0;
+
 export default function App() {
   const [theme, setTheme] = useState<Theme>(
     () => (document.documentElement.getAttribute("data-theme") as Theme) || "light",
@@ -79,7 +111,9 @@ export default function App() {
   // so there they stay shut.
   const [layout, setLayout] = useState<LayoutMode>(() => {
     try {
-      return window.matchMedia("(max-width: 920px)").matches ? "thread" : "split";
+      if (window.matchMedia("(max-width: 920px)").matches) return "thread";
+      const stored = localStorage.getItem("nexus-outputs-open");
+      return stored === null || stored === "true" ? "split" : "thread";
     } catch {
       return "thread";
     }
@@ -139,6 +173,12 @@ export default function App() {
   // user went; the panel only ever shows the open conversation's share of it.
   const [outputs, setOutputs] = useState<Output[]>([]);
   const [documents, setDocuments] = useState<Doc[]>([]);
+  // The file open in the viewer, if any. It sits over everything, so it lives
+  // here rather than in whichever of the four places it was opened from.
+  const [preview, setPreview] = useState<PreviewTarget | null>(null);
+  const previewDoc = (doc: Doc) =>
+    !doc.state && setPreview({ name: doc.filename, bytes: doc.sizeBytes, docId: doc.id });
+  const previewFile = (file: File) => setPreview({ name: file.name, bytes: file.size, file });
   const [openOutputId, setOpenOutputId] = useState<number | null>(null);
   const [openOutputResult, setOpenOutputResult] = useState<Result | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -158,6 +198,10 @@ export default function App() {
   // Which finished outputs the user has already been told about, so a report is
   // announced once per browser and not again on every reload.
   const announced = useRef<Set<number>>(new Set(storedAnnounced()));
+  // Background runs we have already shown the panel for. Once per run: if the
+  // user shuts the panel while one is still working, that is an answer, and
+  // reopening it every five seconds would be the app arguing with them.
+  const revealed = useRef<Set<number>>(new Set());
   const [ready, setReady] = useState<Output[]>([]);
   // Which reports this browser has read, so a finished one is marked new until
   // it is opened, and marked new again when a refresh rewrites it.
@@ -311,6 +355,19 @@ export default function App() {
     return () => clearInterval(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [live, anyOutputRunning, view]);
+
+  // A deep run or a fact check leaves the conversation and works on its own for
+  // minutes. Nothing in the thread shows that, so the panel where it will land
+  // opens as it starts: the run is visible as running, rather than as silence
+  // followed by a report out of nowhere.
+  useEffect(() => {
+    const starting = outputs.find(
+      (o) => (o.status === "running" || o.status === "pending") && !revealed.current.has(o.id),
+    );
+    if (!starting) return;
+    revealed.current.add(starting.id);
+    setLayout("split");
+  }, [outputs]);
 
   // Tell the user once when a report they are no longer watching is ready. Two
   // can land in the same poll, so they queue rather than overwrite each other.
@@ -467,7 +524,12 @@ export default function App() {
       setActiveConversation(cid);
       // A fresh chat has no files yet; a follow-up in an existing one may, and
       // the panel is the only place they show.
-      listDocuments(cid).then(setDocuments).catch(() => {});
+      listDocuments(cid)
+        // Anything still on its way up outlives the refresh: the server does
+        // not know about it yet, and dropping it would blank a tile the user
+        // is watching.
+        .then((docs) => setDocuments((prev) => [...docs, ...prev.filter(pending)]))
+        .catch(() => {});
       // The fresh /chat now has a real id: rewrite the URL in place (no extra
       // history entry) so a reload or back/forward resolves to this conversation.
       navigate(`/chat/${cid}`, { replace: true });
@@ -560,7 +622,7 @@ export default function App() {
     // null below means this run never appends to the prior conversation.
     if (fresh) {
       setFocusedId(null);
-      setLayout("thread");
+      setOpenOutputId(null); // a report from the old chat is not this one's
       setTurns([turn]);
       setMode("answer");
     } else {
@@ -574,13 +636,21 @@ export default function App() {
       // message follows, carrying their ids.
       let attached: Doc[] = [];
       if (staged.length && isLive()) {
+        // The files show on the message and in the panel before a single byte
+        // has moved. Reading a long PDF takes real seconds, and a message that
+        // carries nothing for those seconds reads as a message that lost them.
+        const files = staged;
+        const holding = files.map(placeholder);
+        setStaged([]);
+        setUploadError(null);
+        patchTurn(id, (t) => ({ ...t, attachments: holding }));
+        setDocuments((docs) => [...docs, ...holding]);
         if (conversationId == null) {
           conversationId = await createConversation();
           setActiveConversation(conversationId);
           navigate(`/chat/${conversationId}`, { replace: true });
         }
-        attached = await uploadStaged(conversationId);
-        patchTurn(id, (t) => ({ ...t, attachments: attached }));
+        attached = await uploadStaged(conversationId, files, holding, id);
       }
       // A fact check is one document's; the next message is back to normal.
       if (runMode === "factcheck") setMode("answer");
@@ -598,22 +668,41 @@ export default function App() {
     }
   }
 
-  // Upload everything staged in the composer, keeping what fails visible rather
-  // than dropping it silently. Returns what actually landed.
-  async function uploadStaged(conversationId: ConversationId): Promise<Doc[]> {
-    const files = staged;
-    setStaged([]);
-    setUploadError(null);
+  // Send the staged files, replacing each placeholder with what came back.
+  // A file that fails keeps its tile and says so: dropping it would leave the
+  // user asking about a document that is not there. Returns what landed.
+  async function uploadStaged(
+    conversationId: ConversationId,
+    files: File[],
+    holding: Doc[],
+    turnId: number,
+  ): Promise<Doc[]> {
     const uploaded: Doc[] = [];
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const held = holding[i];
+      let landed: Doc;
       try {
-        uploaded.push(await uploadDocument(conversationId, file));
+        landed = await uploadDocument(conversationId, files[i]);
+        uploaded.push(landed);
       } catch (err) {
-        setUploadError(err instanceof Error ? err.message : t.uploads.failed);
+        landed = {
+          ...held,
+          state: "failed",
+          error: err instanceof Error ? err.message : t.uploads.failed,
+        };
       }
+      settle(held.id, landed, turnId);
     }
-    if (uploaded.length) setDocuments((docs) => [...docs, ...uploaded]);
     return uploaded;
+  }
+
+  // Swap a placeholder for its outcome, wherever it is shown.
+  function settle(heldId: number, landed: Doc, turnId?: number) {
+    const swap = (docs: Doc[]) => docs.map((d) => (d.id === heldId ? landed : d));
+    setDocuments(swap);
+    if (turnId != null) {
+      patchTurn(turnId, (t) => ({ ...t, attachments: swap(t.attachments ?? []) }));
+    }
   }
 
   function stopResearch() {
@@ -682,17 +771,23 @@ export default function App() {
       return;
     }
     setUploadError(null);
+    const held = placeholder(file);
+    setDocuments((docs) => [...docs, held]);
     try {
-      const doc = await uploadDocument(activeConversationId, file);
-      setDocuments((docs) => [...docs, doc]);
+      settle(held.id, await uploadDocument(activeConversationId, file));
     } catch (err) {
-      setUploadError(err instanceof Error ? err.message : t.uploads.failed);
+      settle(held.id, {
+        ...held,
+        state: "failed",
+        error: err instanceof Error ? err.message : t.uploads.failed,
+      });
     }
   }
 
   async function removeDocument(doc: Doc) {
     setDocuments((docs) => docs.filter((d) => d.id !== doc.id));
-    await deleteDocument(doc.id);
+    // Nothing to delete for a file that never reached the server.
+    if (!pending(doc)) await deleteDocument(doc.id);
   }
 
   // Fact-check a document from the panel. It is a message like any other, so
@@ -702,13 +797,24 @@ export default function App() {
     startResearch(t.modes.factcheck.request(doc.filename), { mode: "factcheck" });
   }
 
-  const chooseLayout = (m: LayoutMode) => setLayout(m);
+  const chooseLayout = (m: LayoutMode) => {
+    setLayout(m);
+    try {
+      localStorage.setItem("nexus-outputs-open", String(m === "split"));
+    } catch {
+      /* ignore */
+    }
+  };
 
+  // Only for a signed-in demo account: the tour shows recent chats, modes and
+  // outputs, none of which exist without one, so a visitor would be walked
+  // past controls that are not there. Keyed on `live`, so someone arriving by
+  // an invite link gets it once the link has been redeemed.
   useEffect(() => {
-    if (tourSeen()) return;
+    if (!live || tourSeen()) return;
     const id = setTimeout(() => setTour(true), 900);
     return () => clearTimeout(id);
-  }, []);
+  }, [live]);
 
   // The tour walks from the landing page into a chat, because half of what it
   // has to show does not exist on the landing page. It opens the chat itself
@@ -762,7 +868,6 @@ export default function App() {
     setFocusedId(null);
     setOpenOutputId(null);
     setView("chat");
-    setLayout("thread");
     resumeInFlight(loaded);
   }
 
@@ -775,7 +880,6 @@ export default function App() {
     setUploadError(null);
     setFocusedId(null);
     setOpenOutputId(null);
-    setLayout("thread");
     setActiveConversation(null); // a fresh chat starts a new conversation
     navigate("/chat"); // becomes /chat/:id once the backend assigns one
     setView("chat"); // land on a fresh, empty conversation, not the hero
@@ -821,7 +925,7 @@ export default function App() {
           scrolled={scrolled}
           onHistory={live ? () => setHistoryOpen(true) : undefined}
           onStart={() => document.querySelector<HTMLTextAreaElement>(".prompt textarea")?.focus()}
-          onTour={() => setTour(true)}
+          onTour={live ? () => setTour(true) : undefined}
         />
       )}
 
@@ -837,6 +941,7 @@ export default function App() {
             staged={live ? staged : undefined}
             onAttach={(files) => setStaged((current) => [...current, ...files])}
             onUnstage={(index) => setStaged((current) => current.filter((_, i) => i !== index))}
+            onPreview={previewFile}
             attachError={uploadError}
           />
           <About />
@@ -844,6 +949,8 @@ export default function App() {
           <Footer />
         </Fragment>
       )}
+
+      {preview && <DocPreview target={preview} onClose={() => setPreview(null)} />}
 
       {tour && <Tour onView={tourView} onFinish={() => setTour(false)} />}
 
@@ -877,6 +984,8 @@ export default function App() {
           onUpload={addDocument}
           onRemoveDocument={removeDocument}
           onFactCheck={factCheck}
+          onPreviewDoc={previewDoc}
+          onPreviewFile={previewFile}
           uploadError={uploadError}
           running={anyRunning}
           onNewChat={newChat}
@@ -886,6 +995,7 @@ export default function App() {
           onOpenHistory={live ? openHistory : undefined}
           theme={theme}
           toggleTheme={toggleTheme}
+          account={live ? account : null}
         />
       )}
 

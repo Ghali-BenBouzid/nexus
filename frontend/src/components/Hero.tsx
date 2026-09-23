@@ -12,6 +12,7 @@ type HeroProps = {
   // with the first message, which is what creates the chat.
   staged?: File[];
   onAttach?: (files: File[]) => void;
+  onPreview?: (file: File) => void;
   onUnstage?: (index: number) => void;
   attachError?: string | null;
 };
@@ -21,6 +22,7 @@ export function Hero({
   note,
   staged,
   onAttach,
+  onPreview,
   onUnstage,
   attachError,
 }: HeroProps) {
@@ -55,6 +57,7 @@ export function Hero({
             onSubmit={onSubmit}
             staged={staged}
             onAttach={onAttach}
+            onPreview={onPreview}
             onUnstage={onUnstage}
             attachError={attachError}
           />
