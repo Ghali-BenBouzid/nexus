@@ -799,11 +799,15 @@ export default function App() {
     }
   };
 
+  // Only for a signed-in demo account: the tour shows recent chats, modes and
+  // outputs, none of which exist without one, so a visitor would be walked
+  // past controls that are not there. Keyed on `live`, so someone arriving by
+  // an invite link gets it once the link has been redeemed.
   useEffect(() => {
-    if (tourSeen()) return;
+    if (!live || tourSeen()) return;
     const id = setTimeout(() => setTour(true), 900);
     return () => clearTimeout(id);
-  }, []);
+  }, [live]);
 
   // The tour walks from the landing page into a chat, because half of what it
   // has to show does not exist on the landing page. It opens the chat itself
@@ -914,7 +918,7 @@ export default function App() {
           scrolled={scrolled}
           onHistory={live ? () => setHistoryOpen(true) : undefined}
           onStart={() => document.querySelector<HTMLTextAreaElement>(".prompt textarea")?.focus()}
-          onTour={() => setTour(true)}
+          onTour={live ? () => setTour(true) : undefined}
         />
       )}
 

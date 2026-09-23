@@ -12,7 +12,8 @@ type NavProps = {
   scrolled: boolean;
   onStart: () => void;
   onHistory?: () => void;
-  onTour: () => void;
+  // Absent without a demo account: the tour has nothing to show a visitor.
+  onTour?: () => void;
 };
 
 // The landing page's nav. The chat has none: its left column carries the brand.
@@ -38,7 +39,10 @@ export function Nav({ theme, toggleTheme, onLogo, scrolled, onStart, onHistory, 
           <a className="nav-link" href="#about">{t.nav.about}</a>
           <a className="nav-link" href="#how">{t.nav.how}</a>
           {/* Replay, for anyone who skipped it or wants it again. */}
-          <button className="nav-link nav-lang" onClick={onTour}>{t.tour.start}</button>        </div>
+          {onTour && (
+            <button className="nav-link nav-lang" onClick={onTour}>{t.tour.start}</button>
+          )}
+        </div>
         <div className="nav-right">
           <button
             className="nav-link nav-lang"
