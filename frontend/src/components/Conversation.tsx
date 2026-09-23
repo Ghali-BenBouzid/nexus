@@ -155,6 +155,21 @@ export function Conversation({
     setAtBottom(isNearBottom());
   }, [turns, now, layout]);
 
+  // The thread also changes height with nothing new in it: a side panel opening
+  // narrows the column and every answer reflows taller, as do late fonts and
+  // favicons. Whoever was at the bottom stays there through it.
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (following.current) stickToBottom();
+      setAtBottom(isNearBottom());
+    });
+    ro.observe(el);
+    ro.observe(el.firstElementChild!);
+    return () => ro.disconnect();
+  }, []);
+
   const submit = (prompt: string) => {
     following.current = true;
     onSubmit(prompt);
