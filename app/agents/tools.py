@@ -227,11 +227,16 @@ def retrieval_tools(
     *,
     emit: Emit = _noop,
     agent: str = "agent",
+    searches: int | None = None,
 ) -> list[StructuredTool]:
     """The two tools every web-facing agent gets: search, and read a page in
     full. Both register what they retrieved into ``sources`` and append the
     numbers the agent may cite. A failure is told to the agent and to the live
-    feed, never raised: one dead search should cost a search, not the turn."""
+    feed, never raised: one dead search should cost a search, not the turn.
+
+    ``searches`` caps how many web searches the agent may make; past it, a
+    search is refused without reaching the engines. None is no cap."""
+    used = [0]
 
     async def retrieve(what: str, retrieving: _Retrieving) -> str:
         try:
@@ -255,6 +260,12 @@ def retrieval_tools(
         return with_numbers(result, sources)
 
     async def web_search(query: str, max_results: int = 5) -> str:
+        if searches is not None and used[0] >= searches:
+            return (
+                f"No searches left: all {searches} are used. Read the most "
+                "promising pages you already found with fetch_page, or submit."
+            )
+        used[0] += 1
         return await retrieve(
             "web_search", lambda: web_search_results(backend, query, max_results)
         )

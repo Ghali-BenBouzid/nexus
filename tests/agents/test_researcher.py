@@ -285,3 +285,22 @@ async def test_a_researcher_that_never_submits_returns_an_empty_finding() -> Non
     assert finding.found_info is False
     assert finding.claims == []
     assert [s.url for s in finding.sources] == ["http://a", "http://b"]
+
+
+async def test_a_researcher_out_of_searches_is_told_so_and_spares_the_engines() -> None:
+    model = ScriptedModel(
+        [
+            _search("one"),
+            _search("two"),
+            _search("three"),
+            _submit(claims=[{"text": "x", "cited_source_ids": [1]}], found_info=True),
+        ]
+    )
+    backend = FakeSearchBackend()
+
+    await research_one("sub q", model=model, backend=backend, max_iters=6, searches=2)
+
+    assert backend.searches == ["one", "two"]
+    refusal = str(model.seen[-1][-1].content)
+    assert refusal.startswith("No searches left: all 2 are used")
+    assert "You have 2 web searches" in str(model.seen[0][0].content)
