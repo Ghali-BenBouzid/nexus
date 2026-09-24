@@ -6,6 +6,8 @@ user can act on, an unreadable file, one too large, too many in a conversation,
 raises ``UploadError`` with a message meant to be shown as it is.
 """
 
+import asyncio
+
 from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -61,7 +63,9 @@ async def upload(
     filename = (upload_file.filename or "document").strip()
     data = await _read(upload_file)
     try:
-        parsed = parse(filename, data)
+        # Off the event loop: reading a PDF is seconds of CPU, and run inline it
+        # froze every other request on this server until it was done.
+        parsed = await asyncio.to_thread(parse, filename, data)
     except ParseError as exc:
         raise UploadError(str(exc)) from exc
 

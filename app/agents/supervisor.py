@@ -16,13 +16,11 @@ than a stitched-together pipeline.
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Annotated, Any
+from typing import Annotated
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
-    AgentMiddleware,
     ModelCallLimitMiddleware,
-    hook_config,
 )
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -35,6 +33,7 @@ from langchain_core.tools import InjectedToolCallId, StructuredTool
 from pydantic import BaseModel, Field
 
 from app.agents.citations import finalize
+from app.agents.claim_check import STARTERS, RunClaimCheck, claim_judge
 from app.agents.language import detect_language
 from app.agents.model import REASONING, STAGE_KEY, LastStep
 from app.agents.report import text_of
@@ -70,6 +69,18 @@ class Output:
     id: int
     title: str
     content: str
+
+
+@dataclass
+class Running:
+    """A background run still working in this conversation. ``kind`` is the
+    mode that starts it ("deep" or "factcheck"); ``stage`` says how far along
+    it is, in words the supervisor can pass on."""
+
+    id: int
+    kind: str
+    title: str
+    stage: str
 
 
 @dataclass
@@ -160,7 +171,7 @@ async def respond(
     emit: Emit = _noop,
     max_iters: int = 8,
     mode: str = "answer",
-    running: list[Output] | None = None,
+    running: list[Running] | None = None,
     steer_deep_research: Callable[[int, str], Awaitable[str]] | None = None,
 ) -> Answer:
     """Answer the latest message, doing whatever work that needs first.
@@ -170,10 +181,15 @@ async def respond(
     user; leaving one out simply removes that tool. ``on_research`` hands each
     research run's full result to a caller that wants to look inside it: the
     eval harness, which cannot otherwise see what happened behind a tool call.
+
+    A deep run starts only from deep mode: outside it the tool does not exist,
+    because a ten-minute run is the user's call to make, not the supervisor's.
     """
     documents = documents or []
     outputs = outputs or []
     running = running or []
+    if mode != "deep":
+        start_deep_research = None
     agent = create_agent(
         model=model,
         tools=[
@@ -206,7 +222,7 @@ async def respond(
                 "user now with what you have, and say plainly what you could not "
                 "finish.",
             ),
-            *([RunClaimCheck(mode)] if mode in _STARTERS else []),
+            *_claim_check(mode, model, running),
             ModelCallLimitMiddleware(run_limit=max_iters, exit_behavior="end"),
         ],
     )
@@ -279,7 +295,7 @@ def _system_prompt(
     outputs: list[Output],
     *,
     mode: str = "answer",
-    running: list[Output] | None = None,
+    running: list[Running] | None = None,
 ) -> str:
     rendered = render(
         PROMPT,
@@ -297,26 +313,35 @@ def _system_prompt(
     return "\n\n".join(parts)
 
 
-def _running(running: list[Output]) -> str:
-    """The deep runs still working in this conversation. Without this the
+_KINDS = {"deep": "deep research", "factcheck": "fact check"}
+
+
+def _running(running: list[Running]) -> str:
+    """The background runs still working in this conversation. Without this the
     supervisor could not tell a run was going at all, and a user changing
     their mind got a second run, or a promise that the first had changed."""
-    lines = [f"- id {o.id}: {o.title}" for o in running]
-    return (
-        "<running>\nDeep research runs still working in this conversation, not "
-        "readable yet:\n" + "\n".join(lines) + "\nWhen the user changes their "
-        "mind about one, corrects an assumption it was started with, or wants its "
-        "focus changed, pass that to it with steer_deep_research instead of "
-        "starting another run. Say what the tool says will happen, nothing more."
-        "\n</running>"
+    lines = [f"- {_KINDS[r.kind]}, id {r.id}: {r.title} ({r.stage})" for r in running]
+    text = (
+        "<running>\nBackground runs still working in this conversation, not "
+        "readable yet:\n" + "\n".join(lines) + "\nThese are already running: "
+        "saying so is true, and none of them needs starting again."
     )
+    if any(r.kind == "deep" for r in running):
+        text += (
+            " When the user changes their mind about a deep research run, corrects "
+            "an assumption it was started with, or wants its focus changed, pass "
+            "that to it with steer_deep_research instead of starting another run. "
+            "Only one deep research run works at a time in a conversation. Say "
+            "what the tool says will happen, nothing more."
+        )
+    return text + "\n</running>"
 
 
 def _steer_tool(
-    running: list[Output],
+    running: list[Running],
     steer: Callable[[int, str], Awaitable[str]] | None,
 ) -> list[StructuredTool]:
-    if not running or steer is None:
+    if steer is None or not any(r.kind == "deep" for r in running):
         return []
     return [
         StructuredTool.from_function(
@@ -344,8 +369,11 @@ _DEEP_MODE = """\
 The user has switched to deep research mode for this message. They want a \
 question answered properly, so when this message is a subject or question \
 worth researching in depth, start deep_research on it, with a short title that \
-names the subject. Do not answer it with a quick research pass instead: \
-choosing this mode is the user asking for depth.
+names the subject. Do not answer it with a quick research pass instead, and \
+do not judge it too small for a deep run: choosing this mode is the user \
+asking for depth, and that call is theirs. research and web_search stay for \
+what is not the run itself: a side question while a run works, or a quick \
+fact you need to ask them the right question.
 
 A deep run is shaped by what the user wants from it, so before starting one, \
 make sure you know:
@@ -400,59 +428,14 @@ would, and say in a sentence what fact check mode is for.
 
 _MODES = {"deep": _DEEP_MODE, "factcheck": _FACTCHECK_MODE}
 
-# The tool that starts each mode's run, and what to call the run.
-_STARTERS = {
-    "deep": ("deep_research", "deep research run"),
-    "factcheck": ("fact_check", "fact check"),
-}
 
-
-class RunClaimCheck(AgentMiddleware):
-    """In a mode that starts a background run, a reply that ends the turn
-    without starting one is sent back once to be checked.
-
-    The prompt says a run exists only once its tool has started it, and the
-    supervisor still told users "deep research is now running" without ever
-    calling deep_research, twice in a handful of live runs. Whether to start a
-    run stays the supervisor's call: this only makes sure the reply it sends
-    is one it made with the fact in front of it. A greeting or a question back
-    to the user costs one more model call, which the interface shows as a
-    fresh attempt at the reply.
-    """
-
-    def __init__(self, mode: str) -> None:
-        super().__init__()
-        self.tool, self.run = _STARTERS[mode]
-        self.checked = False
-
-    @hook_config(can_jump_to=["model"])
-    async def aafter_model(self, state, runtime) -> dict[str, Any] | None:
-        messages = state["messages"]
-        if self.checked or not messages or getattr(messages[-1], "tool_calls", None):
-            return None
-        turn = []
-        for message in reversed(messages):
-            if isinstance(message, HumanMessage):
-                break
-            turn.append(message)
-        # Steering a run that is already going is acting on it too.
-        acted = {self.tool, "steer_deep_research"}
-        if any(getattr(m, "name", None) in acted for m in turn):
-            return None
-        self.checked = True
-        return {
-            "jump_to": "model",
-            "messages": [
-                HumanMessage(
-                    f"(A check from Nexus, not from the user.) No {self.run} has "
-                    f"been started in this turn: {self.tool} was not called. If "
-                    "your reply says one is starting, running or underway, it is "
-                    f"not, so call {self.tool} now. If you meant to reply without "
-                    "starting one, send the same reply again, unchanged: the "
-                    "user has not seen it yet, so it is not waiting on them."
-                )
-            ],
-        }
+def _claim_check(mode: str, model: BaseChatModel, running: list[Running]) -> list:
+    """The check on a reply claiming a run nobody started, in a mode that
+    starts one; none when the small model that runs it is switched off."""
+    judge = claim_judge(model) if mode in STARTERS else None
+    if judge is None:
+        return []
+    return [RunClaimCheck(mode, judge, [r.title for r in running if r.kind == mode])]
 
 
 def _attachments(documents: list[Document]) -> str:

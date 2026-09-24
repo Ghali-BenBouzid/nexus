@@ -12,7 +12,7 @@ import pytest
 from app.agents import supervisor
 from app.agents.schemas import AgentEvent, Turn
 from app.agents.sources import Sources
-from app.agents.supervisor import Document, Output, respond
+from app.agents.supervisor import Document, Output, Running, respond
 from app.agents.titles import StepTitles
 from app.agents.tools import SearchHit
 from tests.agents.fakes import ScriptedModel, call, says, thinks
@@ -141,7 +141,20 @@ async def test_a_document_brings_its_tools_with_it() -> None:
     )
 
     offered = set(model.bound_tools[0])
-    assert {"read_document", "fact_check", "read_report", "deep_research"} <= offered
+    assert {"read_document", "fact_check", "read_report"} <= offered
+
+
+async def test_a_deep_run_can_only_be_started_from_deep_mode() -> None:
+    """A run of several minutes is the user's call: outside deep mode the
+    supervisor can suggest one, and has no tool to start it."""
+    answer_mode = ScriptedModel([says("hi")])
+    deep_mode = ScriptedModel([says("hi"), says("hi")])
+
+    await _respond(answer_mode, start_deep_research=_never_deep)
+    await _respond(deep_mode, start_deep_research=_never_deep, mode="deep")
+
+    assert "deep_research" not in answer_mode.bound_tools[0]
+    assert "deep_research" in deep_mode.bound_tools[0]
 
 
 async def test_a_background_run_is_started_once_and_not_waited_for() -> None:
@@ -163,7 +176,7 @@ async def test_a_background_run_is_started_once_and_not_waited_for() -> None:
         ]
     )
 
-    answer = await _respond(model, start_deep_research=start)
+    answer = await _respond(model, start_deep_research=start, mode="deep")
 
     assert started == [("all about X", "About X", "an overview")]
     assert answer.text == "I have started a deep run on that."
@@ -319,14 +332,19 @@ async def test_steering_exists_only_while_a_deep_run_is_working() -> None:
     idle = ScriptedModel([says("hi")])
     await _respond(idle, steer_deep_research=_never_steer, running=[])
     busy = ScriptedModel([says("hi")])
-    running = [Output(id=7, title="Aviation weather", content="")]
+    running = [Running(id=7, kind="deep", title="Aviation weather", stage="working")]
     await _respond(busy, steer_deep_research=_never_steer, running=running)
+    checking = ScriptedModel([says("hi")])
+    fact_check = [Running(id=8, kind="factcheck", title="Paper", stage="queued")]
+    await _respond(checking, steer_deep_research=_never_steer, running=fact_check)
 
     assert "steer_deep_research" not in idle.bound_tools[0]
     assert "steer_deep_research" in busy.bound_tools[0]
+    assert "steer_deep_research" not in checking.bound_tools[0]
     assert _system_prompt("m", [], [], running=[]) == _system_prompt("m", [], [])
-    prompt = _system_prompt("m", [], [], running=running)
-    assert "<running>" in prompt and "id 7: Aviation weather" in prompt
+    prompt = _system_prompt("m", [], [], running=running + fact_check)
+    assert "deep research, id 7: Aviation weather (working)" in prompt
+    assert "fact check, id 8: Paper (queued)" in prompt
 
 
 async def test_a_change_of_mind_is_passed_to_the_running_run() -> None:
@@ -347,7 +365,7 @@ async def test_a_change_of_mind_is_passed_to_the_running_run() -> None:
         model,
         "actually I fly in Europe",
         steer_deep_research=steer,
-        running=[Output(id=7, title="Aviation weather", content="")],
+        running=[Running(id=7, kind="deep", title="Aviation weather", stage="working")],
         mode="deep",
     )
 

@@ -517,7 +517,9 @@ async def write_node(state: DeepState, runtime: Runtime[Deps]) -> dict:
         guidance=_with_late_notes(
             state.get("outline", ""), (await deps.notes())[state.get("notes_seen", 0) :]
         ),
-        timeout=settings.deep_writer_timeout,
+        # No limit of its own. After ten minutes of research a few more for a
+        # written report are worth it; cut off, the writer produced a raw dump
+        # of findings, the worst possible end to the longest wait in the app.
     )
     return {"result": result, "report": report}
 

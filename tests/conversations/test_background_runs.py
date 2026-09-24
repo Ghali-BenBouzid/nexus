@@ -17,6 +17,7 @@ from langchain_core.messages import ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from app import jobs
+from app.agents import supervisor
 from app.agents.tools import SearchHit
 from app.core.config import settings
 from app.documents import storage
@@ -107,6 +108,14 @@ class _StartsDeepResearch(ScriptedModel):
         return ChatResult(generations=[ChatGeneration(message=reply)])
 
 
+def _judged(monkeypatch, verdict: str) -> ScriptedModel:
+    """The small model that reads a reply for a claimed run, giving ``verdict``.
+    The real one is a copy of the turn's model, which a fake cannot make."""
+    judge = ScriptedModel(respond=lambda messages, tools: says(verdict))
+    monkeypatch.setattr(supervisor, "claim_judge", lambda model: judge)
+    return judge
+
+
 def _use(model_factory, backend_factory=FakeBackend, monkeypatch=None) -> None:
     """The fakes for a turn, and for the background runs it starts.
 
@@ -127,7 +136,9 @@ async def test_a_deep_run_becomes_its_own_artifact(
     _use(lambda: _StartsDeepResearch(), monkeypatch=monkeypatch)
 
     created = await client.post(
-        "/conversations", headers=auth_headers, json={"prompt": "go deep on X"}
+        "/conversations",
+        headers=auth_headers,
+        json={"prompt": "go deep on X", "mode": "deep"},
     )
     conversation_id = created.json()["id"]
 
@@ -174,7 +185,9 @@ async def test_a_deep_report_is_written_from_curated_findings(
     _use(lambda: _StartsDeepResearch(claims_each=3), monkeypatch=monkeypatch)
 
     created = await client.post(
-        "/conversations", headers=auth_headers, json={"prompt": "go deep on X"}
+        "/conversations",
+        headers=auth_headers,
+        json={"prompt": "go deep on X", "mode": "deep"},
     )
     await drain()
 
@@ -199,7 +212,9 @@ async def test_a_run_is_not_started_with_nothing_left_to_spend(
     headers = await login_as(client, "nearly-broke", budget_usd=0.005)
     _use(lambda: _StartsDeepResearch(cost_usd=0.01), monkeypatch=monkeypatch)
 
-    await client.post("/conversations", headers=headers, json={"prompt": "go deep"})
+    await client.post(
+        "/conversations", headers=headers, json={"prompt": "go deep", "mode": "deep"}
+    )
     await drain()
 
     assert (await client.get("/research/artifacts", headers=headers)).json() == []
@@ -377,6 +392,7 @@ async def test_a_greeting_in_deep_mode_starts_nothing(
     no run at all."""
     model = _JustGreets()
     _use(lambda: model, monkeypatch=monkeypatch)
+    _judged(monkeypatch, "no")
 
     created = await client.post(
         "/conversations", headers=auth_headers, json={"prompt": "hi", "mode": "deep"}
@@ -415,6 +431,7 @@ async def test_a_run_announced_but_never_started_is_caught(
     the supervisor still announced runs it never started. Ending a deep-mode
     turn without a run now sends the reply back once, with that fact."""
     _use(lambda: _ClaimsARunItNeverStarted(), monkeypatch=monkeypatch)
+    judge = _judged(monkeypatch, "yes")
 
     await client.post(
         "/conversations",
@@ -425,6 +442,7 @@ async def test_a_run_announced_but_never_started_is_caught(
 
     [artifact] = (await client.get("/research/artifacts", headers=auth_headers)).json()
     assert artifact["kind"] == "deep_research"
+    assert "now underway" in str(judge.seen[0][-1].content)
 
 
 def test_the_mode_is_told_to_the_supervisor_and_nothing_else_is() -> None:
@@ -613,7 +631,7 @@ class _Steers(ScriptedModel):
         done = [m for m in messages if isinstance(m, ToolMessage)]
         if "steer_deep_research" in names and not done:
             run_id = int(
-                re.search(r"- id (\d+): Aviation", str(messages[0].content)).group(1)
+                re.search(r"id (\d+): Aviation", str(messages[0].content)).group(1)
             )  # type: ignore[union-attr]
             reply = call("steer_deep_research", run_id=run_id, note="Assume EASA.")
         else:
@@ -679,3 +697,122 @@ async def test_a_note_says_honestly_how_much_it_can_still_change(
     async with db_session.SessionLocal() as db:
         notes = await research_repository.list_notes(db, run_id)
     assert notes == ["Assume EASA.", "Keep it short."]
+
+
+class _ObeysTheCheck(ScriptedModel):
+    """A supervisor that greets, and starts a deep run on the question it has
+    when told its reply claimed a run nothing started: what the live model did
+    on a "hi" sent while a run was already going."""
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        told = any("was not called" in str(m.content) for m in messages)
+        refused = [m for m in messages if isinstance(m, ToolMessage)]
+        if told and not refused:
+            reply = call(
+                "deep_research", question="VFR weather", title="Again", goal="x"
+            )
+        else:
+            reply = says("Hi! Your research on aviation weather is still running.")
+        return ChatResult(generations=[ChatGeneration(message=reply)])
+
+
+async def test_a_greeting_while_a_deep_run_works_starts_no_second_run(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    """The bug: deep mode stays on after a run starts, and a "hi" got a true
+    "your run is still going", which the run check read as a claim nothing
+    backed and sent back, and the supervisor started the same run again."""
+    public_id, _, run_id = await _running_deep_run(client, auth_headers)
+    _use(lambda: _ObeysTheCheck(), monkeypatch=monkeypatch)
+    judge = _judged(monkeypatch, "no")
+
+    await client.post(
+        f"/conversations/{public_id}/messages",
+        headers=auth_headers,
+        json={"content": "hi", "mode": "deep"},
+    )
+    await drain()
+
+    artifacts = (await client.get("/research/artifacts", headers=auth_headers)).json()
+    assert [a["id"] for a in artifacts] == [run_id]
+    detail = await client.get(f"/conversations/{public_id}", headers=auth_headers)
+    assert detail.json()["messages"][-1]["query"]["reply"].startswith("Hi!")
+    # The small model read the reply knowing the run was already going.
+    assert "Aviation weather" in str(judge.seen[0][-1].content)
+
+
+class _Remembers(_StartsDeepResearch):
+    """Starts a deep run, and keeps the last thing it was shown."""
+
+    last: str = ""
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        self.last = str(messages[-1].content)
+        return super()._generate(messages, stop, run_manager, **kwargs)
+
+
+async def test_only_one_deep_run_works_at_a_time_in_a_conversation(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    """Held in code, not asked of the model: a supervisor that calls the tool
+    anyway is told nothing started and which run is still going."""
+    public_id, _, run_id = await _running_deep_run(client, auth_headers)
+    model = _Remembers()
+    _use(lambda: model, monkeypatch=monkeypatch)
+
+    await client.post(
+        f"/conversations/{public_id}/messages",
+        headers=auth_headers,
+        json={"content": "now go deep on Y", "mode": "deep"},
+    )
+    await drain()
+
+    artifacts = (await client.get("/research/artifacts", headers=auth_headers)).json()
+    assert [a["id"] for a in artifacts] == [run_id]
+    assert "Nothing was started" in model.last
+
+
+async def test_a_document_already_being_checked_is_not_checked_again(
+    client: AsyncClient, auth_headers: dict[str, str], document, monkeypatch
+) -> None:
+    """The bug: a check of a CV was working, the user asked for jokes while
+    they waited, and the supervisor started a second check of the same CV."""
+    import uuid
+
+    from sqlalchemy import select
+
+    from app.db import session as db_session
+    from app.models.conversation import Conversation
+    from app.models.query import QueryKind, QueryStatus
+    from app.research import repository as research_repository
+
+    async with db_session.SessionLocal() as db:
+        conversation = (
+            await db.execute(
+                select(Conversation).where(
+                    Conversation.public_id == uuid.UUID(document["conversation_id"])
+                )
+            )
+        ).scalar_one()
+        first = await research_repository.create_pending_query(
+            db,
+            conversation.user_id,
+            "claims.pdf",
+            "The first check",
+            kind=QueryKind.fact_check,
+            conversation_id=conversation.id,
+            document_id=document["id"],
+        )
+        await research_repository.set_status(db, first.id, QueryStatus.running)
+    model = _ChecksInThread()
+    _use(lambda: model, _SourceBackend, monkeypatch=monkeypatch)
+
+    await client.post(
+        f"/conversations/{document['conversation_id']}/messages",
+        headers=auth_headers,
+        json={"content": "tell me jokes while I wait"},
+    )
+    await drain()
+
+    artifacts = (await client.get("/research/artifacts", headers=auth_headers)).json()
+    assert [a["id"] for a in artifacts] == [first.id]

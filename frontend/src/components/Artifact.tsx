@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
@@ -112,6 +112,41 @@ type ArtifactProps = {
 // The reader: one report and its sources, presented as a single coherent
 // document. Its own chrome, because a report outlives the turn that asked for
 // it and is read on its own.
+// Copying leaves nothing on screen to show it worked, so the button says so
+// itself for a moment: the icon turns into a check and a small "Copied" shows.
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+  const timer = useRef<number>(undefined);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  const copy = () => {
+    navigator.clipboard
+      ?.writeText(text)
+      .then(() => {
+        setCopied(true);
+        window.clearTimeout(timer.current);
+        timer.current = window.setTimeout(() => setCopied(false), 1600);
+      })
+      .catch(() => {});
+  };
+
+  return (
+    <button
+      className={"icon-btn copy-btn" + (copied ? " done" : "")}
+      title={t.artifact.copy}
+      aria-label={t.artifact.copy}
+      onClick={copy}
+    >
+      {copied ? I.check : I.copy}
+      {copied && (
+        <span className="copied" role="status">
+          {t.artifact.copied}
+        </span>
+      )}
+    </button>
+  );
+}
+
 export function Artifact({
   title,
   status,
@@ -175,9 +210,7 @@ export function Artifact({
           {I.doc}<span>{title}</span>
         </div>
         <div className="art-head-actions">
-          <button className="icon-btn" title={t.artifact.copy} onClick={() => navigator.clipboard?.writeText(result.report)}>
-            {I.copy}
-          </button>
+          <CopyButton text={result.report} />
           <button className="icon-btn" title={t.artifact.refresh} onClick={onRefresh}>
             {I.refresh}
           </button>

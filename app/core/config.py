@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # Scanned pages are read by OCR at roughly three seconds a page, in the
     # request that uploaded them, so a long scan is refused rather than waited on.
     max_ocr_pages: int = 10
+    # Long PDFs are refused outright: an 80-page one took five minutes to read
+    # and then failed. Counted before a page is read, so the refusal is instant.
+    max_pdf_pages: int = 12
 
     # agent / provider settings
     gemini_api_key: str | None = None
@@ -63,6 +66,10 @@ class Settings(BaseSettings):
     # as the cheapest fast model on OpenRouter that writes a clean title in both
     # English and French (~1 s, a hundredth of a cent). Empty turns titles off.
     step_title_model: str | None = "mistralai/mistral-nemo"
+    # Reads a reply in deep or fact check mode that started no run, and says
+    # whether it claims one did: a one-word verdict, so the same cheap model.
+    # Empty turns the check off.
+    claim_check_model: str | None = "mistralai/mistral-nemo"
     openrouter_api_key: str | None = None
     groq_api_key: str | None = None
     cerebras_api_key: str | None = None
@@ -128,13 +135,6 @@ class Settings(BaseSettings):
     # read, and on a reasoning model that call alone can take two minutes. Cut
     # off inside it, every page the researcher read is lost.
     deep_researcher_timeout: float = 330.0  # hard stop for one researcher
-    # The writer's limit on a deep run. Its own setting because a deep run hands
-    # the writer several times the material a normal one does: twelve
-    # sub-questions of findings instead of six, each researched six rounds deep.
-    # At the normal 150 s it timed out every time, and a timed-out writer does
-    # not produce a shorter report, it produces no report at all: the findings
-    # are dumped raw, uncurated, citing every source anyone touched.
-    deep_writer_timeout: float = 480.0  # seconds
     # How many findings a deep report is built from. Researchers work in
     # parallel and never see each other's claims, so what comes back overlaps
     # and every claim drags its sources into the citation list: one run came
@@ -151,11 +151,12 @@ class Settings(BaseSettings):
     # report is built from an even share of every sub-question's claims rather
     # than losing the writer's budget to the step before it.
     deep_curate_timeout: float = 150.0  # seconds
-    # Whole-run backstop, above what the stages can spend between them: the
-    # research window (720 s, plus the last round's hard stop of 330 s), then
-    # the curator (150 s), then the writer (480 s). At 1500 s a one-round run
-    # that used all three was killed just before it wrote anything.
-    deep_timeout: float = 2_100.0  # whole-run backstop
+    # Whole-run backstop for a run that hangs, not a budget: the research
+    # window (720 s, plus the last round's hard stop of 330 s) and the curator
+    # (150 s) leave the writer, which has no limit of its own, over forty
+    # minutes. At 1500 s a one-round run was killed just before it wrote
+    # anything, and a run killed here loses everything it found.
+    deep_timeout: float = 3_600.0  # whole-run backstop
     # The fact checker's own loop: read, search, read, write. Wider than a
     # researcher's because it checks several claims inside one loop.
     # Every web search this process sends, whichever agent sends it, paced so
