@@ -55,6 +55,7 @@ async def research_one(
     middleware: list[AgentMiddleware] | None = None,
     emit: Emit = _noop,
     max_iters: int = 3,
+    searches: int = 3,
     deadline: float | None = None,
 ) -> Finding:
     """Answer one sub-question and return what was found, with its sources.
@@ -66,8 +67,10 @@ async def research_one(
     sources = Sources()
     agent = create_agent(
         model=model,
-        tools=retrieval_tools(backend, sources, emit=emit, agent="researcher"),
-        system_prompt=_system_prompt(sub_question),
+        tools=retrieval_tools(
+            backend, sources, emit=emit, agent="researcher", searches=searches
+        ),
+        system_prompt=_system_prompt(sub_question, searches),
         response_format=ToolStrategy(
             SubmitFindingArgs,
             # A malformed submission is fed back rather than lost: the researcher
@@ -102,10 +105,11 @@ LAST_STEP = (
 )
 
 
-def _system_prompt(sub_question: str) -> str:
+def _system_prompt(sub_question: str, searches: int) -> str:
     messages = render(
         PROMPT,
         sub_question=sub_question,
+        searches=str(searches),
         today=today(),
         language=detect_language(sub_question) or "",
     )
