@@ -31,24 +31,33 @@ export type Result = {
 // One agent event, as the progress bar reads it. `index` is the researcher an
 // event came from, when it came from one.
 export type AgentEvent =
-  | { kind: "planner"; state: "start" }
-  | { kind: "plan"; items: string[] }
+  | { kind: "planner"; state: "start"; team?: string }
+  | { kind: "plan"; items: string[]; team?: string }
   // An agent is waiting on the model (a reasoning model may think for a minute).
   | {
       kind: "thinking";
       agent: "supervisor" | "planner" | "researcher" | "writer" | "fact_checker";
       index?: number;
+      team?: string;
     }
-  | { kind: "researcher"; state: "start"; index: number; total: number; question: string }
+  | { kind: "researcher"; state: "start"; index: number; total: number; question: string; team?: string }
   | {
       kind: "researcher";
       state: "done";
       index: number;
       question: string;
       outcome: "found" | "empty" | "failed";
+      team?: string;
     }
-  | { kind: "tool"; action: "search"; text: string; index?: number }
-  | { kind: "tool"; action: "read"; domain: string; index?: number }
+  // A stretch of the supervisor's thinking, and the few words a small model
+  // later named it with. The thinking itself never reaches the browser.
+  | { kind: "step"; step: number }
+  | { kind: "step_title"; step: number; title: string }
+  // The supervisor sent a research team after this question. ``team`` ties
+  // the team's own events (its plan, its researchers) back to this step.
+  | { kind: "tool"; action: "research"; text: string; team?: string; index?: undefined }
+  | { kind: "tool"; action: "search"; text: string; index?: number; team?: string }
+  | { kind: "tool"; action: "read"; domain: string; index?: number; team?: string }
   | { kind: "tool"; action: "error"; text: string; index?: number }
   // The supervisor passed a change of mind to a deep run that is still working.
   | { kind: "tool"; action: "steer" }
@@ -80,9 +89,6 @@ export type Turn = {
   // The reply as it streams in, before the finished one lands. Kept apart from
   // `reply` so the answer the user keeps is always the one the server stored.
   streamed?: string;
-  // The model's thinking as it streams in: a scratchpad, shown as provisional
-  // and folded away once the answer starts.
-  thinking?: string;
   // The sources the answer cites, and nothing else: a turn produces no report.
   result: Result | null;
   outcome: Outcome;

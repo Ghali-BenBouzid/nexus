@@ -30,9 +30,6 @@ export type ResearchCallbacks = {
   onHeartbeat?: (secondsSince: number | null) => void;
   // Live mode only: the reply as it is written, one chunk at a time.
   onToken?: (text: string) => void;
-  // Live mode only: the model's thinking while it works, same chunk at a time.
-  // It is a scratchpad, not an answer: show it as provisional.
-  onThought?: (text: string) => void;
 };
 
 export type ResearchOutcome = {

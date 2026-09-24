@@ -54,13 +54,15 @@ export function summarize(events: TimelineEvent[]): Progress {
   let latest: Activity | null = null;
   let lastAt: number | null = null;
   const started: StartedRun[] = [];
-  const rows = new Map<number, ResearcherRow>();
+  // Keyed by team as well as number: two research calls can run at once.
+  const rows = new Map<string, ResearcherRow>();
+  let team = "";
 
   const row = (index: number, question = ""): ResearcherRow => {
-    let r = rows.get(index);
+    let r = rows.get(`${team}:${index}`);
     if (!r) {
       r = { index, question, outcome: "running", activity: null };
-      rows.set(index, r);
+      rows.set(`${team}:${index}`, r);
     }
     if (question) r.question = question;
     return r;
@@ -74,6 +76,7 @@ export function summarize(events: TimelineEvent[]): Progress {
     const at = e.at ?? null;
     if (at != null) lastAt = at;
     thinking = false;
+    team = ("team" in e && e.team) || "";
     switch (e.kind) {
       case "planner":
         stage = "planning";
@@ -130,86 +133,181 @@ export type Ended = "stopped" | "failed" | "done" | null;
 
 export type Mark = "run" | "ok" | "warn" | "stop";
 
-// One row of the expanded list. ``cut``: the step was still going when the run
-// ended, so it never finished.
-export type Step =
-  | { kind: "understanding"; mark: Mark; cut: boolean }
-  | { kind: "plan"; mark: Mark; cut: boolean; size: number | null }
-  | { kind: "researcher"; mark: Mark; cut: boolean; row: ResearcherRow }
-  | { kind: "started"; mark: Mark; cut: boolean; run: StartedRun }
-  | { kind: "write"; mark: Mark; cut: boolean };
+type Row =
+  | { kind: "understanding" }
+  | { kind: "think"; step: number; title: string | null }
+  | { kind: "search"; text: string }
+  | { kind: "read"; domain: string }
+  | { kind: "document"; text: string }
+  | { kind: "steer" }
+  | { kind: "research"; team: string; question: string }
+  | { kind: "plan"; team: string; size: number | null; sub: boolean }
+  | { kind: "researcher"; team: string; row: ResearcherRow; sub: boolean }
+  | { kind: "started"; run: StartedRun }
+  | { kind: "write"; done: boolean };
 
-// The main steps of a run, for the expanded bar. Only a live run has a running
-// step: once it ends, whatever was still going shows how it ended instead of a
-// spinner and a timer that would keep counting.
-export function steps(p: Progress, ended: Ended): Step[] {
-  const settle = (mark: Mark) => {
-    if (mark !== "run" || ended === null) return { mark, cut: false } as const;
+// One row of the expanded feed. ``cut``: the step was still going when the run
+// ended, so it never finished. ``sub``: it belongs to the research team above it.
+export type Step = { mark: Mark; cut: boolean } & Row;
+
+const isSub = (r: Row) => "sub" in r && r.sub;
+
+// Everything the run did, in the order it did it: each stretch of thinking
+// under the title a small model gave it, each search, page and file it read,
+// and each research team with its plan and researchers right under it. Only a
+// live run has a running step; once it ends, whatever was still going shows
+// how it ended instead.
+export function timeline(events: TimelineEvent[], ended: Ended): Step[] {
+  const rows: Row[] = [];
+  // Two research calls can run at once, each numbering its researchers from 1,
+  // so a team's rows are found by its id: the id of the call that sent it.
+  // Events stored before teams had ids fall back to the latest team.
+  let teams = 0;
+  let current = "";
+  const teamOf = (e: object) => ("team" in e && typeof e.team === "string" ? e.team : current);
+
+  // Where a team's next row goes: under its own step, after what is already
+  // there. A row with no team step above it (older runs) goes at the end.
+  const slot = (team: string): { at: number; sub: boolean } => {
+    const head = rows.findIndex((r) => r.kind === "research" && r.team === team);
+    if (head < 0) return { at: rows.length, sub: false };
+    let at = head + 1;
+    while (at < rows.length && isSub(rows[at])) at++;
+    return { at, sub: true };
+  };
+  const plan = (team: string) => {
+    const found = rows.find((r) => r.kind === "plan" && r.team === team);
+    if (found?.kind === "plan") return found;
+    const { at, sub } = slot(team);
+    const made: Row & { kind: "plan" } = { kind: "plan", team, size: null, sub };
+    rows.splice(at, 0, made);
+    return made;
+  };
+  const researcher = (team: string, index: number, question = ""): ResearcherRow => {
+    const found = rows.find((r) => r.kind === "researcher" && r.team === team && r.row.index === index);
+    if (found?.kind === "researcher") {
+      if (question) found.row.question = question;
+      return found.row;
+    }
+    const row: ResearcherRow = { index, question, outcome: "running", activity: null };
+    const { sub, at: end } = slot(team);
+    let at = end;
+    // Researchers start in parallel and in any order; they are listed by number.
+    while (at > 0) {
+      const prev = rows[at - 1];
+      if (prev.kind !== "researcher" || prev.team !== team || prev.row.index < index) break;
+      at--;
+    }
+    rows.splice(at, 0, { kind: "researcher", team, row, sub });
+    return row;
+  };
+
+  for (const e of events) {
+    const at = e.at ?? null;
+    switch (e.kind) {
+      case "step":
+        rows.push({ kind: "think", step: e.step, title: null });
+        break;
+      case "step_title":
+        for (const r of rows) if (r.kind === "think" && r.step === e.step) r.title = e.title;
+        break;
+      case "thinking":
+        if (e.agent === "researcher" && e.index != null) {
+          researcher(teamOf(e), e.index).activity = { kind: "thinking", at };
+        }
+        break;
+      case "tool":
+        if (e.action === "research") {
+          current = e.team ?? `team-${++teams}`;
+          rows.push({ kind: "research", team: current, question: e.text });
+        } else if ("index" in e && e.index != null) {
+          // A researcher's own search or read is that row's state, not a step.
+          const r = researcher(teamOf(e), e.index);
+          if (e.action === "search") r.activity = { kind: "search", text: e.text, at };
+          if (e.action === "read") r.activity = { kind: "read", domain: e.domain, at };
+        } else if (e.action === "search") rows.push({ kind: "search", text: e.text });
+        else if (e.action === "read") rows.push({ kind: "read", domain: e.domain });
+        else if (e.action === "document") rows.push({ kind: "document", text: e.text });
+        else if (e.action === "steer") rows.push({ kind: "steer" });
+        break;
+      case "planner":
+        plan(teamOf(e));
+        break;
+      case "plan":
+        plan(teamOf(e)).size = e.items.length;
+        break;
+      case "researcher": {
+        const r = researcher(teamOf(e), e.index, e.question);
+        if (e.state === "done") {
+          r.outcome = e.outcome;
+          r.activity = null;
+        }
+        break;
+      }
+      case "started":
+        rows.push({ kind: "started", run: { run: e.run, text: e.text } });
+        break;
+      case "writer": {
+        const write = rows.find((r) => r.kind === "write");
+        if (write?.kind === "write") write.done ||= e.state === "done";
+        else rows.push({ kind: "write", done: e.state === "done" });
+        break;
+      }
+    }
+  }
+
+  const settle = (mark: Mark): { mark: Mark; cut: boolean } => {
+    if (mark !== "run" || ended === null) return { mark, cut: false };
     // The run answered, so whatever was still marked running did finish; only a
     // run that was cut short leaves a step unfinished.
-    if (ended === "done") return { mark: "ok", cut: false } as const;
-    return { mark: ended === "stopped" ? "stop" : "warn", cut: true } as const;
+    if (ended === "done") return { mark: "ok", cut: false };
+    return { mark: ended === "stopped" ? "stop" : "warn", cut: true };
   };
-  const list: Step[] = [];
-  // Shown on a finished run too, where settle() marks it done: leaving it out
-  // was what made a short answer's step list start at "Planned 0 questions".
-  if (p.stage === "starting") list.push({ kind: "understanding", ...settle("run") });
-  if (p.stage !== "starting" || p.planSize != null) {
-    const planned = p.planSize != null || p.stage !== "planning";
-    list.push({ kind: "plan", size: p.planSize, ...settle(planned ? "ok" : "run") });
-  }
-  for (const row of p.researchers) {
-    const mark = row.outcome === "running" ? "run" : row.outcome === "found" ? "ok" : "warn";
-    list.push({ kind: "researcher", row, ...settle(mark) });
-  }
-  for (const run of p.started) {
-    // It is off on its own by the time the turn ends, so it is never "running"
-    // here: the Outputs panel is where its progress lives.
-    list.push({ kind: "started", run, ...settle("ok") });
-  }
-  if (p.stage === "writing" || p.stage === "done") {
-    list.push({ kind: "write", ...settle(p.stage === "done" ? "ok" : "run") });
-  }
-  return list;
+
+  // Before the model has said anything, the one thing happening is reading the
+  // request. Shown on a finished run too, where it settles as done.
+  if (rows.length === 0) return [{ kind: "understanding", ...settle("run") }];
+
+  let lastTop = rows.length - 1;
+  while (lastTop > 0 && isSub(rows[lastTop])) lastTop--;
+  return rows.map((r, i): Step => {
+    if (r.kind === "researcher") {
+      const failed = r.row.outcome === "empty" || r.row.outcome === "failed";
+      return { ...r, ...settle(r.row.outcome === "running" ? "run" : failed ? "warn" : "ok") };
+    }
+    // A step is running while nothing has come after it; a team while any of
+    // its researchers still is; a plan until it has its size; the writer until
+    // it says it is done.
+    let live = i === lastTop;
+    if (r.kind === "research") {
+      live ||= rows.some((o) => o.kind === "researcher" && o.team === r.team && o.row.outcome === "running");
+    }
+    if (r.kind === "plan") live = r.size == null;
+    if (r.kind === "write") live = !r.done;
+    if (r.kind === "started") live = false;
+    return { ...r, ...settle(live ? "run" : "ok") };
+  });
 }
 
-// The one sentence the collapsed activity row shows while a run works. Events
-// give short, already-finished strings, so they win. The model's thinking is a
-// scratchpad streaming in a token at a time, so its tail is usually half a
-// sentence: only a finished one is worth putting on a line that a reader scans.
+// The one sentence the collapsed activity row shows while a run works: what the
+// latest step is doing, in the most specific words available. With several
+// researchers at once, no single question speaks for the run, and the stage
+// line ("3 of 5 researchers") does.
 export type Headline =
   | { kind: "activity"; activity: Activity }
   | { kind: "researcher"; question: string }
-  | { kind: "thought"; text: string }
+  | { kind: "step"; step: Step }
   | { kind: "stage" };
 
-export function headline(p: Progress, thinking: string): Headline {
-  // A finished read or search only describes the run while research is live;
-  // afterwards the latest activity is stale and the stage is the truth.
+export function headline(p: Progress, items: Step[]): Headline {
   if (p.stage === "researching" && p.active > 0) {
     if (p.latest && p.latest.kind !== "thinking") return { kind: "activity", activity: p.latest };
     const live = p.researchers.filter((r) => r.outcome === "running");
-    // With several at once, no single question speaks for the run: the stage
-    // line ("3 of 5 researchers") does.
     if (live.length === 1) return { kind: "researcher", question: live[0].question };
+    return { kind: "stage" };
   }
-  const thought = lastSentence(thinking);
-  if (thought) return { kind: "thought", text: thought };
+  const tops = items.filter((s) => !isSub(s));
+  const step = tops[tops.length - 1];
+  if (step && step.kind !== "understanding") return { kind: "step", step };
   return { kind: "stage" };
-}
-
-const TERMINATOR = /[.!?…]$/;
-
-// The last finished sentence of a streaming scratchpad, or null while the first
-// one is still being written. Long sentences are cut to one line's worth.
-export function lastSentence(text: string, max = 90): string | null {
-  const parts = text
-    .split(/(?<=[.!?…])\s+|\n+/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-  if (parts.length === 0) return null;
-  const last = parts[parts.length - 1];
-  const done = TERMINATOR.test(last) ? last : parts.length > 1 ? parts[parts.length - 2] : null;
-  if (!done) return null;
-  return done.length > max ? done.slice(0, max - 1).trimEnd() + "…" : done;
 }

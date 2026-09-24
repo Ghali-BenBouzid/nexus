@@ -745,18 +745,18 @@ html[data-theme="light"] .tour-hole {
 }
 .act.open .act-chevron { transform: none; }
 
-/* One rule down the left edge holds the thinking and the steps together as the
-   inside of the row above, rather than as two more blocks in the thread. */
+/* One rule down the left edge holds the steps together as the inside of the
+   row above, rather than as more blocks in the thread. */
 .act-body { width: 100%; margin: 7px 0 2px; padding-left: 13px; border-left: 1px solid var(--line);
   display: flex; flex-direction: column; gap: 10px; animation: actIn 0.2s var(--ease); }
-/* Thinking is working-out, not prose: quieter than the answer, and never styled. */
-.act-think { font-size: 13.5px; line-height: 1.6; color: var(--faint); white-space: pre-wrap; }
 .act-steps { list-style: none; margin: 0; padding: 0; display: grid; }
 .act-step {
   display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 10px;
   padding: 5px 0; font-size: 13px; color: var(--muted);
 }
 .act-mark { display: inline-flex; width: 14px; height: 14px; color: var(--ok); }
+/* A research team's plan and researchers sit under the step that sent them. */
+.act-step-sub { padding-left: 24px; }
 .act-step-warn .act-mark { color: var(--warn); }
 .act-step-stop .act-mark { color: var(--faint); }
 .act-step-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

@@ -197,13 +197,15 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
   const d = e.data ?? {};
   // Events from inside a researcher carry its number (the orchestrator tags them).
   const index = typeof d.index === "number" ? d.index : undefined;
+  // The research team an event belongs to: two can run at once in one turn.
+  const team = typeof d.team === "string" ? d.team : undefined;
   switch (e.type) {
     case "planner_start":
-      return { kind: "planner", state: "start" };
+      return { kind: "planner", state: "start", team };
     case "planner_done":
-      return { kind: "plan", items: (d.sub_questions as string[]) ?? [] };
+      return { kind: "plan", items: (d.sub_questions as string[]) ?? [], team };
     case "thinking":
-      return isAgent(d.agent) ? { kind: "thinking", agent: d.agent, index } : null;
+      return isAgent(d.agent) ? { kind: "thinking", agent: d.agent, index, team } : null;
     case "researcher_start":
       return {
         kind: "researcher",
@@ -211,7 +213,12 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
         index: index ?? 1,
         total: (d.total as number) ?? 1,
         question: (d.sub_question as string) ?? e.message,
+        team,
       };
+    case "step":
+      return typeof d.step === "number" ? { kind: "step", step: d.step } : null;
+    case "step_title":
+      return typeof d.step === "number" ? { kind: "step_title", step: d.step, title: e.message } : null;
     case "document_read":
       return { kind: "tool", action: "document", text: String(d.document ?? e.message) };
     case "factcheck_start":
@@ -219,21 +226,23 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
     case "tool_call": {
       const args = (d.args as Record<string, unknown> | undefined) ?? {};
       if (d.tool === "fetch_page") {
-        return { kind: "tool", action: "read", domain: hostname(args.url), index };
+        return { kind: "tool", action: "read", domain: hostname(args.url), index, team };
       }
-      if (d.tool === "read_document" || d.tool === "read_report") {
-        return { kind: "tool", action: "document", text: e.message };
+      // Their document_read event names the file; the call only has its id.
+      if (d.tool === "read_document" || d.tool === "read_report") return null;
+      if (d.tool === "research") {
+        const call = typeof d.call === "string" ? d.call : undefined;
+        return { kind: "tool", action: "research", text: String(args.question ?? ""), team: call };
       }
       if (d.tool === "steer_deep_research") return { kind: "tool", action: "steer" };
       if (d.tool === "deep_research" || d.tool === "fact_check") {
         return { kind: "started", run: d.tool, text: String(args.title ?? "") };
       }
-      return {
-        kind: "tool",
-        action: "search",
-        text: String(args.query ?? args.question ?? e.message),
-        index,
-      };
+      if (d.tool === "web_search") {
+        return { kind: "tool", action: "search", text: String(args.query ?? ""), index, team };
+      }
+      // Anything else (a researcher handing in its findings) is not a step.
+      return null;
     }
     case "tool_error":
       return { kind: "tool", action: "error", text: e.message, index };
@@ -244,6 +253,7 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
         index: index ?? 1,
         question: (d.sub_question as string) ?? "",
         outcome: d.found_info === false ? "empty" : "found",
+        team,
       };
     case "researcher_failed":
       return {
@@ -252,6 +262,7 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
         index: index ?? 1,
         question: (d.sub_question as string) ?? "",
         outcome: "failed",
+        team,
       };
     case "writer_start":
       return { kind: "writer", state: "start" };
@@ -475,10 +486,6 @@ async function followQuery(
       if (frame.type === "done") break;
       if (frame.type === "token") {
         cb.onToken?.(frame.message);
-        continue;
-      }
-      if (frame.type === "thought") {
-        cb.onThought?.(frame.message);
         continue;
       }
       if (frame.type === "heartbeat") {
