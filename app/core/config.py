@@ -40,6 +40,9 @@ class Settings(BaseSettings):
     # Scanned pages are read by OCR at roughly three seconds a page, in the
     # request that uploaded them, so a long scan is refused rather than waited on.
     max_ocr_pages: int = 10
+    # Long PDFs are refused outright: an 80-page one took five minutes to read
+    # and then failed. Counted before a page is read, so the refusal is instant.
+    max_pdf_pages: int = 12
 
     # agent / provider settings
     gemini_api_key: str | None = None

@@ -109,6 +109,14 @@ def test_a_long_scan_is_refused_rather_than_waited_on(monkeypatch) -> None:
         parse("long-scan.pdf", _scanned_pdf(pages=3))
 
 
+def test_a_long_pdf_is_refused_before_a_page_is_read(monkeypatch) -> None:
+    monkeypatch.setattr(settings, "max_pdf_pages", 2)
+
+    assert parse("short.pdf", _pdf(pages=2)).pages == 2
+    with pytest.raises(ParseError, match="has 3 pages"):
+        parse("long.pdf", _pdf(pages=3))
+
+
 def test_pages_with_nothing_to_read_are_refused() -> None:
     with pytest.raises(ParseError, match="No text"):
         parse("blank.pdf", _blank_pdf())

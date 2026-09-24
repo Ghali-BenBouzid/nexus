@@ -336,3 +336,32 @@ async def test_a_file_that_is_not_yours_is_not_attached_to_your_message(
     assert sent.json()["messages"][0]["documents"] == []
     still_theirs = await client.get(f"/conversations/{theirs}/documents", headers=owner)
     assert [d["message_id"] for d in still_theirs.json()] == [None]
+
+
+async def test_a_file_the_browser_gave_up_on_is_not_kept(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    bucket: dict[str, bytes],
+    monkeypatch,
+) -> None:
+    """Stop pressed while a file is being read: the browser drops the request,
+    and the file must not end up attached to the conversation anyway."""
+    from starlette.requests import Request
+
+    async def gone(self) -> bool:
+        return True
+
+    monkeypatch.setattr(Request, "is_disconnected", gone)
+    conversation_id = await _conversation(client, auth_headers)
+
+    await client.post(
+        f"/conversations/{conversation_id}/documents",
+        files=_upload("stopped.pdf", _pdf(pages=1), "application/pdf"),
+        headers=auth_headers,
+    )
+
+    listed = await client.get(
+        f"/conversations/{conversation_id}/documents", headers=auth_headers
+    )
+    assert listed.json() == []
+    assert bucket == {}

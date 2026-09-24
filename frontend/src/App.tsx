@@ -190,6 +190,10 @@ export default function App() {
 
   const turnSeq = useRef(0);
   const cancelled = useRef<Set<number>>(new Set());
+  // The uploads a turn is still sending, so Stop reaches them too: a long PDF
+  // is read before the message is even sent, and stopping only the turn left it
+  // reading on and attached anyway.
+  const uploads = useRef<Map<number, AbortController>>(new Map());
   const fluidRef = useRef<FluidHandle | null>(null);
 
   // Map a rehydrated backend turn into the conversation's Turn shape. A turn that
@@ -625,7 +629,22 @@ export default function App() {
           setActiveConversation(conversationId);
           navigate(`/chat/${conversationId}`, { replace: true });
         }
-        attached = await uploadStaged(conversationId, files, holding, id);
+        const upload = new AbortController();
+        uploads.current.set(id, upload);
+        try {
+          attached = await uploadStaged(conversationId, files, holding, id, upload.signal);
+        } finally {
+          uploads.current.delete(id);
+        }
+        // Stopped while the files went up: the stop covers everything this
+        // message submitted, so nothing is sent and no file stays behind.
+        if (cancelled.current.has(id)) {
+          const dropped = new Set([...holding, ...attached].map((doc) => doc.id));
+          setDocuments((docs) => docs.filter((doc) => !dropped.has(doc.id)));
+          patchTurn(id, (t) => ({ ...t, attachments: [] }));
+          attached.forEach((doc) => deleteDocument(doc.id).catch(() => {}));
+          return;
+        }
       }
       // A fact check is one document's; the next message is back to normal.
       if (runMode === "factcheck") setMode("answer");
@@ -651,13 +670,15 @@ export default function App() {
     files: File[],
     holding: Doc[],
     turnId: number,
+    signal: AbortSignal,
   ): Promise<Doc[]> {
     const uploaded: Doc[] = [];
     for (let i = 0; i < files.length; i++) {
+      if (signal.aborted) break;
       const held = holding[i];
       let landed: Doc;
       try {
-        landed = await uploadDocument(conversationId, files[i]);
+        landed = await uploadDocument(conversationId, files[i], signal);
         uploaded.push(landed);
       } catch (err) {
         landed = {
@@ -685,6 +706,7 @@ export default function App() {
       prev.map((t) => {
         if (t.status === "running" || t.status === "pending") {
           cancelled.current.add(t.id); // the run loop bails at its next checkpoint
+          uploads.current.get(t.id)?.abort(); // and a file still going up stops too
           // Tell the backend to actually stop the job, so it stops spending quota
           // instead of running on in the background after the user stops it.
           if (t.queryId != null) cancelQuery(t.queryId);

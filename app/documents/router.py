@@ -1,7 +1,7 @@
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -46,6 +46,7 @@ async def _own_document(document_id: int, db: AsyncSession, user: User) -> Docum
 async def upload(
     conversation_id: UUID,
     file: UploadFile,
+    request: Request,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DocumentSummary:
@@ -58,6 +59,10 @@ async def upload(
         )
     except service.UploadError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # The user pressed Stop while it was being read: the browser gave up on it,
+    # so it must not turn up attached to the conversation anyway.
+    if await request.is_disconnected():
+        await service.delete(db, document)
     return summary(document)
 
 

@@ -81,6 +81,11 @@ def _pdf(data: bytes) -> Parsed:
             if not document.authenticate(""):
                 raise ParseError("This PDF is password protected.")
         pages = document.page_count
+        if pages > settings.max_pdf_pages:
+            raise ParseError(
+                f"This PDF has {pages} pages. PDFs longer than "
+                f"{settings.max_pdf_pages} pages are not supported yet."
+            )
         scanned = _pages_without_text(document)
         if len(scanned) > settings.max_ocr_pages:
             raise ParseError(

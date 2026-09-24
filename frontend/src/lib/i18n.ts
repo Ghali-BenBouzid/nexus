@@ -247,6 +247,7 @@ const en = {
     report: "Report",
     closePanel: "Close panel",
     copy: "Copy report",
+    copied: "Copied",
     rerun: "Re-run",
     refresh: "Refresh report",
     sourcesHead: "Sources",
@@ -281,7 +282,7 @@ const en = {
     // A file is read on the way in, and a long PDF takes a while. The tile says
     // so from the first frame rather than sitting there looking finished.
     reading: "Reading",
-    failedFile: "Could not be read",
+    failedFile: "Not added",
     retry: "Try again",
     drop: "Drop to attach",
     dropHint: "PDF, Word or text",
@@ -634,6 +635,7 @@ const fr: Dict = {
     report: "Rapport",
     closePanel: "Fermer le panneau",
     copy: "Copier le rapport",
+    copied: "Copié",
     rerun: "Relancer",
     refresh: "Actualiser le rapport",
     sourcesHead: "Sources",
@@ -664,7 +666,7 @@ const fr: Dict = {
     ready: (name: string) =>
       `${name} est joint. Posez une question dessus, ou faites-le vérifier.`,
     reading: "Lecture",
-    failedFile: "Lecture impossible",
+    failedFile: "Non ajouté",
     retry: "Réessayer",
     drop: "Déposez pour joindre",
     dropHint: "PDF, Word ou texte",

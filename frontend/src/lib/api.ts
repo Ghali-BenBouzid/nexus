@@ -737,7 +737,11 @@ export async function listDocuments(conversationId: ConversationId): Promise<Doc
 
 // Upload one file into a conversation. Throws with the server's own reason (too
 // large, unreadable, too many), which is written to be shown as it is.
-export async function uploadDocument(conversationId: ConversationId, file: File): Promise<Doc> {
+export async function uploadDocument(
+  conversationId: ConversationId,
+  file: File,
+  signal?: AbortSignal,
+): Promise<Doc> {
   const token = await ensureToken();
   const body = new FormData();
   body.append("file", file);
@@ -745,6 +749,7 @@ export async function uploadDocument(conversationId: ConversationId, file: File)
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },
     body,
+    signal,
   });
   if (!res.ok) throw new Error(await errorMessage(res, t.uploads.failed));
   return toDoc((await res.json()) as BackendDoc);
