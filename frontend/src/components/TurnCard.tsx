@@ -41,7 +41,6 @@ export function TurnCard({
   // the model never actually sent.
   const answer = turn.reply ?? turn.streamed ?? "";
   const streaming = running && !turn.reply && !!turn.streamed;
-  const thinking = (turn.thinking ?? "").trim();
   const sources = turn.result?.sources ?? [];
   const isEmpty = turn.status === "complete" && !answer.trim() && sources.length === 0;
   const isFailed = !turn.stopped && (turn.status === "failed" || turn.outcome === "failed");
@@ -92,7 +91,7 @@ export function TurnCard({
         <div className="assistant-reply">
           {/* The live feed stays above the answer once it lands, so the work is
               still inspectable after the fact. */}
-          {(running || hasActivity || thinking) && <Activity turn={turn} now={now} />}
+          {(running || hasActivity) && <Activity turn={turn} now={now} />}
 
           {answer.trim() && (
             <div className={"reply-text" + (streaming ? " streaming" : "")}>

@@ -493,14 +493,6 @@ export default function App() {
           streamed: (t.streamed ?? "") + text,
         }));
     },
-    onThought: (text) => {
-      if (!cancelled.current.has(id))
-        patchTurn(id, (t) => ({
-          ...t,
-          ...alive(),
-          thinking: (t.thinking ?? "") + text,
-        }));
-    },
     isCancelled: () => cancelled.current.has(id),
     onQueryId: (qid) => patchTurn(id, (t) => ({ ...t, queryId: qid })),
     onConversation: (cid) => {

@@ -248,7 +248,12 @@ class _ChecksInThread(_FactChecker):
             document_id = int(
                 re.search(r"id (\d+)", str(messages[0].content)).group(1)  # type: ignore[union-attr]
             )
-            reply = call("fact_check", document_id=document_id, focus="the numbers")
+            reply = call(
+                "fact_check",
+                document_id=document_id,
+                title="Vérification : le rapport",
+                focus="the numbers",
+            )
         else:
             reply = says("I have started a fact check; it will appear in Outputs.")
         return ChatResult(generations=[ChatGeneration(message=reply)])
@@ -278,6 +283,7 @@ async def test_fact_check_mode_is_the_supervisors_to_answer(
     assert reply.startswith("I have started a fact check")
     [artifact] = (await client.get("/research/artifacts", headers=auth_headers)).json()
     assert artifact["kind"] == "fact_check"
+    assert artifact["title"] == "Vérification : le rapport"  # the supervisor's words
     body = (
         await client.get(f"/research/query/{artifact['id']}", headers=auth_headers)
     ).json()

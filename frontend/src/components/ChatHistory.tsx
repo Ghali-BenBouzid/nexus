@@ -21,8 +21,8 @@ type ChatHistoryProps = {
   onOpen?: (id: ConversationId) => void;
   onNewChat: () => void;
   onHome: () => void;
-  // Bumped by the caller (e.g. turn count) to re-pull the list as queries run.
-  refreshKey: number;
+  // Changed by the caller to re-pull the list as queries run.
+  refreshKey: string;
   // Mobile: the column is a slide-in drawer with a tap-to-close scrim, and it
   // always renders the full list (never the desktop slim rail) so it slides out
   // with its content intact rather than swapping to the rail mid-animation.

@@ -7,9 +7,13 @@ user, the sources it kept are the ones it cited, its reply is streamed as it is
 written, and a tool it has no business having is not offered.
 """
 
+import pytest
+
+from app.agents import supervisor
 from app.agents.schemas import AgentEvent, Turn
 from app.agents.sources import Sources
 from app.agents.supervisor import Document, Output, respond
+from app.agents.titles import StepTitles
 from app.agents.tools import SearchHit
 from tests.agents.fakes import ScriptedModel, call, says, thinks
 
@@ -183,7 +187,7 @@ async def test_an_empty_answer_is_empty_not_invented() -> None:
     assert answer.text == ""
 
 
-async def _never(document_id: int, focus: str) -> str:
+async def _never(document_id: int, title: str, focus: str) -> str:
     raise AssertionError("fact_check should not have been called")
 
 
@@ -202,7 +206,25 @@ async def test_the_answer_is_emitted_as_it_is_written() -> None:
 
     assert answer.text == "It is blue."
     assert _joined(seen, "token") == "It is blue."
-    assert _joined(seen, "thought") == "Small talk. Keep it short."
+
+
+async def test_the_thinking_is_shown_as_a_titled_step_never_as_itself(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The feed names each stretch of thinking in a few words. The scratchpad
+    itself is never sent: streamed raw, it scrolled faster than anyone reads."""
+    titler = ScriptedModel([says("Keeping it short")])
+    _titled_by(titler, monkeypatch)
+    thought = "Small talk, nothing to look up. I should keep the answer short and warm."
+    seen: list[AgentEvent] = []
+
+    await _respond(ScriptedModel([thinks(thought, "It is blue.")]), emit=_record(seen))
+
+    kinds = [e.type for e in seen if e.type in ("step", "step_title", "token")]
+    assert kinds[0] == "step" and "step_title" in kinds
+    assert [e.message for e in seen if e.type == "step_title"] == ["Keeping it short"]
+    assert all(thought not in e.message for e in seen)
+    assert thought in titler.seen[0][-1].content
 
 
 async def test_a_sub_agents_tokens_never_reach_the_reply() -> None:
@@ -231,9 +253,44 @@ async def test_a_sub_agents_tokens_never_reach_the_reply() -> None:
 
     assert answer.text == "Because of Rayleigh scattering."
     assert _joined(seen, "token") == "Because of Rayleigh scattering."
-    # Its thinking is its own too: a sub-agent's model node is called "model"
-    # just like the supervisor's, so only the stage separates them.
-    assert "researcher thinking out loud" not in _joined(seen, "thought")
+
+
+async def test_a_sub_agents_thinking_is_never_titled_as_the_supervisors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A researcher's model node is called "model" just like the supervisor's,
+    so only the stage separates their thinking. The feed's steps are the
+    supervisor's; a researcher's work shows as its own row."""
+
+    def reply(messages, tools):
+        if "SubmitPlanArgs" in tools:
+            return call("SubmitPlanArgs", sub_questions=["why is it blue?"])
+        if "SubmitFindingArgs" in tools:
+            return call(
+                "SubmitFindingArgs",
+                thought="a researcher thinking out loud " * 10,
+                claims=[{"text": "a researcher talking", "cited_source_ids": []}],
+                found_info=True,
+            )
+        if any(m.type == "tool" for m in messages):
+            return says("Because of Rayleigh scattering.")
+        return call("research", question="why is it blue?")
+
+    titler = ScriptedModel(respond=lambda messages, tools: says("Titled"))
+    _titled_by(titler, monkeypatch)
+
+    await _respond(ScriptedModel(respond=reply), emit=_record([]))
+
+    read = " ".join(str(sent[-1].content) for sent in titler.seen)
+    assert "researcher thinking out loud" not in read
+
+
+def _titled_by(titler: ScriptedModel, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        supervisor,
+        "step_titles",
+        lambda model, emit, language: StepTitles(titler, emit, language),
+    )
 
 
 def _joined(events: list[AgentEvent], type_: str) -> str:
