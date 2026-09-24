@@ -16,7 +16,7 @@ than a stitched-together pipeline.
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Annotated, Any
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
@@ -31,7 +31,7 @@ from langchain_core.messages import (
     BaseMessage,
     HumanMessage,
 )
-from langchain_core.tools import StructuredTool
+from langchain_core.tools import InjectedToolCallId, StructuredTool
 from pydantic import BaseModel, Field
 
 from app.agents.citations import finalize
@@ -39,8 +39,10 @@ from app.agents.language import detect_language
 from app.agents.model import REASONING, STAGE_KEY, LastStep
 from app.agents.report import text_of
 from app.agents.research import Limits, Middleware, render_findings, run_research
+from app.agents.research import tagged as tagged_emit
 from app.agents.schemas import AgentEvent, ResearchResult, Source, Turn
 from app.agents.sources import Sources
+from app.agents.titles import StepTitles, step_titles
 from app.agents.tools import SearchBackend, retrieval_tools, tagged
 from app.prompts import render
 from app.prompts.common import today
@@ -84,6 +86,10 @@ class ResearchArgs(BaseModel):
         description="A clear, self-contained research question, in the user's "
         "language, carrying the context researchers need"
     )
+    # Filled in by LangChain, never by the model: it is left out of the schema
+    # the model sees. It names the team in the feed, because two research calls
+    # can run at once and their researchers are both numbered from 1.
+    tool_call_id: Annotated[str, InjectedToolCallId]
 
 
 class DeepResearchArgs(BaseModel):
@@ -204,7 +210,8 @@ async def respond(
             ModelCallLimitMiddleware(run_limit=max_iters, exit_behavior="end"),
         ],
     )
-    state = await _stream(agent, _conversation(history, message), emit)
+    titles = step_titles(model, emit, detect_language(message))
+    state = await _stream(agent, _conversation(history, message), emit, titles)
     return _answer(_last_text(state.get("messages", [])), sources)
 
 
@@ -215,35 +222,54 @@ async def respond(
 _OWN_STAGE = "supervisor"
 
 
-async def _stream(agent, messages: list[BaseMessage], emit: Emit) -> dict:
-    """Run the agent, emitting its thinking and its reply as they are produced.
+async def _stream(
+    agent, messages: list[BaseMessage], emit: Emit, titles: StepTitles | None = None
+) -> dict:
+    """Run the agent, emitting its reply as it is written and naming its thinking.
 
     Two stream modes at once: ``messages`` for the chunks, ``values`` for the
     state we return, which is the same state ``ainvoke`` would have given us.
     The caller is unchanged; only the timing of what the user sees is.
+
+    The thinking itself is not sent anywhere: the feed shows a short title for
+    each stretch of it (app.agents.titles), never the scratchpad.
     """
     state: dict = {}
-    async for mode, payload in agent.astream(
-        {"messages": messages}, stream_mode=["messages", "values"]
-    ):
-        if mode == "values":
-            state = payload
-            continue
-        chunk, _ = payload
-        # Two things are not the answer being written. A tool's result, which
-        # this stream carries alongside the model's own chunks; and a sub-agent's
-        # chunks, which look identical because a sub-agent is a create_agent
-        # graph too, with a model node called "model" just the same.
-        if not isinstance(chunk, AIMessageChunk):
-            continue
-        extra = chunk.additional_kwargs or {}
-        if extra.get(STAGE_KEY, _OWN_STAGE) != _OWN_STAGE:
-            continue
-        thought = extra.get(REASONING)
-        if thought:
-            await emit(AgentEvent(type="thought", message=thought))
-        elif chunk.text:
-            await emit(AgentEvent(type="token", message=chunk.text))
+    try:
+        async for mode, payload in agent.astream(
+            {"messages": messages}, stream_mode=["messages", "values"]
+        ):
+            if mode == "values":
+                state = payload
+                continue
+            chunk, _ = payload
+            # Two things are not the answer being written. A tool's result, which
+            # this stream carries alongside the model's own chunks; and a
+            # sub-agent's chunks, which look identical because a sub-agent is a
+            # create_agent graph too, with a model node called "model" just the same.
+            if not isinstance(chunk, AIMessageChunk):
+                continue
+            extra = chunk.additional_kwargs or {}
+            if extra.get(STAGE_KEY, _OWN_STAGE) != _OWN_STAGE:
+                continue
+            thought = extra.get(REASONING)
+            if thought:
+                if titles is not None:
+                    await titles.think(chunk.id, thought)
+                continue
+            # Anything else the model sends ends its thinking: a word of the
+            # reply, or the tool call the thinking was leading up to.
+            if titles is not None:
+                await titles.end()
+            if chunk.text:
+                await emit(AgentEvent(type="token", message=chunk.text))
+    except BaseException:
+        # Stopped or failed: nobody is waiting for the titles still on their way.
+        if titles is not None:
+            titles.cancel()
+        raise
+    if titles is not None:
+        await titles.close()
     return state
 
 
@@ -502,15 +528,22 @@ def _tools(
         if output is None:
             known = ", ".join(str(i) for i in reports) or "none"
             return f"No report with id {report_id}. Reports here: {known}."
+        await emit(
+            AgentEvent(
+                type="document_read",
+                message=f"Reading {output.title}",
+                data={"agent": "supervisor", "document": output.title},
+            )
+        )
         return tagged("report", output.content, title=output.title)
 
-    async def research(question: str) -> str:
+    async def research(question: str, tool_call_id: str) -> str:
         result = await run_research(
             question,
             model=model,
             backend=backend,
             sources=sources,
-            emit=emit,
+            emit=tagged_emit(emit, team=tool_call_id),
             middleware=middleware,
             limits=Limits.normal(),
         )

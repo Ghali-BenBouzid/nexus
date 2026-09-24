@@ -9,6 +9,7 @@ inlines definitions, and this pins that it keeps doing so.
 import json
 
 import pytest
+from langchain_core.tools import InjectedToolArg
 from langchain_core.utils.function_calling import convert_to_openai_tool
 
 from app.agents.supervisor import (
@@ -72,6 +73,19 @@ def test_every_field_the_agents_depend_on_is_described() -> None:
             "properties"
         ]
         undescribed = [
-            name for name, f in properties.items() if not f.get("description")
+            name
+            for name, f in properties.items()
+            if not f.get("description") and name not in _injected(schema)
         ]
         assert not undescribed, f"{schema.__name__}: {undescribed}"
+
+
+def _injected(schema) -> set[str]:
+    """Fields LangChain fills in itself and leaves out of what the model sees."""
+    return {
+        name
+        for name, field in schema.model_fields.items()
+        for meta in field.metadata
+        if meta is InjectedToolArg
+        or (isinstance(meta, type) and issubclass(meta, InjectedToolArg))
+    }

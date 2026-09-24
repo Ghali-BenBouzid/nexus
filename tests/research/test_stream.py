@@ -22,21 +22,20 @@ from tests.accounts import login_as
 async def test_a_token_is_published_but_never_stored(
     client: AsyncClient, auth_headers: dict[str, str]
 ) -> None:
-    """Tokens and thoughts are fragments of text that is persisted whole when the
-    turn ends. Storing them would be hundreds of rows saying what one row says."""
+    """A token is a fragment of a reply that is persisted whole when the turn
+    ends. Storing each would be hundreds of rows saying what one row says."""
     query_id = await _query(client, auth_headers)
     sink = EventSink(query_id)
     seen: list[AgentEvent] = []
 
     async with bus.subscribe(query_id) as live:
-        watching = asyncio.create_task(_collect(live, seen, count=3))
+        watching = asyncio.create_task(_collect(live, seen, count=2))
         await asyncio.sleep(0)
         await sink(AgentEvent(type="thinking", message="Supervisor is thinking"))
-        await sink(AgentEvent(type="thought", message="let me see"))
         await sink(AgentEvent(type="token", message="Hello"))
         await asyncio.wait_for(watching, timeout=5)
 
-    assert [event.type for event in seen] == ["thinking", "thought", "token"]
+    assert [event.type for event in seen] == ["thinking", "token"]
     assert await _stored(query_id) == ["thinking"]
 
 

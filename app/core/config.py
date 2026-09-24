@@ -59,6 +59,10 @@ class Settings(BaseSettings):
     # LLM provider selection: openrouter | gemini | groq | cerebras | sambanova
     llm_provider: str = "openrouter"
     llm_model: str | None = None  # overrides the provider's default model
+    # Names each stretch of the supervisor's thinking for the live feed. Picked
+    # as the cheapest fast model on OpenRouter that writes a clean title in both
+    # English and French (~1 s, a hundredth of a cent). Empty turns titles off.
+    step_title_model: str | None = "mistralai/mistral-nemo"
     openrouter_api_key: str | None = None
     groq_api_key: str | None = None
     cerebras_api_key: str | None = None
