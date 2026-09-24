@@ -30,8 +30,8 @@ Each citation is a small pill that names the site it came from, and opening it s
 
 Two kinds of work produce a document rather than a reply:
 
-- **Deep research**, when you want a question properly covered. A lead agent sends researchers out in rounds, reads what comes back, and goes back for the gaps, the disagreements and the angles nobody took, until it judges the question answered for what you need it for. Then it writes its own report. When a request is too broad to tell what you are after, it asks about your goal first. It runs in the background and survives a redeploy, so you can close the chat and come back to it, and if you change your mind while it works, the supervisor passes that on and the lead adjusts its next round.
-- **A fact check** of a file you upload: it pulls out the claims the document rests on, tests each against the web, and writes a report saying which held up.
+- **Deep research**, when you want a question properly covered. A lead agent sends researchers out in rounds, reads what comes back, and goes back for the gaps, the disagreements and the angles nobody took, until it judges the question answered for what you need it for. Then it writes its own report, several paragraphs per section, and shorter when little could be found. Before it starts, the supervisor settles what the report is for: depth or breadth, and which areas. When a request is too broad to tell, it asks, with a few options and a "your call" choice. It runs in the background and survives a redeploy, so you can close the chat and come back to it, and if you change your mind while it works, the supervisor passes that on and the lead adjusts its next round.
+- **A fact check** of a file you upload: it sets down the claims the document rests on, each tied to the passage it comes from, tests each against the web, and writes a report saying which held up.
 
 Both are also modes you can switch the composer into.
 A mode tells the supervisor what you are after, and the supervisor still reads the message: "hi" in deep mode gets a reply, not a ten-minute run.
@@ -89,8 +89,8 @@ Each agent is a LangChain agent: a prompt, a set of tools and the loop that runs
 - The **supervisor** is the one you talk to. It answers, and when answering well needs work it has not done yet, it does that work first.
 - The **planner** splits a research question into self-contained sub-questions, as many as it genuinely needs: a plain fact gets one or two, a three-way comparison gets six.
 - The **lead** runs a deep research run instead of the planner. It sends a round of up to six researchers, reads what they found, and either sends another round or hands the writer an outline. It gets three rounds and fifteen researchers at most, and every agent is told when its next step is its last, so it synthesises rather than getting cut off.
-- Each **researcher** searches the web and reads pages in a loop, then submits claims with the sources behind them.
-- The **fact checker** reads a document, picks the claims it rests on, and tests them against independent sources.
+- Each **researcher** searches the web and reads pages in a loop, then submits claims with the sources behind them. It has a budget of three searches (five in a deep run) and is told to choose its queries carefully and read pages in full instead.
+- The **fact checker** reads a document and first commits to the claims it rests on, each tied to its passage, naming what it leaves out and why. Nothing is searched until that list is confirmed; then it tests each claim against independent sources.
 - Writing a report is not an agent: by then there is nothing to decide, so it is one model call in the same house style the chat answers in.
 
 ## Decisions and trade-offs
@@ -181,14 +181,20 @@ Adding the date alone helped; the extra rules I wrote around it made things wors
 Stopping during the writing step marked the run as stopped, but the writer's model call kept going, got billed, and its report was thrown away.
 The worker now cancels whatever is running, a model call included, within one heartbeat of the stop.
 
-**Deep research came back shallow, then as a course.**
+**Deep research came back shallow, then as a course, then as a summary.**
 The first deep runs planned once, sent one wave of researchers and wrote, so "educate me on meteorology" got one pass at the subject.
 Making the lead loop over rounds fixed the coverage and overshot: one test ran for 32 minutes and wrote 22,822 words.
-The lead now asks what the user is after, goes deep only where that goal needs it, and writes short unless asked for length; the same question came back in two rounds and 1,583 words.
+Telling it to go deep only where the user's goal needed it overcorrected the other way, to 800 to 1,200 words spread over six sections of one paragraph each.
+The lead now picks a few areas the brief turns on, maps them in a first round and goes back into the thin ones as the normal case, with several paragraphs per section: three rounds, 3,728 words and 69 cited sources on the run that settled it.
 
 **Deep runs came back hollow for two unrelated reasons.**
 A researcher that ran out of rounds could submit "I found something" with no claims, because claims were optional in its schema; they are now required, and an empty submission is sent back.
-And a deep run searches in bursts, which the search engines behind SearXNG answer with rate limits while SearXNG still returns an empty success; an empty search is now an error the researcher sees, and more engines are enabled to spread the load.
+And a deep round's researchers searching at once reached the engines behind SearXNG as one burst, which they blocked for minutes (a CAPTCHA from Google, access denied from DuckDuckGo, a 429 from Brave) while SearXNG still answered with an empty success.
+An empty search is now an error the researcher sees, each researcher has a small search budget, and every search the worker sends is paced at 40 a minute.
+
+**Two fact checks of the same document checked different things.**
+The checker picked its three to ten claims silently, somewhere inside its search loop, so nothing ever reviewed the choice.
+It now sets its claims down before searching, each tied to its passage, and a review checks that every passage is covered or set aside and that no two claims would be settled by the same evidence.
 
 ## Evaluation
 
@@ -251,7 +257,7 @@ Scoring the full 150-question set is still the next step.
 - Research covers the web only; searching your own documents isn't built yet.
 - A chat turn or a fact check whose worker crashes is failed, not resumed; only deep runs pick up where they stopped.
 - A deep run takes around fifteen minutes on the default model, most of it spent waiting on the slowest researchers.
-- The search engines behind SearXNG rate limit a burst of searches, so a deep run can come back thinner than it should.
+- The search engines behind SearXNG can still block a busy worker for minutes; pacing makes it rare, and a blocked run writes a shorter report that says what it could not establish.
 - A stream that drops is not resumed automatically; reopening the conversation rejoins the run.
 - Slow reasoning models don't fit the time budget and fall back to a less polished report.
 - The evaluation relies on a model as a judge, and the scored runs so far are small.
