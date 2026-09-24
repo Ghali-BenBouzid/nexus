@@ -112,6 +112,10 @@ class ReadReportArgs(BaseModel):
 
 class FactCheckArgs(BaseModel):
     document_id: int = Field(description="The id of the document to fact-check")
+    title: str = Field(
+        description="A short title in the user's language naming the report "
+        "this will produce and the document it checks"
+    )
     focus: str = Field(
         default="",
         description="Optional: which part or which kind of claim to concentrate on",
@@ -144,7 +148,7 @@ async def respond(
     documents: list[Document] | None = None,
     outputs: list[Output] | None = None,
     start_deep_research: Callable[[str, str, str], Awaitable[str]] | None = None,
-    start_fact_check: Callable[[int, str], Awaitable[str]] | None = None,
+    start_fact_check: Callable[[int, str, str], Awaitable[str]] | None = None,
     on_research: Callable[[ResearchResult], None] | None = None,
     middleware: Middleware = _no_middleware,
     emit: Emit = _noop,
@@ -473,7 +477,7 @@ def _tools(
     middleware: Middleware,
     emit: Emit,
     start_deep_research: Callable[[str, str, str], Awaitable[str]] | None,
-    start_fact_check: Callable[[int, str], Awaitable[str]] | None,
+    start_fact_check: Callable[[int, str, str], Awaitable[str]] | None,
     on_research: Callable[[ResearchResult], None] | None,
 ) -> list[StructuredTool]:
     by_id = {document.id: document for document in documents}
@@ -524,13 +528,13 @@ def _tools(
             return "Deep research is not available here. Use research instead."
         return await start_deep_research(question, title, goal)
 
-    async def fact_check(document_id: int, focus: str = "") -> str:
+    async def fact_check(document_id: int, title: str, focus: str = "") -> str:
         if start_fact_check is None:
             return "Fact-checking is not available here."
         if document_id not in by_id:
             known = ", ".join(str(i) for i in by_id) or "none"
             return f"No document with id {document_id}. Attached ids: {known}."
-        return await start_fact_check(document_id, focus)
+        return await start_fact_check(document_id, title, focus)
 
     tools = [
         *retrieval_tools(backend, sources, emit=emit, agent="supervisor"),
