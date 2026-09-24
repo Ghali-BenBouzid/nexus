@@ -60,6 +60,18 @@ class Query(Base):
         String(32), nullable=False, default=QueryKind.chat, index=True
     )
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    # The document a fact check reads, so a second check of it can be refused
+    # while the first is working. Null on every other kind of run. use_alter:
+    # it closes a loop (a document belongs to a message, a message to a run).
+    document_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "documents.id",
+            ondelete="SET NULL",
+            use_alter=True,
+            name="fk_queries_document_id",
+        ),
+        nullable=True,
+    )
     # A short, human title for the artifact this run produces, named by whoever
     # started it. Null on a chat turn, which has no artifact.
     title: Mapped[str | None] = mapped_column(Text, nullable=True)

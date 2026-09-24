@@ -770,3 +770,49 @@ async def test_only_one_deep_run_works_at_a_time_in_a_conversation(
     artifacts = (await client.get("/research/artifacts", headers=auth_headers)).json()
     assert [a["id"] for a in artifacts] == [run_id]
     assert "Nothing was started" in model.last
+
+
+async def test_a_document_already_being_checked_is_not_checked_again(
+    client: AsyncClient, auth_headers: dict[str, str], document, monkeypatch
+) -> None:
+    """The bug: a check of a CV was working, the user asked for jokes while
+    they waited, and the supervisor started a second check of the same CV."""
+    import uuid
+
+    from sqlalchemy import select
+
+    from app.db import session as db_session
+    from app.models.conversation import Conversation
+    from app.models.query import QueryKind, QueryStatus
+    from app.research import repository as research_repository
+
+    async with db_session.SessionLocal() as db:
+        conversation = (
+            await db.execute(
+                select(Conversation).where(
+                    Conversation.public_id == uuid.UUID(document["conversation_id"])
+                )
+            )
+        ).scalar_one()
+        first = await research_repository.create_pending_query(
+            db,
+            conversation.user_id,
+            "claims.pdf",
+            "The first check",
+            kind=QueryKind.fact_check,
+            conversation_id=conversation.id,
+            document_id=document["id"],
+        )
+        await research_repository.set_status(db, first.id, QueryStatus.running)
+    model = _ChecksInThread()
+    _use(lambda: model, _SourceBackend, monkeypatch=monkeypatch)
+
+    await client.post(
+        f"/conversations/{document['conversation_id']}/messages",
+        headers=auth_headers,
+        json={"content": "tell me jokes while I wait"},
+    )
+    await drain()
+
+    artifacts = (await client.get("/research/artifacts", headers=auth_headers)).json()
+    assert [a["id"] for a in artifacts] == [first.id]

@@ -127,6 +127,7 @@ async def create_pending_query(
     *,
     kind: QueryKind = QueryKind.chat,
     conversation_id: int | None = None,
+    document_id: int | None = None,
 ) -> Query:
     query = Query(
         user_id=user_id,
@@ -134,6 +135,7 @@ async def create_pending_query(
         title=title,
         kind=kind,
         conversation_id=conversation_id,
+        document_id=document_id,
         status=QueryStatus.pending,
     )
     db.add(query)

@@ -50,6 +50,11 @@ DEEP_BUSY = (
     "direction changed, pass that on with steer_deep_research; otherwise tell "
     "them a new run can start once this one is done."
 )
+FACT_CHECK_BUSY = (
+    "Nothing was started: {filename} is already being checked in this "
+    "conversation (fact check {id}, {title}). Its report will appear in Outputs "
+    "when it is done; tell the user that rather than starting another."
+)
 FACT_CHECK_STARTED = (
     "The fact check has started on {filename}. Its report will appear in the "
     "user's Outputs when it is done. Tell them it is running; do not wait for it "
@@ -307,6 +312,19 @@ def _fact_check_starter(run: Run, conversation_id: int, documents: list[Document
         document = by_id.get(document_id)
         if document is None:
             return f"No document with id {document_id} is attached here."
+        # One check of a document at a time, held here rather than asked of the
+        # model: a supervisor that could not see the first check started a
+        # second on "tell me jokes while I wait".
+        async with db_session.SessionLocal() as db:
+            busy = [
+                q
+                for q in await _working(db, conversation_id)
+                if q.kind == QueryKind.fact_check and q.document_id == document_id
+            ]
+        if busy:
+            return FACT_CHECK_BUSY.format(
+                filename=document.filename, id=busy[0].id, title=busy[0].title
+            )
         query_id = await _start_run(
             run,
             conversation_id,
@@ -315,6 +333,7 @@ def _fact_check_starter(run: Run, conversation_id: int, documents: list[Document
             # Written by the supervisor, in the user's language: a title made
             # here was English in every conversation.
             title=title or document.filename,
+            document_id=document_id,
         )
         if query_id is None:
             return NO_BUDGET
@@ -386,6 +405,7 @@ async def _start_run(
     kind: QueryKind,
     prompt: str,
     title: str,
+    document_id: int | None = None,
 ) -> int | None:
     """Create the row a background run will report into, unless the account has
     nothing left to spend. Returns its id, or None when the budget is gone: a
@@ -400,5 +420,6 @@ async def _start_run(
             title=title,
             kind=kind,
             conversation_id=conversation_id,
+            document_id=document_id,
         )
         return query.id
