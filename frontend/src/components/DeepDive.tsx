@@ -126,7 +126,11 @@ function SystemDiagram() {
       <path className="dd-edge" d="M176,132 H272" markerEnd="url(#dd-b)" />
       <path className="dd-edge" d="M272,158 H176" markerEnd="url(#dd-b)" />
       <text className="dd-lane" x="224" y="124" textAnchor="middle">HTTP</text>
-      <text className="dd-lane" x="224" y="180" textAnchor="middle">{S.stream}</text>
+      {/* Two lines, so the label stays clear of the Railway boundary. */}
+      <text className="dd-lane" x="224" y="180" textAnchor="middle">
+        {S.stream.split(" ").slice(0, -1).join(" ")}
+        <tspan x="224" dy="12">{S.stream.split(" ").slice(-1)}</tspan>
+      </text>
 
       {/* Railway holds both processes; drawing the boundary is the point. */}
       <rect className="dd-group" x="274" y="40" width="330" height="300" rx="16" />
@@ -154,7 +158,7 @@ function SystemDiagram() {
       <text className="dd-lane" x="500" y="143" textAnchor="middle">{S.job}</text>
       <path className="dd-edge" d="M532,224 V286 H444" markerEnd="url(#dd-b)" />
       <path className="dd-edge" d="M420,310 V330 H612 V196 H592" markerEnd="url(#dd-b)" />
-      <text className="dd-lane" x="628" y="270" textAnchor="middle">{S.frames}</text>
+      <text className="dd-lane" x="604" y="246" textAnchor="end">{S.frames}</text>
 
       {/* Both processes read and write the same database. */}
       <g className="dd-node">
@@ -165,24 +169,27 @@ function SystemDiagram() {
       <path className="dd-edge thin" d="M442,124 H660 C 676,124 676,104 686,96" markerEnd="url(#dd-b)" />
       <path className="dd-edge thin" d="M442,262 H664 C 684,262 684,110 700,104" markerEnd="url(#dd-b)" />
 
-      {/* Everything the worker pays for is outside. */}
+      {/* What the worker calls out to: the models it pays for, and the search
+          services we run ourselves, which is what made searching free. */}
       <g className="dd-node">
         <rect x="686" y="248" width="180" height="40" rx="10" />
         <text className="dd-t sm" x="776" y="273" textAnchor="middle">{S.models}</text>
       </g>
       <g className="dd-node">
-        <rect x="686" y="300" width="180" height="40" rx="10" />
-        <text className="dd-t sm" x="776" y="325" textAnchor="middle">{S.search}</text>
+        <rect x="686" y="300" width="180" height="52" rx="10" />
+        <text className="dd-t sm" x="776" y="322" textAnchor="middle">{S.search}</text>
+        <text className="dd-r" x="776" y="339" textAnchor="middle">{S.searchRole}</text>
       </g>
       <path className="dd-edge dash" d="M444,296 H640 V268 H686" markerEnd="url(#dd-b)" />
-      <path className="dd-edge dash" d="M444,300 H640 V320 H686" markerEnd="url(#dd-b)" />
+      <path className="dd-edge dash" d="M444,300 H640 V326 H686" markerEnd="url(#dd-b)" />
     </svg>
   );
 }
 
-// The technical deep dive: what happens to a message, and where that runs. Its
-// own page rather than a landing-page section, because the landing page should
-// say what Nexus is in one screen and this is two screens of how.
+// The technical deep dive: what happens to a message, where that runs, the
+// trade-offs behind it, what broke, and how it is measured. The same material
+// as the README, told as a page. Its own page rather than a landing-page
+// section, because the landing page should say what Nexus is in one screen.
 export function DeepDive({ onBack }: { onBack: () => void }) {
   return (
     <main className="dd">
@@ -214,6 +221,53 @@ export function DeepDive({ onBack }: { onBack: () => void }) {
             <SystemDiagram />
           </figure>
           <Notes notes={t.deep.sysNotes} />
+        </section>
+
+        <section className="dd-section">
+          <h2>{t.deep.tradeTitle}</h2>
+          <p>{t.deep.tradeBody}</p>
+          <Notes notes={t.deep.tradeNotes} />
+        </section>
+
+        <section className="dd-section">
+          <h2>{t.deep.wrongTitle}</h2>
+          <p>{t.deep.wrongBody}</p>
+          <Notes notes={t.deep.wrongNotes} />
+        </section>
+
+        <section className="dd-section">
+          <h2>{t.deep.evalTitle}</h2>
+          <p>{t.deep.evalBody}</p>
+          <div className="dd-table-wrap">
+            <table className="dd-table">
+              <thead>
+                <tr>
+                  {t.deep.evalHead.map((h) => (
+                    <th key={h}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {t.deep.evalRows.map((row) => (
+                  <tr key={row[0]}>
+                    {row.map((cell, i) => (
+                      <td key={i}>{cell}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="dd-aside">{t.deep.evalNote}</p>
+        </section>
+
+        <section className="dd-section">
+          <h2>{t.deep.limitsTitle}</h2>
+          <ul className="dd-notes">
+            {t.deep.limits.map((item) => (
+              <li key={item}>{item}</li>
+            ))}
+          </ul>
         </section>
 
         <div className="dd-foot">
