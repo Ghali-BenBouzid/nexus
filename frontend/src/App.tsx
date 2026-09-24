@@ -887,9 +887,15 @@ export default function App() {
   // One line under the composer, keeping the demo's terms visible: the share of
   // credits left for an invited visitor, or why their invite did not work.
   // Local simulated-only builds show nothing.
-  // The reports that finished and have not been opened since, for the dot in the
-  // Outputs list and the count on the button that opens it.
-  const unread = new Set(outputs.filter((o) => isUnread(o, seen)).map((o) => o.id));
+  // This chat's reports that finished and have not been opened since, for the
+  // dot in the Outputs list and the count on the button that opens it. Only
+  // this chat's: the panel lists no others, so a count of the rest would point
+  // at nothing the user can find there.
+  const unread = new Set(conversationOutputs.filter((o) => isUnread(o, seen)).map((o) => o.id));
+  // Every chat with such a report, for the dot next to it in Recent.
+  const unreadChats = new Set(
+    outputs.flatMap((o) => (o.conversationId != null && isUnread(o, seen) ? [o.conversationId] : [])),
+  );
 
   const accessNote = !LIVE_MODE
     ? null
@@ -960,6 +966,7 @@ export default function App() {
           openOutputResult={openOutputResult}
           onOpenOutput={showOutput}
           unread={unread}
+          unreadChats={unreadChats}
           onRefreshOutput={refreshOutput}
           staged={staged}
           onAttach={(files) => setStaged((current) => [...current, ...files])}

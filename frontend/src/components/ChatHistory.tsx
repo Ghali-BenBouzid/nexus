@@ -31,6 +31,8 @@ type ChatHistoryProps = {
   toggleTheme: () => void;
   // Who is signed in, shown under the settings. Absent without a live account.
   account?: Account | null;
+  // Chats with a finished report the user has not opened yet.
+  unread?: Set<ConversationId>;
 };
 
 // The chat workspace's left column, laid out like a chat app's: the brand in the
@@ -48,6 +50,7 @@ export function ChatHistory({
   theme,
   toggleTheme,
   account,
+  unread,
 }: ChatHistoryProps) {
   const [items, setItems] = useState<ConversationSummary[] | null>(null);
   const listed = onOpen != null;
@@ -101,11 +104,19 @@ export function ChatHistory({
                   {sorted === null && <div className="drawer-empty">{t.history.loading}</div>}
                   {sorted?.length === 0 && <div className="drawer-empty">{t.history.empty}</div>}
                   {sorted?.map((c) => (
-                    <button key={c.id} className="hist-item" onClick={() => onOpen(c.id)}>
+                    <button
+                      key={c.id}
+                      className={"hist-item" + (unread?.has(c.id) ? " unread" : "")}
+                      onClick={() => onOpen(c.id)}
+                    >
                       <div className="hist-main">
                         <div className="hist-q">{c.title ?? t.history.untitled}</div>
                         <div className="hist-meta">{when(c.updated_at)}</div>
                       </div>
+                      {/* The same dot as in Outputs: a report here you have not
+                          read. On the right and only when there is one, so the
+                          titles stay in line with everything above them. */}
+                      {unread?.has(c.id) && <span className="hist-dot ch-unread-dot" aria-label={t.history.unread} />}
                     </button>
                   ))}
                 </div>

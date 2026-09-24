@@ -187,6 +187,16 @@ const en = {
     defaultError: "A system error stopped the research before it finished.",
     tryAgain: "Try again",
   },
+  // When something happened: relative while recent, then the time of day,
+  // then the date (lib/when.ts decides which).
+  when: {
+    justNow: "just now",
+    minutesAgo: (n: number) => (n === 1 ? "a minute ago" : `${n} minutes ago`),
+    hoursAgo: (n: number) => (n === 1 ? "an hour ago" : `${n} hours ago`),
+    today: (time: string) => `Today at ${time}`,
+    yesterday: (time: string) => `Yesterday at ${time}`,
+    on: (date: string, time: string) => `${date}, ${time}`,
+  },
   artifact: {
     back: "Back to artifacts",
     report: "Report",
@@ -206,6 +216,8 @@ const en = {
     title: "Outputs",
     noReports: "No reports yet. Ask for deep research, or fact-check a document.",
     running: "Working…",
+    // A background run still going: how long it has been at it, ticking.
+    workingFor: (clock: string) => `Working for ${clock}`,
     failed: "Failed",
     deep_research: "Deep research",
     fact_check: "Fact check",
@@ -313,6 +325,7 @@ const en = {
     next: "Next source",
   },
   history: {
+    unread: "Unread report",
     recent: "Recent",
     loading: "Loading…",
     empty: "No conversations yet.",
@@ -509,6 +522,14 @@ const fr: Dict = {
     defaultError: "Une erreur système a interrompu la recherche avant la fin.",
     tryAgain: "Réessayer",
   },
+  when: {
+    justNow: "à l'instant",
+    minutesAgo: (n: number) => (n === 1 ? "il y a une minute" : `il y a ${n} minutes`),
+    hoursAgo: (n: number) => (n === 1 ? "il y a une heure" : `il y a ${n} heures`),
+    today: (time: string) => `Aujourd'hui à ${time}`,
+    yesterday: (time: string) => `Hier à ${time}`,
+    on: (date: string, time: string) => `${date} à ${time}`,
+  },
   artifact: {
     back: "Retour aux rapports",
     report: "Rapport",
@@ -526,6 +547,7 @@ const fr: Dict = {
     title: "Résultats",
     noReports: "Aucun rapport pour l'instant. Demandez une recherche approfondie, ou vérifiez un document.",
     running: "En cours…",
+    workingFor: (clock: string) => `En cours depuis ${clock}`,
     failed: "Échec",
     deep_research: "Recherche approfondie",
     fact_check: "Vérification",
@@ -629,6 +651,7 @@ const fr: Dict = {
     next: "Source suivante",
   },
   history: {
+    unread: "Rapport non lu",
     recent: "Récent",
     loading: "Chargement…",
     empty: "Aucune conversation pour l'instant.",
