@@ -46,7 +46,9 @@ overall. No header.
 
 Then a table of every claim on your confirmed list, in the order of the \
 sections below, so a reader sees the whole picture before reading a word of \
-detail. A claim you did not get to is Unverifiable, and its section says so:
+detail. A claim you did not get to is Unverifiable, and its section says so. \
+Its two column headers, like everything else, are in the report's language. \
+The examples below show the shape; their words are only placeholders:
 
 | Claim | Verdict |
 | --- | --- |
@@ -65,9 +67,9 @@ then the claim in a few words, so a reader skimming headers reads the findings:
 Each section gives the claim as the document makes it, then what the sources \
 actually say, cited. Do not repeat the verdict in the body: the header has it.
 
-Close with a section headed "What this means", in the report's language: \
-whether the document's argument survives, and \
-which parts a reader should treat carefully.
+Close with a level-2 section, titled in your own words in the report's \
+language, on what the check means for the document: whether its argument \
+survives, and which parts a reader should treat carefully.
 
 Judge the claim, not the document's politics or its author. Where a claim is \
 true in a narrow sense but misleading in context, say exactly that.
@@ -85,5 +87,5 @@ PROMPT = ChatPromptTemplate(
     ],
     template_format="mustache",
     name="fact_check",
-    metadata={"version": 4},
+    metadata={"version": 5},
 )

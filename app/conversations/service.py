@@ -257,7 +257,7 @@ def _deep_starter(run: Run, conversation_id: int):
 def _fact_check_starter(run: Run, conversation_id: int, documents: list[Document]):
     by_id = {document.id: document for document in documents}
 
-    async def start(document_id: int, focus: str) -> str:
+    async def start(document_id: int, title: str, focus: str) -> str:
         document = by_id.get(document_id)
         if document is None:
             return f"No document with id {document_id} is attached here."
@@ -265,8 +265,10 @@ def _fact_check_starter(run: Run, conversation_id: int, documents: list[Document
             run,
             conversation_id,
             kind=QueryKind.fact_check,
-            prompt=focus or f"Fact check of {document.filename}",
-            title=f"Fact check: {document.filename}",
+            prompt=focus or document.filename,
+            # Written by the supervisor, in the user's language: a title made
+            # here was English in every conversation.
+            title=title or document.filename,
         )
         if query_id is None:
             return NO_BUDGET

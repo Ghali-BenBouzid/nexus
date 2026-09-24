@@ -756,18 +756,18 @@ html[data-theme="light"] .tour-hole {
 }
 .act.open .act-chevron { transform: none; }
 
-/* One rule down the left edge holds the thinking and the steps together as the
-   inside of the row above, rather than as two more blocks in the thread. */
+/* One rule down the left edge holds the steps together as the inside of the
+   row above, rather than as more blocks in the thread. */
 .act-body { width: 100%; margin: 7px 0 2px; padding-left: 13px; border-left: 1px solid var(--line);
   display: flex; flex-direction: column; gap: 10px; animation: actIn 0.2s var(--ease); }
-/* Thinking is working-out, not prose: quieter than the answer, and never styled. */
-.act-think { font-size: 13.5px; line-height: 1.6; color: var(--faint); white-space: pre-wrap; }
 .act-steps { list-style: none; margin: 0; padding: 0; display: grid; }
 .act-step {
   display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; align-items: center; gap: 10px;
   padding: 5px 0; font-size: 13px; color: var(--muted);
 }
 .act-mark { display: inline-flex; width: 14px; height: 14px; color: var(--ok); }
+/* A research team's plan and researchers sit under the step that sent them. */
+.act-step-sub { padding-left: 24px; }
 .act-step-warn .act-mark { color: var(--warn); }
 .act-step-stop .act-mark { color: var(--faint); }
 .act-step-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1566,8 +1566,13 @@ html[data-theme="dark"] .cites-pop {
 .hist-dot { width: 7px; height: 7px; border-radius: 50%; margin-top: 6px; background: transparent; }
 .hist-item.unread .hist-dot { background: var(--accent-2); box-shadow: 0 0 0 3px var(--accent-soft); }
 .hist-item.unread .hist-q { color: var(--fg); font-weight: 600; }
+/* Recent marks a chat with an unread report by a dot on the right, drawn only
+   when there is one, so its titles keep the list's left edge. */
+.hist-item:has(.ch-unread-dot) { position: relative; padding-right: 30px; }
+.ch-unread-dot { position: absolute; right: 12px; top: 50%; margin: -3.5px 0 0; }
 /* How the run went, in words, where the size and kind already are. */
 .hist-meta.failed { color: var(--bad); }
+.hist-meta .nowrap { white-space: nowrap; }
 .hist-meta .spin { width: 10px; height: 10px; border-width: 1.5px; margin-right: 6px;
   display: inline-block; vertical-align: -1px; }
 
@@ -1582,7 +1587,7 @@ html[data-theme="dark"] .cites-pop {
 .hist-main { min-width: 0; }
 .hist-q { font-size: 14px; color: var(--fg); line-height: 1.4; overflow: hidden;
   display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-.hist-meta { font-family: var(--font-mono); font-size: 11px; color: var(--faint); margin-top: 4px; text-transform: capitalize; }
+.hist-meta { font-family: var(--font-mono); font-size: 11px; color: var(--faint); margin-top: 4px; }
 .hist-item:disabled { cursor: default; opacity: 0.7; }
 .hist-item:disabled:hover { background: transparent; border-color: transparent; }
 

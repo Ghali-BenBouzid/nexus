@@ -41,6 +41,8 @@ type ConversationProps = {
   onOpenOutput: (id: number | null) => void;
   // Finished reports the user has not opened since they last changed.
   unread: Set<number>;
+  // Chats with a finished report not yet opened, marked in Recent.
+  unreadChats: Set<ConversationId>;
   onRefreshOutput: (id: number) => void;
   onUpload: (file: File) => void;
   // Files picked in the composer, sent with the next message.
@@ -85,6 +87,7 @@ export function Conversation({
   openOutputResult,
   onOpenOutput,
   unread,
+  unreadChats,
   onRefreshOutput,
   onUpload,
   staged,
@@ -154,6 +157,21 @@ export function Conversation({
     if (following.current) stickToBottom();
     setAtBottom(isNearBottom());
   }, [turns, now, layout]);
+
+  // The thread also changes height with nothing new in it: a side panel opening
+  // narrows the column and every answer reflows taller, as do late fonts and
+  // favicons. Whoever was at the bottom stays there through it.
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(() => {
+      if (following.current) stickToBottom();
+      setAtBottom(isNearBottom());
+    });
+    ro.observe(el);
+    ro.observe(el.firstElementChild!);
+    return () => ro.disconnect();
+  }, []);
 
   const submit = (prompt: string) => {
     following.current = true;
@@ -306,13 +324,16 @@ export function Conversation({
           onOpen={onOpenHistory}
           onNewChat={onNewChat}
           onHome={onExit}
-          // Reload the list when a turn is added and again once a title lands, so
-          // a freshly named conversation shows its title instead of "Untitled".
-          refreshKey={turns.length + turns.filter((t) => t.title).length}
+          // Reload the list as each turn moves on, not just when it is added: a
+          // new conversation is only listed once its first message is stored,
+          // which is after the turn appears. A landed title reloads it too, so a
+          // freshly named conversation shows its title instead of "Untitled".
+          refreshKey={turns.map((t) => `${t.queryId ?? ""}:${t.status}:${t.title ?? ""}`).join("|")}
           isMobile={isMobile}
           theme={theme}
           toggleTheme={toggleTheme}
           account={account}
+          unread={unreadChats}
         />
 
         {/* The conversation column owns the composer, so the prompt bar stays

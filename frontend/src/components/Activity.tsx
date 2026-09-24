@@ -4,8 +4,8 @@ import { I } from "../icons";
 import { t } from "../lib/i18n";
 import {
   headline,
-  steps,
   summarize,
+  timeline,
   type Activity as Act,
   type Headline,
   type Mark,
@@ -63,14 +63,44 @@ function stageText(p: Progress, turn: Turn): string {
   }
 }
 
+// What a step says, in the feed and on the collapsed row alike.
+function stepText(step: StepRow): string {
+  switch (step.kind) {
+    case "understanding":
+      return t.progress.understanding;
+    case "think":
+      return step.title ?? t.progress.think;
+    case "search":
+      return t.progress.searchStep(step.text);
+    case "read":
+      return t.progress.readStep(step.domain);
+    case "document":
+      return t.progress.documentStep(step.text);
+    case "steer":
+      return t.progress.steerStep;
+    case "research":
+      return t.progress.researchStep(step.question);
+    case "plan":
+      return step.size != null ? t.progress.planned(step.size) : t.progress.planning;
+    case "researcher":
+      return step.row.question;
+    case "started":
+      return step.run.run === "deep_research"
+        ? t.progress.deepStarted(step.run.text)
+        : t.progress.factCheckStarted(step.run.text);
+    case "write":
+      return step.mark === "ok" ? t.progress.written : t.progress.writing;
+  }
+}
+
 function headlineText(h: Headline, p: Progress, turn: Turn, now: number): string {
   switch (h.kind) {
     case "activity":
       return activityText(h.activity, now);
     case "researcher":
       return h.question;
-    case "thought":
-      return h.text;
+    case "step":
+      return stepText(h.step);
     case "stage":
       return stageText(p, turn);
   }
@@ -83,10 +113,20 @@ function heartbeatAge(turn: Turn, now: number): number | null {
 
 const MARKS: Record<Mark, React.ReactNode> = { run: <span className="spin" />, ok: I.check, warn: I.warn, stop: I.stop };
 
-function Step({ mark, children, state }: { mark: Mark; children: React.ReactNode; state?: string | null }) {
+function Step({
+  mark,
+  children,
+  state,
+  sub,
+}: {
+  mark: Mark;
+  children: React.ReactNode;
+  state?: string | null;
+  sub?: boolean;
+}) {
   return (
     // Prefixed modifiers: a bare "run" collides with the page-level .run class.
-    <li className={"act-step act-step-" + mark}>
+    <li className={"act-step act-step-" + mark + (sub ? " act-step-sub" : "")}>
       <span className="act-mark" aria-hidden="true">{MARKS[mark]}</span>
       <span className="act-step-text">{children}</span>
       {state && <span className="act-step-state">{state}</span>}
@@ -105,17 +145,9 @@ function StepItem({ step, now, stopped }: { step: StepRow; now: number; stopped:
   // A step the run ended in the middle of says so, and nothing about it ticks.
   const cut = step.cut ? (stopped ? t.progress.stoppedHere : t.progress.unfinished) : null;
   switch (step.kind) {
-    case "understanding":
-      return <Step mark={step.mark}>{t.progress.understanding}</Step>;
-    case "plan":
-      return (
-        <Step mark={step.mark} state={cut}>
-          {step.size != null ? t.progress.planned(step.size) : t.progress.planning}
-        </Step>
-      );
     case "researcher":
       return (
-        <Step mark={step.mark} state={cut ?? researcherState(step.row, now)}>
+        <Step mark={step.mark} sub={step.sub} state={cut ?? researcherState(step.row, now)}>
           <span className="act-num">{step.row.index}</span>
           {step.row.question}
         </Step>
@@ -123,15 +155,13 @@ function StepItem({ step, now, stopped }: { step: StepRow; now: number; stopped:
     case "started":
       return (
         <Step mark={step.mark} state={t.progress.inOutputs}>
-          {step.run.run === "deep_research"
-            ? t.progress.deepStarted(step.run.text)
-            : t.progress.factCheckStarted(step.run.text)}
+          {stepText(step)}
         </Step>
       );
-    case "write":
+    default:
       return (
-        <Step mark={step.mark} state={cut}>
-          {step.mark === "ok" ? t.progress.written : t.progress.writing}
+        <Step mark={step.mark} sub={step.kind === "plan" && step.sub} state={cut}>
+          {stepText(step)}
         </Step>
       );
   }
@@ -165,48 +195,50 @@ function useCalmLabel(label: string, urgent: boolean): string {
 
 // Everything a turn did before it answered, as the one inline row a chat app
 // shows: what it is doing right now, how long it has taken, and a chevron onto
-// the thinking behind it and the steps it took. The model's thinking is not a
-// separate disclosure, because to a reader it is not a separate thing.
+// every step it took, in order. Its thinking shows as those steps' titles,
+// never as the scratchpad itself.
 export function Activity({ turn, now }: { turn: Turn; now: number }) {
-  // Folded away until asked for. The row says what is happening; the thinking
-  // behind it is there for whoever wants it, not pushed at everyone.
-  const [open, setOpen] = useState(false);
+  // Open while the run works, so its steps can be followed as they happen;
+  // folded once it has answered, so they stop competing with the answer. A
+  // reader who opens or closes it has decided, and that sticks.
+  const [chosen, setChosen] = useState<boolean | null>(null);
   const p = summarize(turn.events);
   const running = turn.status === "running" || turn.status === "pending";
+  const open = chosen ?? running;
   const elapsed = ((turn.endedAt ?? now) - turn.startedAt) / 1000;
-  const thinking = (turn.thinking ?? "").trim();
 
   const age = running ? heartbeatAge(turn, now) : null;
   const stale = age != null && age > STALE_AFTER;
+
+  const rows = timeline(
+    turn.events,
+    running ? null : turn.stopped ? "stopped" : turn.status === "failed" ? "failed" : "done",
+  );
+  const counted = rows.filter((r) => r.kind !== "understanding" && !("sub" in r && r.sub)).length;
 
   // While the run works, the row says what it is doing, in the most specific
   // words available. Once it has answered, it says what it cost: the work is
   // still there to inspect, but it stops competing with the answer for the eye.
   const settled = !running && turn.status === "complete";
-  const head = headline(p, thinking);
+  const head = headline(p, rows);
   const next = stale
     ? t.progress.stale(clock(age!))
     : settled
       ? [t.progress.thoughtFor(brief(elapsed))]
-          .concat(p.researchers.length > 0 ? t.progress.researched(p.researchers.length) : [])
+          .concat(counted > 0 ? t.progress.stepCount(counted) : [])
           .join(" · ")
       : headlineText(head, p, turn, now);
-  // A search starting, a page opening, a researcher taking over, or the run
-  // ending: those are events. One thought giving way to the next is not.
-  const urgent = !running || head.kind === "activity" || head.kind === "researcher";
+  // A step starting or the run ending is an event worth cutting in for; a
+  // thought being renamed is not.
+  const urgent = !running || head.kind !== "step" || head.step.kind !== "think";
   const label = useCalmLabel(next, urgent);
-
-  const rows = steps(
-    p,
-    running ? null : turn.stopped ? "stopped" : turn.status === "failed" ? "failed" : "done",
-  );
 
   return (
     <div
       className={"act" + (open ? " open" : "") + (running ? " live" : "") + (stale ? " stale" : "")}
       onClick={(e) => e.stopPropagation()}
     >
-      <button type="button" className="act-bar" onClick={() => setOpen((o) => !o)} aria-expanded={open}>
+      <button type="button" className="act-bar" onClick={() => setChosen(!open)} aria-expanded={open}>
         {running && !stale && (
           <span className="act-dots" aria-hidden="true">
             <i />
@@ -223,28 +255,13 @@ export function Activity({ turn, now }: { turn: Turn; now: number }) {
         <span className="act-chevron" aria-hidden="true">{I.chevron}</span>
       </button>
 
-      {open && (thinking || rows.length > 0) && (
+      {open && rows.length > 0 && (
         <div className="act-body">
-          {/* The thinking first: it is the narrative, the steps are the receipt. */}
-          {thinking && <div className="act-think">{thinking}</div>}
-          {rows.length > 0 && (
-            <ol className="act-steps">
-              {rows.map((step) => (
-                <StepItem
-                  key={
-                    step.kind === "researcher"
-                      ? `r${step.row.index}`
-                      : step.kind === "started"
-                        ? `s${step.run.run}${step.run.text}`
-                        : step.kind
-                  }
-                  step={step}
-                  now={now}
-                  stopped={!!turn.stopped}
-                />
-              ))}
-            </ol>
-          )}
+          <ol className="act-steps">
+            {rows.map((step, i) => (
+              <StepItem key={i} step={step} now={now} stopped={!!turn.stopped} />
+            ))}
+          </ol>
         </div>
       )}
     </div>
