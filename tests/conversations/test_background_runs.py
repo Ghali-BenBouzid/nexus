@@ -17,6 +17,7 @@ from langchain_core.messages import ToolMessage
 from langchain_core.outputs import ChatGeneration, ChatResult
 
 from app import jobs
+from app.agents import supervisor
 from app.agents.tools import SearchHit
 from app.core.config import settings
 from app.documents import storage
@@ -105,6 +106,14 @@ class _StartsDeepResearch(ScriptedModel):
                 "model_name": "fake/model",
             }
         return ChatResult(generations=[ChatGeneration(message=reply)])
+
+
+def _judged(monkeypatch, verdict: str) -> ScriptedModel:
+    """The small model that reads a reply for a claimed run, giving ``verdict``.
+    The real one is a copy of the turn's model, which a fake cannot make."""
+    judge = ScriptedModel(respond=lambda messages, tools: says(verdict))
+    monkeypatch.setattr(supervisor, "claim_judge", lambda model: judge)
+    return judge
 
 
 def _use(model_factory, backend_factory=FakeBackend, monkeypatch=None) -> None:
@@ -383,6 +392,7 @@ async def test_a_greeting_in_deep_mode_starts_nothing(
     no run at all."""
     model = _JustGreets()
     _use(lambda: model, monkeypatch=monkeypatch)
+    _judged(monkeypatch, "no")
 
     created = await client.post(
         "/conversations", headers=auth_headers, json={"prompt": "hi", "mode": "deep"}
@@ -421,6 +431,7 @@ async def test_a_run_announced_but_never_started_is_caught(
     the supervisor still announced runs it never started. Ending a deep-mode
     turn without a run now sends the reply back once, with that fact."""
     _use(lambda: _ClaimsARunItNeverStarted(), monkeypatch=monkeypatch)
+    judge = _judged(monkeypatch, "yes")
 
     await client.post(
         "/conversations",
@@ -431,6 +442,7 @@ async def test_a_run_announced_but_never_started_is_caught(
 
     [artifact] = (await client.get("/research/artifacts", headers=auth_headers)).json()
     assert artifact["kind"] == "deep_research"
+    assert "now underway" in str(judge.seen[0][-1].content)
 
 
 def test_the_mode_is_told_to_the_supervisor_and_nothing_else_is() -> None:
@@ -712,6 +724,7 @@ async def test_a_greeting_while_a_deep_run_works_starts_no_second_run(
     backed and sent back, and the supervisor started the same run again."""
     public_id, _, run_id = await _running_deep_run(client, auth_headers)
     _use(lambda: _ObeysTheCheck(), monkeypatch=monkeypatch)
+    judge = _judged(monkeypatch, "no")
 
     await client.post(
         f"/conversations/{public_id}/messages",
@@ -724,6 +737,8 @@ async def test_a_greeting_while_a_deep_run_works_starts_no_second_run(
     assert [a["id"] for a in artifacts] == [run_id]
     detail = await client.get(f"/conversations/{public_id}", headers=auth_headers)
     assert detail.json()["messages"][-1]["query"]["reply"].startswith("Hi!")
+    # The small model read the reply knowing the run was already going.
+    assert "Aviation weather" in str(judge.seen[0][-1].content)
 
 
 class _Remembers(_StartsDeepResearch):

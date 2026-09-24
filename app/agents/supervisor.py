@@ -16,13 +16,11 @@ than a stitched-together pipeline.
 import logging
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Annotated, Any
+from typing import Annotated
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
-    AgentMiddleware,
     ModelCallLimitMiddleware,
-    hook_config,
 )
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -35,6 +33,7 @@ from langchain_core.tools import InjectedToolCallId, StructuredTool
 from pydantic import BaseModel, Field
 
 from app.agents.citations import finalize
+from app.agents.claim_check import STARTERS, RunClaimCheck, claim_judge
 from app.agents.language import detect_language
 from app.agents.model import REASONING, STAGE_KEY, LastStep
 from app.agents.report import text_of
@@ -223,7 +222,7 @@ async def respond(
                 "user now with what you have, and say plainly what you could not "
                 "finish.",
             ),
-            *([RunClaimCheck(mode)] if _checks(mode, running) else []),
+            *_claim_check(mode, model, running),
             ModelCallLimitMiddleware(run_limit=max_iters, exit_behavior="end"),
         ],
     )
@@ -429,67 +428,14 @@ would, and say in a sentence what fact check mode is for.
 
 _MODES = {"deep": _DEEP_MODE, "factcheck": _FACTCHECK_MODE}
 
-# The tool that starts each mode's run, and what to call the run.
-_STARTERS = {
-    "deep": ("deep_research", "deep research run"),
-    "factcheck": ("fact_check", "fact check"),
-}
 
-
-def _checks(mode: str, running: list[Running]) -> bool:
-    """Whether this turn's reply goes through RunClaimCheck. Not while a run of
-    the mode's own kind is working: "your run is still going" is then true, and
-    the check, reading it as a claim that nothing backed, sent the supervisor to
-    start the same deep run a second time on a plain "hi"."""
-    return mode in _STARTERS and not any(r.kind == mode for r in running)
-
-
-class RunClaimCheck(AgentMiddleware):
-    """In a mode that starts a background run, a reply that ends the turn
-    without starting one is sent back once to be checked.
-
-    The prompt says a run exists only once its tool has started it, and the
-    supervisor still told users "deep research is now running" without ever
-    calling deep_research, twice in a handful of live runs. Whether to start a
-    run stays the supervisor's call: this only makes sure the reply it sends
-    is one it made with the fact in front of it. A greeting or a question back
-    to the user costs one more model call, which the interface shows as a
-    fresh attempt at the reply.
-    """
-
-    def __init__(self, mode: str) -> None:
-        super().__init__()
-        self.tool, self.run = _STARTERS[mode]
-        self.checked = False
-
-    @hook_config(can_jump_to=["model"])
-    async def aafter_model(self, state, runtime) -> dict[str, Any] | None:
-        messages = state["messages"]
-        if self.checked or not messages or getattr(messages[-1], "tool_calls", None):
-            return None
-        turn = []
-        for message in reversed(messages):
-            if isinstance(message, HumanMessage):
-                break
-            turn.append(message)
-        # Steering a run that is already going is acting on it too.
-        acted = {self.tool, "steer_deep_research"}
-        if any(getattr(m, "name", None) in acted for m in turn):
-            return None
-        self.checked = True
-        return {
-            "jump_to": "model",
-            "messages": [
-                HumanMessage(
-                    f"(A check from Nexus, not from the user.) No {self.run} has "
-                    f"been started in this turn: {self.tool} was not called. If "
-                    "your reply says one is starting, running or underway, it is "
-                    f"not, so call {self.tool} now. If you meant to reply without "
-                    "starting one, send the same reply again, unchanged: the "
-                    "user has not seen it yet, so it is not waiting on them."
-                )
-            ],
-        }
+def _claim_check(mode: str, model: BaseChatModel, running: list[Running]) -> list:
+    """The check on a reply claiming a run nobody started, in a mode that
+    starts one; none when the small model that runs it is switched off."""
+    judge = claim_judge(model) if mode in STARTERS else None
+    if judge is None:
+        return []
+    return [RunClaimCheck(mode, judge, [r.title for r in running if r.kind == mode])]
 
 
 def _attachments(documents: list[Document]) -> str:

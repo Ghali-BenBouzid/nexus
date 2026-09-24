@@ -66,6 +66,10 @@ class Settings(BaseSettings):
     # as the cheapest fast model on OpenRouter that writes a clean title in both
     # English and French (~1 s, a hundredth of a cent). Empty turns titles off.
     step_title_model: str | None = "mistralai/mistral-nemo"
+    # Reads a reply in deep or fact check mode that started no run, and says
+    # whether it claims one did: a one-word verdict, so the same cheap model.
+    # Empty turns the check off.
+    claim_check_model: str | None = "mistralai/mistral-nemo"
     openrouter_api_key: str | None = None
     groq_api_key: str | None = None
     cerebras_api_key: str | None = None
