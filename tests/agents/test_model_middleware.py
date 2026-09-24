@@ -252,3 +252,43 @@ async def test_a_failing_tool_is_logged_with_its_cause_and_still_raises(caplog) 
     # The stack is what makes a deployment diagnosable at all.
     assert "Name or service not known" in caplog.text
     assert [event.type for event in events] == ["tool_call", "tool_error"]
+
+
+async def test_a_streamed_call_is_billed_to_the_model_once(monkeypatch) -> None:
+    """OpenRouter marks a stream's end twice, on the last content chunk and on
+    the usage chunk. Merged as they came, the call was billed to
+    "z-ai/glm-5.3-flashz-ai/glm-5.3-flash"."""
+    from langchain_core.messages import AIMessageChunk
+    from langchain_openai import ChatOpenAI
+
+    model = agent_model.build_model(
+        model="z-ai/glm-5.3-flash", base_url="x", api_key="k"
+    )
+
+    def raw(delta: dict, finish: str | None = None, usage: dict | None = None) -> dict:
+        choice = {"index": 0, "delta": delta, "finish_reason": finish}
+        chunk = {"id": "g", "model": "z-ai/glm-5.3-flash", "choices": [choice]}
+        return {**chunk, "usage": usage} if usage else chunk
+
+    stream = [
+        raw({"role": "assistant", "content": "Hi"}),
+        raw({"content": ""}, finish="stop"),
+        raw({"content": ""}, finish="stop", usage={"prompt_tokens": 5, "cost": 0.001}),
+    ]
+
+    async def provider(self, messages, stop=None, run_manager=None, **kwargs):
+        for chunk in stream:
+            yield self._convert_chunk_to_generation_chunk(chunk, AIMessageChunk, {})
+
+    monkeypatch.setattr(ChatOpenAI, "_astream", provider)
+
+    # As an agent streams it: chunk by chunk, merged into one message.
+    merged = None
+    async for chunk in model.astream([HumanMessage("hi")]):
+        merged = chunk if merged is None else merged + chunk
+    assert merged is not None
+    metadata = merged.response_metadata
+
+    assert metadata["model_name"] == "z-ai/glm-5.3-flash"
+    assert metadata["finish_reason"] == "stop"
+    assert metadata["token_usage"]["cost"] == 0.001  # still billed
