@@ -574,8 +574,19 @@ html[data-theme="light"] .tour-hole {
 .tour-next:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .tour-next svg { width: 13px; height: 13px; }
 
+/* A tip rings what it is about without dimming the page: the user is working,
+   and only needs their eye pulled to one place, once. */
+.tip-ring { position: fixed; z-index: 89; border-radius: 12px; pointer-events: none;
+  box-shadow: 0 0 0 1.5px var(--accent),
+              0 0 0 6px color-mix(in srgb, var(--accent) 20%, transparent);
+  animation: tipPulse 1.8s var(--ease) infinite; }
+@keyframes tipPulse { 50% { box-shadow: 0 0 0 1.5px var(--accent),
+  0 0 0 10px color-mix(in srgb, var(--accent) 6%, transparent); } }
+.tip-card h3 { margin-bottom: 6px; }
+.tip-card .tour-nav { justify-content: flex-end; }
+
 @media (prefers-reduced-motion: reduce) {
-  .tour-mask, .tour-card { animation: none; }
+  .tour-mask, .tour-card, .tip-ring { animation: none; }
   .tour-hole, .tour-card, .tour-dots i { transition: none; }
   .tour-next:hover { transform: none; }
 }

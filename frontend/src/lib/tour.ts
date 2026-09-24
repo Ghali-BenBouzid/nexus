@@ -58,3 +58,38 @@ export function tourSteps(): TourStep[] {
     { id: "outputs", target: "outputs", view: "chat", ...t.tour.outputs },
   ];
 }
+
+// Tips: one bubble the first time something new happens, pointing at where it
+// happened. The tour shows what exists; a tip says "this, here, now", which is
+// the moment a first-timer actually needs it.
+export type TipId = "deep" | "factcheck" | "attach";
+
+export type Tip = {
+  id: TipId;
+  // `data-tour` values to point at, first found wins. A run's own row comes
+  // first, then the Outputs button for when the panel is shut.
+  targets: string[];
+  // Something the card must sit clear of, when it is bigger than what is being
+  // pointed at: a tip about an attached file must not cover the file.
+  around?: string;
+};
+
+const tipKey = (id: TipId) => `nexus-tip-${id}`;
+
+export function tipSeen(id: TipId): boolean {
+  try {
+    return localStorage.getItem(tipKey(id)) === "1";
+  } catch {
+    // Unlike the tour, a tip that can never be remembered would repeat on every
+    // upload, so no storage means no tips.
+    return true;
+  }
+}
+
+export function markTipSeen(id: TipId): void {
+  try {
+    localStorage.setItem(tipKey(id), "1");
+  } catch {
+    /* tipSeen already treats this browser as having seen them */
+  }
+}
