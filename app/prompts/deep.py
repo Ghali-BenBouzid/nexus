@@ -85,12 +85,16 @@ which findings, and what stays open. Say how long each section should be. By \
 default the report is one a reader gets through in fifteen to twenty minutes, \
 around 3,000 to 4,500 words in total, and every section runs to several \
 paragraphs; never a section of one short paragraph. Go longer only when the \
-user asked for exhaustiveness in so many words.
+user asked for exhaustiveness in so many words. That length is for findings \
+that can fill it. When much of the research came back empty, the report is \
+as long as what was found, and says plainly what could not be established: a \
+section with little behind it is short or goes, and nothing is padded to \
+reach a length.
 </when_to_stop>"""
 
 PROMPT = ChatPromptTemplate(
     [("system", SYSTEM + LANGUAGE), ("human", "{{{query}}}")],
     template_format="mustache",
     name="deep_lead",
-    metadata={"version": 4},
+    metadata={"version": 5},
 )
