@@ -156,6 +156,7 @@ export function OutputsPanel({
             <button
               key={output.id}
               className={"hist-item with-dot" + (isNew ? " unread" : "")}
+              data-tour={`output-${output.id}`}
               onClick={() => ready && onOpen(output.id)}
               disabled={!ready}
             >

@@ -292,6 +292,7 @@ export function Conversation({
           {!reportUp && (
             <button
               className={"chat-corner chat-corner-right" + (outputsListOpen ? " active" : "")}
+              data-tour="outputs"
               onClick={toggleOutputs}
               aria-label={t.chat.showArtifacts}
               title={t.chat.showArtifacts}

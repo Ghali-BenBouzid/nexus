@@ -8,7 +8,7 @@ import { markTourSeen, tourSteps, type TourStep } from "../lib/tour";
 // popover sits off it.
 const PAD = 8;
 const GAP = 14;
-const CARD_W = 320;
+export const CARD_W = 320;
 
 // How long the spotlight takes to travel between steps. A fixed duration meant
 // the velocity rose with the distance: the short hop from the mode pill to the
@@ -18,7 +18,7 @@ const CARD_W = 320;
 const MIN_MS = 400;
 const MAX_MS = 760;
 const MAX_SPEED = 1200; // pixels per second
-type Box = { top: number; left: number; width: number; height: number };
+export type Box = { top: number; left: number; width: number; height: number };
 
 // Only the duration is decided here. The curve is the one every other moving
 // thing in the app uses, set in the stylesheet: a tour that eased differently
@@ -32,7 +32,7 @@ function travelMs(from: Box | null, to: Box | null): number {
   return Math.min(MAX_MS, Math.max(MIN_MS, (dist / MAX_SPEED) * 1000));
 }
 
-function find(target: string | null, pad = PAD): Box | null {
+export function find(target: string | null, pad = PAD): Box | null {
   if (!target) return null;
   const el = document.querySelector<HTMLElement>(`[data-tour="${target}"]`);
   if (!el) return null;
@@ -45,7 +45,7 @@ function find(target: string | null, pad = PAD): Box | null {
 // because two were not enough: a full-height target like the Outputs panel has
 // no room below it and no room above it either, and the old code answered that
 // by placing the card off the top of the screen.
-function place(box: Box | null, cardH: number): React.CSSProperties {
+export function place(box: Box | null, cardH: number): React.CSSProperties {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   if (!box) return { top: Math.max(12, vh / 2 - cardH / 2), left: vw / 2 - CARD_W / 2 };

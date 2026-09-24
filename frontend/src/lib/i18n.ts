@@ -339,6 +339,21 @@ const en = {
       body: "Every chat is kept here. Reopen one and pick up where you stopped.",
     },
   },
+  tips: {
+    gotIt: "Got it",
+    deep: {
+      title: "Your deep research is running",
+      body: "It works in the background and the report lands here, in Outputs. Keep chatting in the meantime: you will get a notification when it is ready.",
+    },
+    factcheck: {
+      title: "Your fact check is running",
+      body: "Nexus is checking each claim in the background and the result lands here, in Outputs. Keep chatting in the meantime: you will get a notification when it is ready.",
+    },
+    attach: {
+      title: "Your document is attached",
+      body: "Ask anything about it, or switch to Fact check here to test each of its claims against the web.",
+    },
+  },
   modes: {
     pick: "Mode",
     off: "Back to a normal answer",
@@ -718,6 +733,21 @@ const fr: Dict = {
     history: {
       title: "Conversations récentes",
       body: "Toutes vos conversations restent ici. Rouvrez-en une et reprenez où vous vous étiez arrêté.",
+    },
+  },
+  tips: {
+    gotIt: "Compris",
+    deep: {
+      title: "Votre recherche approfondie est lancée",
+      body: "Elle travaille en arrière-plan et le rapport arrivera ici, dans Résultats. Continuez à discuter en attendant : une notification vous préviendra dès qu'il sera prêt.",
+    },
+    factcheck: {
+      title: "Votre vérification est lancée",
+      body: "Nexus vérifie chaque affirmation en arrière-plan et le résultat arrivera ici, dans Résultats. Continuez à discuter en attendant : une notification vous préviendra dès qu'il sera prêt.",
+    },
+    attach: {
+      title: "Votre document est joint",
+      body: "Posez-lui n'importe quelle question, ou passez ici en mode Vérification pour confronter chacune de ses affirmations au web.",
     },
   },
   modes: {

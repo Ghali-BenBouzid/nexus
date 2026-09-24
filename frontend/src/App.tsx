@@ -8,6 +8,7 @@ import { Hero } from "./components/Hero";
 import { History } from "./components/History";
 import { Nav } from "./components/Nav";
 import { Toast } from "./components/Toast";
+import { Tip } from "./components/Tip";
 import { Tour } from "./components/Tour";
 import { About, Footer, HowItWorks } from "./components/Sections";
 import {
@@ -40,7 +41,7 @@ import {
 } from "./lib/design";
 import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
 import { isLive, LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
-import { tourSeen } from "./lib/tour";
+import { markTipSeen, tipSeen, tourSeen, type Tip as TipDef, type TipId } from "./lib/tour";
 import { isUnread, loadSeen, markSeen, saveSeen, type Seen } from "./lib/unread";
 import { DocPreview, type PreviewTarget } from "./components/DocPreview";
 import type {
@@ -174,6 +175,18 @@ export default function App() {
   // find deep research or fact check. Auto once per browser, replayable from the
   // nav. It waits a beat so it lands on a settled page, not a half-painted one.
   const [tour, setTour] = useState(false);
+  // One-time tips waiting to be shown, one at a time: a fact check can start a
+  // second after its document was attached, and two bubbles would talk over
+  // each other.
+  const [tips, setTips] = useState<TipDef[]>([]);
+  const offerTip = (id: TipId, targets: string[], around?: string) => {
+    if (!live || tipSeen(id)) return;
+    setTips((queue) => (queue.some((q) => q.id === id) ? queue : [...queue, { id, targets, around }]));
+  };
+  const doneTip = (id: TipId) => {
+    markTipSeen(id);
+    setTips((queue) => queue.filter((q) => q.id !== id));
+  };
   // Runs this tab has seen working. Only those are announced when they finish:
   // a report that was already done when the page loaded is not news, and it
   // still carries its unread mark in Outputs. Remembering announcements in the
@@ -348,6 +361,15 @@ export default function App() {
     if (!starting) return;
     revealed.current.add(starting.id);
     setLayout("split");
+    // The panel opening is movement at the edge of the eye, and the first time
+    // it happens nobody knows what it means. Only for this chat's own run: one
+    // from another chat is not in the panel to point at.
+    if (starting.conversationId === activeConversationId) {
+      offerTip(starting.kind === "deep_research" ? "deep" : "factcheck", [
+        `output-${starting.id}`,
+        "outputs",
+      ]);
+    }
   }, [outputs]);
 
   // Tell the user once when a report they are no longer watching is ready. Two
@@ -719,6 +741,8 @@ export default function App() {
     setOpenOutputId(id);
     setOpenOutputResult(null);
     if (id == null) return;
+    // However the report was reached, its "ready" toast has done its job.
+    dismiss(id);
     setLayout("split");
     const output = outputs.find((o) => o.id === id);
     if (output) {
@@ -741,6 +765,7 @@ export default function App() {
   // conversation without asking anything about it yet. Before the first message
   // there is no conversation to put it in, so it is staged like a composer pick.
   async function addDocument(file: File) {
+    offerTip("attach", ["mode"], "composer");
     if (activeConversationId == null) {
       setStaged((files) => [...files, file]);
       return;
@@ -935,6 +960,9 @@ export default function App() {
 
       {tour && <Tour onView={tourView} onFinish={() => setTour(false)} />}
 
+      {/* The tour already says everything a tip would, so tips wait it out. */}
+      {!tour && tips[0] && <Tip key={tips[0].id} tip={tips[0]} onDone={() => doneTip(tips[0].id)} />}
+
       {view === "how" && <DeepDive onBack={goHome} />}
 
       {view === "chat" && (
@@ -961,7 +989,10 @@ export default function App() {
           unreadChats={unreadChats}
           onRefreshOutput={refreshOutput}
           staged={staged}
-          onAttach={(files) => setStaged((current) => [...current, ...files])}
+          onAttach={(files) => {
+            setStaged((current) => [...current, ...files]);
+            offerTip("attach", ["mode"], "composer");
+          }}
           onUnstage={(index) => setStaged((current) => current.filter((_, i) => i !== index))}
           onUpload={addDocument}
           onRemoveDocument={removeDocument}
