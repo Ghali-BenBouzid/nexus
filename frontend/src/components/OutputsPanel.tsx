@@ -1,8 +1,9 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import { UPLOAD_ACCEPT } from "../lib/uploads";
+import { elapsed, when } from "../lib/when";
 import type { Doc, Output, Result } from "../types";
 import { Artifact } from "./Artifact";
 
@@ -45,11 +46,42 @@ function docMeta(doc: Doc): string {
   return parts.join(" · ");
 }
 
-function outputMeta(output: Output): string {
+const isWorking = (output: Output) => output.status === "pending" || output.status === "running";
+
+// What the run is, and when: how long it has been working while it runs, and
+// when it finished once it has.
+function outputMeta(output: Output, now: Date): React.ReactNode {
   const kind = output.kind === "fact_check" ? t.artifact.fact_check : t.artifact.deep_research;
-  if (output.status === "failed") return `${kind} · ${t.artifact.failed}`;
-  if (output.status !== "complete") return `${kind} · ${t.artifact.running}`;
-  return kind;
+  // Each part wraps as a whole, so a narrow panel never leaves "AM" alone on a line.
+  const parts = isWorking(output)
+    ? [kind, t.artifact.workingFor(elapsed(output.createdAt, now))]
+    : [
+        kind,
+        ...(output.status === "failed" ? [t.artifact.failed] : []),
+        when(output.completedAt ?? output.createdAt, now),
+      ];
+  const last = parts.length - 1;
+  return parts.map((part, i) => (
+    <span key={i}>
+      <span className="nowrap">
+        {part}
+        {i < last && " ·"}
+      </span>
+      {i < last && " "}
+    </span>
+  ));
+}
+
+// The panel's clock: every second while a run is working, so its timer ticks,
+// and every half minute otherwise, which is enough for "5 minutes ago".
+function useNow(fast: boolean): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    setNow(new Date());
+    const id = setInterval(() => setNow(new Date()), fast ? 1_000 : 30_000);
+    return () => clearInterval(id);
+  }, [fast]);
+  return now;
 }
 
 // The right-hand panel: what this account has produced (deep research reports and
@@ -76,6 +108,7 @@ export function OutputsPanel({
 }: OutputsPanelProps) {
   const fileInput = useRef<HTMLInputElement>(null);
   const [confirming, setConfirming] = useState<number | null>(null);
+  const now = useNow(outputs.some(isWorking));
   const style = isMobile ? undefined : { width };
   const open = openId != null ? outputs.find((o) => o.id === openId) : undefined;
 
@@ -131,9 +164,12 @@ export function OutputsPanel({
               <span className="hist-dot" aria-hidden="true" />
               <div className="hist-main">
                 <div className="hist-q">{output.title}</div>
-                <div className={"hist-meta " + output.status}>
+                <div
+                  className={"hist-meta " + output.status}
+                  title={new Date(output.completedAt ?? output.createdAt).toLocaleString()}
+                >
                   {!ready && output.status !== "failed" && <span className="spin" />}
-                  {outputMeta(output)}
+                  {outputMeta(output, now)}
                 </div>
               </div>
             </button>

@@ -41,6 +41,8 @@ type ConversationProps = {
   onOpenOutput: (id: number | null) => void;
   // Finished reports the user has not opened since they last changed.
   unread: Set<number>;
+  // Chats with a finished report not yet opened, marked in Recent.
+  unreadChats: Set<ConversationId>;
   onRefreshOutput: (id: number) => void;
   onUpload: (file: File) => void;
   // Files picked in the composer, sent with the next message.
@@ -85,6 +87,7 @@ export function Conversation({
   openOutputResult,
   onOpenOutput,
   unread,
+  unreadChats,
   onRefreshOutput,
   onUpload,
   staged,
@@ -330,6 +333,7 @@ export function Conversation({
           theme={theme}
           toggleTheme={toggleTheme}
           account={account}
+          unread={unreadChats}
         />
 
         {/* The conversation column owns the composer, so the prompt bar stays
