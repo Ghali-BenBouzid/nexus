@@ -51,12 +51,23 @@ _OPENAI_PRESETS = {
 # reason whether or not we ask (glm refuses to turn it off); asking is what makes
 # it visible rather than silent.
 #
-# ``provider.sort`` picks the fastest upstream serving the model instead of
-# OpenRouter's default balance. The same call measured 2.2s and 18.2s on
-# different draws, and a stream makes a slow draw something the user watches.
+# ``provider`` picks which of the model's ~30 upstreams serves the call, and on
+# a stream that choice is something the user watches. Sorting by throughput
+# ranked upstreams on their recent median, and kept sending most calls to one
+# that was degraded (12 tok/s, 9 s to the first token, over a minute for 700
+# tokens) because its median still led. Sorting by latency alone settled on a
+# premium upstream at three times the price. So: the cheapest upstream that is
+# fast right now. The performance floors move an upstream that misses them to
+# the back of the line rather than excluding it, so a call never fails on them,
+# and none of it is priced for one model: changing LLM_MODEL needs nothing else.
+# Measured on the same 700-token call: 64-68 s before, 4-11 s after.
 _OPENROUTER_BODY: dict[str, Any] = {
     "reasoning": {"enabled": True},
-    "provider": {"sort": "throughput"},
+    "provider": {
+        "sort": "price",
+        "preferred_min_throughput": {"p50": 80, "p90": 50},
+        "preferred_max_latency": {"p90": 2},
+    },
 }
 
 # Free-tier (requests-per-minute, tokens-per-minute) per provider+model, from the
