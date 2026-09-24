@@ -49,6 +49,10 @@ _LANGUAGE_NAMES = {
 
 # Below this many characters detection is too unreliable to trust, so we abstain.
 _MIN_CHARS = 12
+# Up to this many characters, a one-line query, the text is read by its function
+# words first: that is where langdetect's letter statistics are thin enough for
+# a few names to tip them. Longer text is langdetect's, which reads it well.
+_SHORT_CHARS = 80
 
 
 # The small words a sentence cannot do without, per language. On a short query
@@ -95,13 +99,15 @@ def detect_language(text: str) -> str | None:
     """Best-effort language name for ``text``, or None when it is too short, the
     detection is not confident or the language is unrecognized. Never raises.
 
-    Function words decide when they point one way: they are what makes a short
-    query readable at all. langdetect answers the rest, other scripts and text
-    with no telling small words."""
+    A short query is read by its function words when they point one way: they
+    are what makes it readable at all. langdetect answers everything else:
+    longer text, other scripts, and a query with no telling small words."""
     text = (text or "").strip()
     if len(text) < _MIN_CHARS:
         return None
-    return _by_function_words(text) or _by_letters(text)
+    if len(text) <= _SHORT_CHARS and (language := _by_function_words(text)):
+        return language
+    return _by_letters(text)
 
 
 def _by_letters(text: str) -> str | None:

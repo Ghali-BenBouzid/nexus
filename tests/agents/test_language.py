@@ -67,3 +67,13 @@ def test_a_query_with_no_small_words_is_left_to_the_agent() -> None:
 def test_other_scripts_are_still_read() -> None:
     assert detect_language("сравни экономику Марокко и Алжира") == "Russian"
     assert detect_language("قارن اقتصاد المغرب والجزائر") == "Arabic"
+
+
+def test_longer_text_is_left_to_langdetect(monkeypatch) -> None:
+    from app.agents import language
+
+    monkeypatch.setattr(language, "_by_letters", lambda text: "Letters")
+    long = "compare the economy of morocco to the economy of algeria " * 2
+
+    assert detect_language(long) == "Letters"
+    assert detect_language("compare morroco's economy to algeria's") == "English"
