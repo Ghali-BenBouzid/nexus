@@ -639,6 +639,17 @@ html[data-theme="light"] .tour-hole {
   font-size: 14.5px; line-height: 1.65; color: var(--muted); }
 .dd-notes b { color: var(--fg); font-weight: 600; }
 
+/* The evaluation results: a plain table in the page's own type, ruled like the
+   notes rather than boxed, so it reads as part of the text. */
+.dd-table-wrap { overflow-x: auto; margin: 0 0 18px; }
+.dd-table { width: 100%; border-collapse: collapse; font-size: 14px; line-height: 1.5; }
+.dd-table th { text-align: left; font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+  letter-spacing: 0.04em; text-transform: uppercase; color: var(--faint);
+  padding: 0 14px 10px 0; border-bottom: 1px solid var(--line-strong); }
+.dd-table td { vertical-align: top; padding: 12px 14px 12px 0; color: var(--muted);
+  border-bottom: 1px solid var(--line); }
+.dd-table td:first-child { color: var(--fg); font-weight: 500; min-width: 180px; }
+.dd-aside { max-width: 68ch; margin: 0; font-size: 14px; line-height: 1.65; color: var(--faint); }
 .dd-foot { padding-top: 10px; }
 
 @media (max-width: 720px) {
