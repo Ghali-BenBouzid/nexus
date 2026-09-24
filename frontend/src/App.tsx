@@ -187,6 +187,12 @@ export default function App() {
     markTipSeen(id);
     setTips((queue) => queue.filter((q) => q.id !== id));
   };
+  // Doing what a tip suggests is as good as "Got it". Only a tip that is up or
+  // waiting counts: acting before a tip was ever offered leaves it to come later.
+  const actedOn = (done: (tip: TipDef) => boolean) => {
+    for (const tip of tips) if (done(tip)) markTipSeen(tip.id);
+    setTips((queue) => queue.filter((q) => !done(q)));
+  };
   // Runs this tab has seen working. Only those are announced when they finish:
   // a report that was already done when the page loaded is not news, and it
   // still carries its unread mark in Outputs. Remembering announcements in the
@@ -741,8 +747,10 @@ export default function App() {
     setOpenOutputId(id);
     setOpenOutputResult(null);
     if (id == null) return;
-    // However the report was reached, its "ready" toast has done its job.
+    // However the report was reached, its "ready" toast has done its job, and so
+    // has the tip pointing at it.
     dismiss(id);
+    actedOn((tip) => tip.targets.includes(`output-${id}`));
     setLayout("split");
     const output = outputs.find((o) => o.id === id);
     if (output) {
@@ -936,7 +944,15 @@ export default function App() {
       )}
 
       {live && (
-        <History open={historyOpen} onClose={() => setHistoryOpen(false)} onOpen={openHistory} />
+        <History
+          open={historyOpen}
+          onClose={() => setHistoryOpen(false)}
+          onOpen={openHistory}
+          onNewChat={() => {
+            setHistoryOpen(false);
+            newChat();
+          }}
+        />
       )}
 
       {view === "home" && (
@@ -979,7 +995,14 @@ export default function App() {
           mode={mode}
           // Live only: a demo build has no deep run to start, and offering a
           // mode that cannot do anything is worse than not offering it.
-          onMode={live ? setMode : undefined}
+          onMode={
+            live
+              ? (next) => {
+                  setMode(next);
+                  actedOn((tip) => tip.id === "attach");
+                }
+              : undefined
+          }
           outputs={conversationOutputs}
           documents={documents}
           openOutputId={openOutputId}
