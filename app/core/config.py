@@ -78,6 +78,10 @@ class Settings(BaseSettings):
     # report's breadth and costs about that much more per run.
     cap: int = 6  # max sub-questions
     max_iters: int = 3  # max tool rounds per researcher
+    # Web searches one researcher may make. The engines behind SearXNG block a
+    # burst (CAPTCHA, 429) for minutes, so fewer, better searches go further than
+    # many; reading a page does not count, it goes to Crawl4AI.
+    searches: int = 3
     # Researchers run in parallel on a paid key. On a free tier, drop this to 1:
     # parallel researchers split a small tokens-per-minute budget and time out.
     # Matches cap, so every researcher of a run starts at once and they share the
@@ -109,6 +113,7 @@ class Settings(BaseSettings):
     # rather than by how long someone will sit and watch.
     deep_cap: int = 6  # max sub-questions in one round
     deep_max_iters: int = 6  # max tool rounds per researcher
+    deep_searches: int = 5  # web searches per researcher
     deep_concurrency: int = 6  # simultaneous researchers
     deep_research_budget: float = 180.0  # seconds one round's researchers get
     # The lead sends rounds of researchers until it judges the subject covered.
@@ -153,8 +158,12 @@ class Settings(BaseSettings):
     deep_timeout: float = 2_100.0  # whole-run backstop
     # The fact checker's own loop: read, search, read, write. Wider than a
     # researcher's because it checks several claims inside one loop.
-    factcheck_max_iters: int = 14
-    factcheck_timeout: float = 600.0  # seconds
+    # Every web search this process sends, whichever agent sends it, paced so
+    # a round of researchers does not arrive at the engines as one burst.
+    search_rate_per_min: int = 40
+    factcheck_max_iters: int = 14  # steps before the claim list is confirmed
+    factcheck_most_iters: int = 40  # the most it can grow to, with many claims
+    factcheck_timeout: float = 900.0  # seconds, room for most_iters steps
 
     # Where jobs run (routing a message, planning, research, composing). "redis":
     # the API only enqueues them and the worker process runs them

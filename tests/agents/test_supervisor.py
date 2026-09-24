@@ -187,7 +187,7 @@ async def test_an_empty_answer_is_empty_not_invented() -> None:
     assert answer.text == ""
 
 
-async def _never(document_id: int, focus: str) -> str:
+async def _never(document_id: int, title: str, focus: str) -> str:
     raise AssertionError("fact_check should not have been called")
 
 

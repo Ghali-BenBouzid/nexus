@@ -38,6 +38,7 @@ function activityText(a: Act, now: number): string {
   if (a.kind === "read") return t.progress.readingPage(a.domain);
   if (a.kind === "document") return t.progress.readingDocument(a.text);
   if (a.kind === "steer") return t.progress.steering;
+  if (a.kind === "claims") return t.progress.listingClaims;
   const s = since(a.at, now);
   return s == null ? t.progress.thinking : `${t.progress.thinking} ${clock(s)}`;
 }

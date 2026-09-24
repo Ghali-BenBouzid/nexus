@@ -206,13 +206,19 @@ async def test_a_run_is_not_started_with_nothing_left_to_spend(
 
 
 class _FactChecker(ScriptedModel):
-    """A fact checker that searches once, then writes its verdict."""
+    """A fact checker that lists its claim, confirms it after the review,
+    searches once, then writes its verdict."""
 
-    searched: bool = False
+    step: int = 0
 
     def _generate(self, messages, stop=None, run_manager=None, **kwargs):
-        if not self.searched:
-            self.searched = True
+        claims = [{"claim": "it is true", "passage": "it is true"}]
+        self.step += 1
+        if self.step <= 2:
+            reply = call(
+                "submit_claims", claims=claims, left_out=[], confirmed=self.step == 2
+            )
+        elif self.step == 3:
             reply = call("web_search", query="is it true", max_results=5)
         else:
             reply = says("## The claim\n\n**Contradicted**. The sources disagree.[1]")
@@ -242,7 +248,12 @@ class _ChecksInThread(_FactChecker):
             document_id = int(
                 re.search(r"id (\d+)", str(messages[0].content)).group(1)  # type: ignore[union-attr]
             )
-            reply = call("fact_check", document_id=document_id, focus="the numbers")
+            reply = call(
+                "fact_check",
+                document_id=document_id,
+                title="Vérification : le rapport",
+                focus="the numbers",
+            )
         else:
             reply = says("I have started a fact check; it will appear in Outputs.")
         return ChatResult(generations=[ChatGeneration(message=reply)])
@@ -272,6 +283,7 @@ async def test_fact_check_mode_is_the_supervisors_to_answer(
     assert reply.startswith("I have started a fact check")
     [artifact] = (await client.get("/research/artifacts", headers=auth_headers)).json()
     assert artifact["kind"] == "fact_check"
+    assert artifact["title"] == "Vérification : le rapport"  # the supervisor's words
     body = (
         await client.get(f"/research/query/{artifact['id']}", headers=auth_headers)
     ).json()
@@ -429,13 +441,39 @@ def test_the_mode_is_told_to_the_supervisor_and_nothing_else_is() -> None:
     assert "<mode>" not in off
 
 
+class _LeadWaits(_StartsDeepResearch):
+    """A deep run whose lead does not decide until ``go`` is set, so the run is
+    still working when the test stops it. Left to run, the fake finished before
+    the stop arrived on a fast CI runner, and a stop after the end is a no-op."""
+
+    go: asyncio.Event | None = None
+
+    async def _wait_if_lead(self, kwargs) -> None:
+        names = {
+            tool.get("function", {}).get("name") or tool.get("name", "")
+            for tool in (kwargs.get("tools") or [])
+        }
+        if "DispatchResearchersArgs" in names and self.go is not None:
+            await self.go.wait()
+
+    async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+        await self._wait_if_lead(kwargs)
+        return await super()._agenerate(messages, stop, run_manager, **kwargs)
+
+    async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
+        await self._wait_if_lead(kwargs)
+        async for chunk in super()._astream(messages, stop, run_manager, **kwargs):
+            yield chunk
+
+
 async def test_a_deep_run_from_deep_mode_is_stoppable(
     client: AsyncClient, auth_headers: dict[str, str], monkeypatch
 ) -> None:
     """A deep run costs minutes and money, so the user has to be able to call it
     off. It is an ordinary query however it was started, and Outputs is where
     its id is found."""
-    _use(lambda: _StartsDeepResearch(), monkeypatch=monkeypatch)
+    go = asyncio.Event()
+    _use(lambda: _LeadWaits(go=go), monkeypatch=monkeypatch)
 
     await client.post(
         "/conversations",
@@ -448,6 +486,7 @@ async def test_a_deep_run_from_deep_mode_is_stoppable(
         f"/research/query/{artifact['id']}/cancel", headers=auth_headers
     )
     assert stopped.status_code == 204
+    go.set()
     await drain()
 
     detail = await client.get(f"/research/query/{artifact['id']}", headers=auth_headers)

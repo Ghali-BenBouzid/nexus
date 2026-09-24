@@ -97,7 +97,18 @@ class PacedChatOpenAI(ChatOpenAI):
     async def _astream(self, messages, stop=None, run_manager=None, **kwargs):
         if self.pacing is not None:
             await self.pacing.acquire(_estimate_call(messages, kwargs.get("tools")))
+        finished = False
         async for chunk in super()._astream(messages, stop, run_manager, **kwargs):
+            # OpenRouter marks the end twice, on the last content chunk and again
+            # on the usage chunk, and merging the chunks joins the strings: every
+            # streamed call was billed to "z-ai/glm-5.3-flashz-ai/glm-5.3-flash"
+            # and finished with "stopstop". Only the first mark is kept.
+            info = chunk.generation_info or {}
+            if "finish_reason" in info:
+                if finished:
+                    for key in ("finish_reason", "model_name"):
+                        info.pop(key, None)
+                finished = True
             yield chunk
 
     def _convert_chunk_to_generation_chunk(

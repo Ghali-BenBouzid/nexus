@@ -6,9 +6,13 @@
 // the slug the model has to have written in the table. Where it does not match
 // exactly, `resolve` below is what closes the gap.
 export function slug(text: string): string {
-  return text
+  return decoded(text)
+    // Accents go, letters stay: "Vérifié" and the link written for it both
+    // become "verifie". Dropping the letter instead broke every French link.
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
     .toLowerCase()
-    .replace(/[^\w\s-]/g, "")
+    .replace(/[^\p{L}\p{N}\s-]/gu, "")
     .trim()
     // Runs collapse to one. A claim header reads "Supported - the merger
     // closed", and the dash plus its two spaces would otherwise become three
@@ -29,5 +33,31 @@ export function resolve(target: string, ids: string[]): string | null {
   const want = slug(target.replace(/^#/, ""));
   if (ids.includes(want)) return want;
   const near = ids.filter((id) => id.includes(want) || want.includes(id));
-  return near.length === 1 ? near[0] : null;
+  if (near.length === 1) return near[0];
+  // A model sometimes rewords the claim in the link. The heading that shares
+  // most of its words wins, if it clearly does.
+  const scored = ids
+    .map((id) => ({ id, score: overlap(want, id) }))
+    .sort((a, b) => b.score - a.score);
+  const [best, next] = scored;
+  if (!best || best.score < 0.5) return null;
+  return next && next.score === best.score ? null : best.id;
+}
+
+// The share of words two slugs have in common, of the smaller one's.
+function overlap(a: string, b: string): number {
+  const x = new Set(a.split("-"));
+  const y = new Set(b.split("-"));
+  const shared = [...x].filter((w) => y.has(w)).length;
+  return shared / Math.min(x.size, y.size);
+}
+
+// A link's target arrives percent-encoded ("v%C3%A9rifi%C3%A9"), a heading's
+// text does not.
+function decoded(text: string): string {
+  try {
+    return decodeURIComponent(text);
+  } catch {
+    return text;
+  }
 }

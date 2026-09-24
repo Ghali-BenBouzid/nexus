@@ -57,6 +57,7 @@ class Limits:
 
     cap: int
     max_iters: int
+    searches: int  # web searches per researcher
     concurrency: int
     budget: float  # seconds before researchers stop searching and submit
     per_researcher_timeout: float  # hard stop for one researcher
@@ -66,6 +67,7 @@ class Limits:
         return cls(
             cap=settings.cap,
             max_iters=settings.max_iters,
+            searches=settings.searches,
             concurrency=settings.max_concurrency,
             budget=settings.research_budget,
             per_researcher_timeout=settings.per_researcher_timeout,
@@ -76,6 +78,7 @@ class Limits:
         return cls(
             cap=settings.deep_cap,
             max_iters=settings.deep_max_iters,
+            searches=settings.deep_searches,
             concurrency=settings.deep_concurrency,
             budget=settings.deep_research_budget,
             per_researcher_timeout=settings.deep_researcher_timeout,
@@ -192,6 +195,7 @@ async def research_task(
                     ),
                     emit=own_emit,
                     max_iters=limits.max_iters,
+                    searches=limits.searches,
                     deadline=time.monotonic() + (deadline - time.time()),
                 ),
                 timeout=limits.per_researcher_timeout,

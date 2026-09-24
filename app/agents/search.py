@@ -1,8 +1,10 @@
 import httpx
 from tavily import AsyncTavilyClient
 
+from app.agents.rate_limit import AsyncTokenBucket
 from app.agents.retry import RetryPolicy, retry_async
 from app.agents.tools import SearchHit
+from app.core.config import settings
 
 
 class SearchError(Exception):
@@ -72,6 +74,14 @@ class TavilyBackend:
         if not results:
             return ""
         return results[0].get("raw_content", "")
+
+
+# Every search this process sends to SearXNG, paced. The public engines behind
+# it block a burst for minutes (Google with a CAPTCHA, Brave with a 429), and a
+# round of researchers searching at once is exactly that burst.
+# ponytail: per process; with several workers the engines see their sum, so
+# share the bucket through Redis if more than one worker ever runs.
+_engines = AsyncTokenBucket(settings.search_rate_per_min, capacity=4)
 
 
 class SelfHostedBackend:
@@ -148,6 +158,7 @@ class SelfHostedBackend:
             response.raise_for_status()
             return response.json()
 
+        await _engines.acquire(1)
         try:
             payload = await retry_async(_call, policy=self.retry)
         except Exception as exc:

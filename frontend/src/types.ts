@@ -61,6 +61,7 @@ export type AgentEvent =
   | { kind: "tool"; action: "error"; text: string; index?: number }
   // The supervisor passed a change of mind to a deep run that is still working.
   | { kind: "tool"; action: "steer" }
+  | { kind: "tool"; action: "claims" }
   // The supervisor read a file attached to the conversation.
   | { kind: "tool"; action: "document"; text: string }
   // A run the supervisor started in the background, which finishes on its own.
