@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { listConversations, type ConversationSummary } from "../lib/api";
+import { I } from "../icons";
 import { lang, t } from "../lib/i18n";
 import type { ConversationId } from "../types";
 
@@ -8,6 +9,7 @@ type HistoryProps = {
   open: boolean;
   onClose: () => void;
   onOpen: (id: ConversationId) => void;
+  onNewChat: () => void;
 };
 
 function when(iso: string): string {
@@ -18,7 +20,7 @@ function when(iso: string): string {
 
 // Slide-in drawer over the whole app: the caller's past queries, pulled from the
 // backend. Selecting one rehydrates it as a turn in the conversation.
-export function History({ open, onClose, onOpen }: HistoryProps) {
+export function History({ open, onClose, onOpen, onNewChat }: HistoryProps) {
   const [items, setItems] = useState<ConversationSummary[] | null>(null);
 
   useEffect(() => {
@@ -48,6 +50,11 @@ export function History({ open, onClose, onOpen }: HistoryProps) {
           <span className="drawer-title">{t.history.recent}</span>
           <button className="drawer-x" onClick={onClose} aria-label={t.history.close}>×</button>
         </div>
+        {/* Always there, so a first visit with no history still has a way in. */}
+        <button className="ch-newchat" onClick={onNewChat}>
+          {I.plus}
+          <span>{t.history.newChat}</span>
+        </button>
         <div className="drawer-body">
           {items === null && <div className="drawer-empty">{t.history.loading}</div>}
           {items?.length === 0 && <div className="drawer-empty">{t.history.empty}</div>}
