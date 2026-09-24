@@ -55,10 +55,9 @@ class RunFailedError(Exception):
 
 
 # Events that exist only while someone is watching. A token is a fragment of a
-# reply that is persisted whole when the turn ends, and a thought is the model's
-# scratchpad, which nothing later reads: storing either would be hundreds of rows
-# per turn to say what one row already says.
-LIVE_ONLY = frozenset({"token", "thought"})
+# reply that is persisted whole when the turn ends: storing each would be
+# hundreds of rows per turn to say what one row already says.
+LIVE_ONLY = frozenset({"token"})
 
 
 class EventSink:

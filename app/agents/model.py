@@ -302,7 +302,16 @@ class Progress(AgentMiddleware):
             AgentEvent(
                 type="tool_call",
                 message=f"{name}({request.tool_call['args']})",
-                data={"agent": self.agent, "tool": name, **self.data},
+                # The arguments are what the feed shows (the query, the page),
+                # and the call's id is what ties a research team's own events
+                # back to the step that sent it.
+                data={
+                    "agent": self.agent,
+                    "tool": name,
+                    "args": request.tool_call["args"],
+                    "call": request.tool_call.get("id"),
+                    **self.data,
+                },
             )
         )
         try:
