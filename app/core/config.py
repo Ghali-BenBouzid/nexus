@@ -149,8 +149,9 @@ class Settings(BaseSettings):
     deep_timeout: float = 2_100.0  # whole-run backstop
     # The fact checker's own loop: read, search, read, write. Wider than a
     # researcher's because it checks several claims inside one loop.
-    factcheck_max_iters: int = 14
-    factcheck_timeout: float = 600.0  # seconds
+    factcheck_max_iters: int = 14  # steps before the claim list is confirmed
+    factcheck_most_iters: int = 40  # the most it can grow to, with many claims
+    factcheck_timeout: float = 900.0  # seconds, room for most_iters steps
 
     # Where jobs run (routing a message, planning, research, composing). "redis":
     # the API only enqueues them and the worker process runs them

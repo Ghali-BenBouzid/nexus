@@ -225,6 +225,7 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
         return { kind: "tool", action: "document", text: e.message };
       }
       if (d.tool === "steer_deep_research") return { kind: "tool", action: "steer" };
+      if (d.tool === "submit_claims") return { kind: "tool", action: "claims" };
       if (d.tool === "deep_research" || d.tool === "fact_check") {
         return { kind: "started", run: d.tool, text: String(args.title ?? "") };
       }

@@ -8,8 +8,8 @@
     "sha256": "e229a8032f5fbff4648cee47deccf6f506d5395adf3b84d6b552821db629756d"
   },
   "deep_lead": {
-    "version": 3,
-    "sha256": "632d5420134981f00379874d121a080f6af6cd114b6de0e0dbd17221af72ca94"
+    "version": 4,
+    "sha256": "d558a51a6d7d19d5d850f52657a5d45c9b7a44ce84d9156832c9451088a3a876"
   },
   "researcher": {
     "version": 6,
@@ -20,8 +20,8 @@
     "sha256": "cf5a3546d3381107747d92e8ae26ea50e96a2c897b67358a25c468812069819d"
   },
   "fact_check": {
-    "version": 2,
-    "sha256": "d42fb009f8b9176e86c3eb0d2cc11e83a11dfa9ad3a218287644888c6a1b705a"
+    "version": 3,
+    "sha256": "0146a3d43021d6b815c47a356a6356db626fd9ecdd4c22707a265c41757d2df9"
   },
   "curate": {
     "version": 2,

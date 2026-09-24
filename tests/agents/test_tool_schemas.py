@@ -20,12 +20,14 @@ from app.agents.supervisor import (
 )
 from app.agents.tools import (
     FetchPageArgs,
+    SubmitClaimsArgs,
     SubmitFindingArgs,
     SubmitPlanArgs,
     WebSearchArgs,
 )
 
 SCHEMAS = [
+    SubmitClaimsArgs,
     SubmitPlanArgs,
     SubmitFindingArgs,
     WebSearchArgs,

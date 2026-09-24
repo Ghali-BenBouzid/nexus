@@ -92,8 +92,9 @@ class DeepResearchArgs(BaseModel):
         "as they would ask it: not a syllabus or a list of topics to cover"
     )
     goal: str = Field(
-        description="What the user wants to achieve with the answer and how deep "
-        "they need to go, from the conversation; say what you assumed"
+        description="The brief for the run: what the user wants the report for, "
+        "depth on a few areas or a broad first look, the areas to focus on, and "
+        "what you decided for them"
     )
     title: str = Field(
         description="A short title, a few words in the user's language, naming "
@@ -316,25 +317,36 @@ worth researching in depth, start deep_research on it, with a short title that \
 names the subject. Do not answer it with a quick research pass instead: \
 choosing this mode is the user asking for depth.
 
-A deep run goes deep on what matters for the user's goal, so it needs to know \
-the goal. When the message or the conversation already makes it clear, or the \
-question is specific enough that the goal is obvious, start at once. When the \
-request is broad (a whole field, "educate me on X", "everything about Y") and \
-nothing says what it is for, ask one short question about what they want to \
-achieve or who it is for, not about the plan, and offer two or three concrete \
-options so answering takes a second. Assume sensible defaults for everything \
-else. Pass the goal, including what you assumed, in the goal argument, and \
-keep the question the user's own question rather than a list of topics.
+A deep run is shaped by what the user wants from it, so before starting one, \
+make sure you know:
+- what they want the report for: a decision, learning a subject, writing \
+something, checking an idea;
+- whether they want depth on a few areas or a broad first look at the subject \
+(to go deep on part of it in a later run);
+- which areas matter to them, if they already know.
+When the message or the conversation already makes this clear, start at once. \
+A bare topic or a broad request ("quantum computing", "teach me about X") \
+does not: it says what to research, not what they want from it, so ask before \
+starting, not about the plan but about what they \
+want: short, with two or three concrete options each so answering takes a \
+second, and always one option that leaves it to you ("your call"). If the \
+answer still leaves it unclear, ask again, more narrowly. Only when they \
+leave it to you, by choosing that option or saying to just go, choose what \
+serves the question best and start; never decide on their behalf that they \
+left it to you.
+
+Pass all of it in the goal argument: what the report is for, depth or \
+breadth, the areas to focus on, and what you decided for them. Keep the \
+question the user's own question rather than a list of topics.
 
 When this message is not something to research (a greeting, small talk, a \
 question about Nexus, or a request not to research), do not start a run. \
 Answer it as you normally would, and say in a sentence what deep research is \
 for and what to send to start one.
 
-When the subject itself is too vague to research at all, ask one short \
-question to pin it down before starting: a deep run takes several minutes, and \
-a report built on a guess about what they meant wastes all of them. Ask one \
-question, never a list.
+When the subject itself is too vague to research at all, pin it down the \
+same way before starting: a deep run takes several minutes, and a report built \
+on a guess about what they meant wastes all of them.
 </mode>"""
 
 # The same principle for fact checking: the mode says what the user is after,
@@ -406,7 +418,8 @@ class RunClaimCheck(AgentMiddleware):
                     f"been started in this turn: {self.tool} was not called. If "
                     "your reply says one is starting, running or underway, it is "
                     f"not, so call {self.tool} now. If you meant to reply without "
-                    "starting one, send your reply again."
+                    "starting one, send the same reply again, unchanged: the "
+                    "user has not seen it yet, so it is not waiting on them."
                 )
             ],
         }
