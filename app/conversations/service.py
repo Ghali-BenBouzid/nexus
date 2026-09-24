@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import jobs
 from app.agents.schemas import AgentEvent, ResearchResult, Turn
-from app.agents.supervisor import Document, Output, respond
+from app.agents.supervisor import Document, Output, Running, respond
 from app.agents.tools import SearchBackend
 from app.billing.service import has_budget
 from app.conversations import repository
@@ -43,6 +43,12 @@ DEEP_STARTED = (
     "Deep research has started on that. It takes several minutes and will appear "
     "in the user's Outputs when it is done. Tell them it is running; do not wait "
     "for it or make up what it will say."
+)
+DEEP_BUSY = (
+    "Nothing was started: deep research run {id} ({title}) is still working in "
+    "this conversation, and only one works at a time. If the user wants its "
+    "direction changed, pass that on with steer_deep_research; otherwise tell "
+    "them a new run can start once this one is done."
 )
 FACT_CHECK_STARTED = (
     "The fact check has started on {filename}. Its report will appear in the "
@@ -186,12 +192,13 @@ async def route_message(
             )
         ]
         running = [
-            Output(id=q.id, title=q.title or q.prompt, content="")
-            for q in await research_repository.list_conversation_artifacts(
-                db, conversation_id
+            Running(
+                id=q.id,
+                kind=_MODE_OF[q.kind],
+                title=q.title or q.prompt,
+                stage=await _stage(db, q),
             )
-            if q.kind == QueryKind.deep_research
-            and q.status in (QueryStatus.pending, QueryStatus.running)
+            for q in await _working(db, conversation_id)
         ]
 
     async def work(run: Run) -> None:
@@ -230,12 +237,51 @@ async def route_message(
     await run_query(query_id, user_id=user_id, work=work, model=model, backend=backend)
 
 
+_MODE_OF = {QueryKind.deep_research: "deep", QueryKind.fact_check: "factcheck"}
+
+
+async def _working(db: AsyncSession, conversation_id: int) -> list[Query]:
+    """The background runs of a conversation still queued or working."""
+    return [
+        q
+        for q in await research_repository.list_conversation_artifacts(
+            db, conversation_id
+        )
+        if q.status in (QueryStatus.pending, QueryStatus.running)
+    ]
+
+
+async def _writing(db: AsyncSession, run_id: int) -> bool:
+    """Whether a deep run has finished researching and is writing its report."""
+    events = await research_repository.list_events(db, run_id, 0)
+    return any(e.type in ("lead_done", "writer_start") for e in events)
+
+
+async def _stage(db: AsyncSession, query: Query) -> str:
+    if query.status == QueryStatus.pending:
+        return "queued"
+    if query.kind == QueryKind.deep_research and await _writing(db, query.id):
+        return "writing its report"
+    return "working"
+
+
 def _deep_starter(run: Run, conversation_id: int):
     """The supervisor's deep_research tool: write the run's row, queue it, and
     hand back what to tell the user. The tool returns at once, because the point
     of a deep run is that nobody sits and waits for it."""
 
     async def start(question: str, title: str, goal: str) -> str:
+        # One deep run per conversation, held here rather than asked of the
+        # model: a supervisor misled once already started a copy of a run
+        # that was still going.
+        async with db_session.SessionLocal() as db:
+            busy = [
+                q
+                for q in await _working(db, conversation_id)
+                if q.kind == QueryKind.deep_research
+            ]
+        if busy:
+            return DEEP_BUSY.format(id=busy[0].id, title=busy[0].title)
         # The goal travels with the question: the lead reads it to decide how
         # deep to go, and a resumed run reads it back off the row.
         prompt = f"{question}\n\nWhat it is for: {goal}" if goal.strip() else question
@@ -322,8 +368,7 @@ def _steerer(conversation_id: int):
                     f"Run {run_id} is no longer running ({query.status}), so it "
                     "cannot be changed. Offer to start a new run with the change."
                 )
-            events = await research_repository.list_events(db, run_id, 0)
-            writing = any(e.type in ("lead_done", "writer_start") for e in events)
+            writing = await _writing(db, run_id)
             await research_repository.add_event(
                 db,
                 run_id,

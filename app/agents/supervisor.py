@@ -73,6 +73,18 @@ class Output:
 
 
 @dataclass
+class Running:
+    """A background run still working in this conversation. ``kind`` is the
+    mode that starts it ("deep" or "factcheck"); ``stage`` says how far along
+    it is, in words the supervisor can pass on."""
+
+    id: int
+    kind: str
+    title: str
+    stage: str
+
+
+@dataclass
 class Answer:
     """What one turn produced: the reply as the user sees it and the sources it
     cites."""
@@ -160,7 +172,7 @@ async def respond(
     emit: Emit = _noop,
     max_iters: int = 8,
     mode: str = "answer",
-    running: list[Output] | None = None,
+    running: list[Running] | None = None,
     steer_deep_research: Callable[[int, str], Awaitable[str]] | None = None,
 ) -> Answer:
     """Answer the latest message, doing whatever work that needs first.
@@ -170,10 +182,15 @@ async def respond(
     user; leaving one out simply removes that tool. ``on_research`` hands each
     research run's full result to a caller that wants to look inside it: the
     eval harness, which cannot otherwise see what happened behind a tool call.
+
+    A deep run starts only from deep mode: outside it the tool does not exist,
+    because a ten-minute run is the user's call to make, not the supervisor's.
     """
     documents = documents or []
     outputs = outputs or []
     running = running or []
+    if mode != "deep":
+        start_deep_research = None
     agent = create_agent(
         model=model,
         tools=[
@@ -206,7 +223,7 @@ async def respond(
                 "user now with what you have, and say plainly what you could not "
                 "finish.",
             ),
-            *([RunClaimCheck(mode)] if mode in _STARTERS else []),
+            *([RunClaimCheck(mode)] if _checks(mode, running) else []),
             ModelCallLimitMiddleware(run_limit=max_iters, exit_behavior="end"),
         ],
     )
@@ -279,7 +296,7 @@ def _system_prompt(
     outputs: list[Output],
     *,
     mode: str = "answer",
-    running: list[Output] | None = None,
+    running: list[Running] | None = None,
 ) -> str:
     rendered = render(
         PROMPT,
@@ -297,26 +314,35 @@ def _system_prompt(
     return "\n\n".join(parts)
 
 
-def _running(running: list[Output]) -> str:
-    """The deep runs still working in this conversation. Without this the
+_KINDS = {"deep": "deep research", "factcheck": "fact check"}
+
+
+def _running(running: list[Running]) -> str:
+    """The background runs still working in this conversation. Without this the
     supervisor could not tell a run was going at all, and a user changing
     their mind got a second run, or a promise that the first had changed."""
-    lines = [f"- id {o.id}: {o.title}" for o in running]
-    return (
-        "<running>\nDeep research runs still working in this conversation, not "
-        "readable yet:\n" + "\n".join(lines) + "\nWhen the user changes their "
-        "mind about one, corrects an assumption it was started with, or wants its "
-        "focus changed, pass that to it with steer_deep_research instead of "
-        "starting another run. Say what the tool says will happen, nothing more."
-        "\n</running>"
+    lines = [f"- {_KINDS[r.kind]}, id {r.id}: {r.title} ({r.stage})" for r in running]
+    text = (
+        "<running>\nBackground runs still working in this conversation, not "
+        "readable yet:\n" + "\n".join(lines) + "\nThese are already running: "
+        "saying so is true, and none of them needs starting again."
     )
+    if any(r.kind == "deep" for r in running):
+        text += (
+            " When the user changes their mind about a deep research run, corrects "
+            "an assumption it was started with, or wants its focus changed, pass "
+            "that to it with steer_deep_research instead of starting another run. "
+            "Only one deep research run works at a time in a conversation. Say "
+            "what the tool says will happen, nothing more."
+        )
+    return text + "\n</running>"
 
 
 def _steer_tool(
-    running: list[Output],
+    running: list[Running],
     steer: Callable[[int, str], Awaitable[str]] | None,
 ) -> list[StructuredTool]:
-    if not running or steer is None:
+    if steer is None or not any(r.kind == "deep" for r in running):
         return []
     return [
         StructuredTool.from_function(
@@ -344,8 +370,11 @@ _DEEP_MODE = """\
 The user has switched to deep research mode for this message. They want a \
 question answered properly, so when this message is a subject or question \
 worth researching in depth, start deep_research on it, with a short title that \
-names the subject. Do not answer it with a quick research pass instead: \
-choosing this mode is the user asking for depth.
+names the subject. Do not answer it with a quick research pass instead, and \
+do not judge it too small for a deep run: choosing this mode is the user \
+asking for depth, and that call is theirs. research and web_search stay for \
+what is not the run itself: a side question while a run works, or a quick \
+fact you need to ask them the right question.
 
 A deep run is shaped by what the user wants from it, so before starting one, \
 make sure you know:
@@ -405,6 +434,14 @@ _STARTERS = {
     "deep": ("deep_research", "deep research run"),
     "factcheck": ("fact_check", "fact check"),
 }
+
+
+def _checks(mode: str, running: list[Running]) -> bool:
+    """Whether this turn's reply goes through RunClaimCheck. Not while a run of
+    the mode's own kind is working: "your run is still going" is then true, and
+    the check, reading it as a claim that nothing backed, sent the supervisor to
+    start the same deep run a second time on a plain "hi"."""
+    return mode in _STARTERS and not any(r.kind == mode for r in running)
 
 
 class RunClaimCheck(AgentMiddleware):

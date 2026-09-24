@@ -127,7 +127,9 @@ async def test_a_deep_run_becomes_its_own_artifact(
     _use(lambda: _StartsDeepResearch(), monkeypatch=monkeypatch)
 
     created = await client.post(
-        "/conversations", headers=auth_headers, json={"prompt": "go deep on X"}
+        "/conversations",
+        headers=auth_headers,
+        json={"prompt": "go deep on X", "mode": "deep"},
     )
     conversation_id = created.json()["id"]
 
@@ -174,7 +176,9 @@ async def test_a_deep_report_is_written_from_curated_findings(
     _use(lambda: _StartsDeepResearch(claims_each=3), monkeypatch=monkeypatch)
 
     created = await client.post(
-        "/conversations", headers=auth_headers, json={"prompt": "go deep on X"}
+        "/conversations",
+        headers=auth_headers,
+        json={"prompt": "go deep on X", "mode": "deep"},
     )
     await drain()
 
@@ -199,7 +203,9 @@ async def test_a_run_is_not_started_with_nothing_left_to_spend(
     headers = await login_as(client, "nearly-broke", budget_usd=0.005)
     _use(lambda: _StartsDeepResearch(cost_usd=0.01), monkeypatch=monkeypatch)
 
-    await client.post("/conversations", headers=headers, json={"prompt": "go deep"})
+    await client.post(
+        "/conversations", headers=headers, json={"prompt": "go deep", "mode": "deep"}
+    )
     await drain()
 
     assert (await client.get("/research/artifacts", headers=headers)).json() == []
@@ -613,7 +619,7 @@ class _Steers(ScriptedModel):
         done = [m for m in messages if isinstance(m, ToolMessage)]
         if "steer_deep_research" in names and not done:
             run_id = int(
-                re.search(r"- id (\d+): Aviation", str(messages[0].content)).group(1)
+                re.search(r"id (\d+): Aviation", str(messages[0].content)).group(1)
             )  # type: ignore[union-attr]
             reply = call("steer_deep_research", run_id=run_id, note="Assume EASA.")
         else:
@@ -679,3 +685,73 @@ async def test_a_note_says_honestly_how_much_it_can_still_change(
     async with db_session.SessionLocal() as db:
         notes = await research_repository.list_notes(db, run_id)
     assert notes == ["Assume EASA.", "Keep it short."]
+
+
+class _ObeysTheCheck(ScriptedModel):
+    """A supervisor that greets, and starts a deep run on the question it has
+    when told its reply claimed a run nothing started: what the live model did
+    on a "hi" sent while a run was already going."""
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        told = any("was not called" in str(m.content) for m in messages)
+        refused = [m for m in messages if isinstance(m, ToolMessage)]
+        if told and not refused:
+            reply = call(
+                "deep_research", question="VFR weather", title="Again", goal="x"
+            )
+        else:
+            reply = says("Hi! Your research on aviation weather is still running.")
+        return ChatResult(generations=[ChatGeneration(message=reply)])
+
+
+async def test_a_greeting_while_a_deep_run_works_starts_no_second_run(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    """The bug: deep mode stays on after a run starts, and a "hi" got a true
+    "your run is still going", which the run check read as a claim nothing
+    backed and sent back, and the supervisor started the same run again."""
+    public_id, _, run_id = await _running_deep_run(client, auth_headers)
+    _use(lambda: _ObeysTheCheck(), monkeypatch=monkeypatch)
+
+    await client.post(
+        f"/conversations/{public_id}/messages",
+        headers=auth_headers,
+        json={"content": "hi", "mode": "deep"},
+    )
+    await drain()
+
+    artifacts = (await client.get("/research/artifacts", headers=auth_headers)).json()
+    assert [a["id"] for a in artifacts] == [run_id]
+    detail = await client.get(f"/conversations/{public_id}", headers=auth_headers)
+    assert detail.json()["messages"][-1]["query"]["reply"].startswith("Hi!")
+
+
+class _Remembers(_StartsDeepResearch):
+    """Starts a deep run, and keeps the last thing it was shown."""
+
+    last: str = ""
+
+    def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+        self.last = str(messages[-1].content)
+        return super()._generate(messages, stop, run_manager, **kwargs)
+
+
+async def test_only_one_deep_run_works_at_a_time_in_a_conversation(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    """Held in code, not asked of the model: a supervisor that calls the tool
+    anyway is told nothing started and which run is still going."""
+    public_id, _, run_id = await _running_deep_run(client, auth_headers)
+    model = _Remembers()
+    _use(lambda: model, monkeypatch=monkeypatch)
+
+    await client.post(
+        f"/conversations/{public_id}/messages",
+        headers=auth_headers,
+        json={"content": "now go deep on Y", "mode": "deep"},
+    )
+    await drain()
+
+    artifacts = (await client.get("/research/artifacts", headers=auth_headers)).json()
+    assert [a["id"] for a in artifacts] == [run_id]
+    assert "Nothing was started" in model.last
