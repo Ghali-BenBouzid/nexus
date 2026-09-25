@@ -18,9 +18,13 @@ def _finding(messages: list[BaseMessage]) -> AIMessage:
     )
 
 
-async def _run(lead, *, cap: int = 12, notes=None) -> tuple[dict, ScriptedModel]:
+async def _run(
+    lead, *, cap: int = 12, notes=None, min_rounds: int = 1
+) -> tuple[dict, ScriptedModel]:
     """Run a whole deep graph with ``lead`` deciding each turn: it gets the
-    lead's conversation and returns its reply."""
+    lead's conversation and returns its reply. The lead floor is off unless a
+    test turns it on, as the reading floor is (conftest): these tests are about
+    what the lead decides, and their researchers submit without reading."""
 
     def respond(messages: list[BaseMessage], tools: list[str]) -> AIMessage:
         if "WriteReportArgs" in tools:  # the lead, offered both or only this
@@ -33,7 +37,12 @@ async def _run(lead, *, cap: int = 12, notes=None) -> tuple[dict, ScriptedModel]
     graph = deep.compile_graph(InMemorySaver(serde=deep.SERDE))
     limits = deep.Limits.deep()
     limits.cap = cap
-    final = await graph.ainvoke(
+    settings.deep_min_rounds = min_rounds  # conftest restores it
+    return await _invoke(graph, model, limits, notes), model
+
+
+async def _invoke(graph, model, limits, notes) -> dict:
+    return await graph.ainvoke(
         {"question": "everything about X"},
         {"configurable": {"thread_id": "t"}},
         context=deep.Deps(
@@ -43,7 +52,6 @@ async def _run(lead, *, cap: int = 12, notes=None) -> tuple[dict, ScriptedModel]
             **({"notes": notes} if notes else {}),
         ),
     )
-    return final, model
 
 
 def _rounds(messages: list[BaseMessage]) -> int:
@@ -136,6 +144,38 @@ async def test_an_oversized_round_is_sent_back_then_clamped() -> None:
         if isinstance(m, ToolMessage) and "exceeds the limit" in str(m.content)
     ]
     assert refusals  # it was asked to choose before anything was cut
+
+
+async def test_the_lead_looks_twice_before_it_writes() -> None:
+    # Prod leads wrote after one round of three researchers. Writing after the
+    # first round is refused, with what to weigh, and a second round follows.
+    def lead(messages):
+        if "second round" in str(messages[-1].content):
+            return call(
+                "DispatchResearchersArgs", reasoning="deeper", sub_questions=["a2"]
+            )
+        if _rounds(messages) == 0:
+            return call("DispatchResearchersArgs", reasoning="map", sub_questions=["a"])
+        if _rounds(messages) == 1:
+            return call("WriteReportArgs", reasoning="enough", outline="a")
+        return call("WriteReportArgs", reasoning="covered", outline="a, deeper")
+
+    final, model = await _run(lead, min_rounds=2)
+
+    assert [r["sub_questions"] for r in final["rounds"]] == [["a"], ["a2"]]
+    assert "a, deeper" in str(model.seen[-1][-1].content)
+
+
+async def test_a_lead_that_insists_still_writes_with_its_own_outline() -> None:
+    def lead(messages):
+        if _rounds(messages) == 0:
+            return call("DispatchResearchersArgs", reasoning="map", sub_questions=["a"])
+        return call("WriteReportArgs", reasoning="enough", outline="just a")
+
+    final, model = await _run(lead, min_rounds=2)
+
+    assert len(final["rounds"]) == 1
+    assert "just a" in str(model.seen[-1][-1].content)
 
 
 # --- steering: what the user says to a run while it works -------------------

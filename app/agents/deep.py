@@ -70,6 +70,15 @@ _LAST_STEP = (
     "be sent. Call write_report now, with the outline from what the findings "
     "support, and name what stays open."
 )
+# Sent back when the lead writes before it has looked twice. What to weigh is
+# the prompt's own checklist: prod leads wrote after one round of three.
+_TOO_SOON = (
+    "Not yet: a first round maps the answer, it rarely is the answer. Before "
+    "writing, send a second round, narrower and more concrete: go back for what "
+    "is still thin (a sentence or two, one source, generalities where the brief "
+    "needs figures, mechanisms or examples), for what sources disagree on, and "
+    "for any point that rests on one weak or old source."
+)
 # A round with less than this left of the window would be cut off before its
 # researchers read anything.
 _MIN_ROUND_SECONDS = 90.0
@@ -259,6 +268,9 @@ async def lead(
         await emit(AgentEvent(type="planner_start", message=f"Planning: {question}"))
 
     over_cap: DispatchResearchersArgs | None = None
+    # A write refused as too soon, kept in case the lead insists: the floor
+    # pushes for another round, it never holds the report hostage.
+    early: WriteReportArgs | None = None
     with stage("lead"):
         for _ in range(retry_cap + 1):
             await emit(
@@ -270,7 +282,9 @@ async def lead(
             )
             reply = await bound.ainvoke(messages)
             decision = _parse(reply)
-            why = _why(decision, cap, first, final)
+            why = _why(decision, cap, first, final, rounds=len(rounds))
+            if why == _TOO_SOON:
+                early = decision
             if decision is not None and why is None:
                 await _announce(emit, decision, len(rounds) + 1)
                 return decision
@@ -289,6 +303,9 @@ async def lead(
         )
         await _announce(emit, clamped, len(rounds) + 1)
         return clamped
+    if early is not None:
+        await _announce(emit, early, len(rounds) + 1)
+        return early
     if first:
         raise DeepError("The lead could not produce a plan.")
     logger.warning("the lead gave no usable decision; writing from what it has")
@@ -393,7 +410,11 @@ def _parse(reply: AIMessage) -> Decision | None:
 
 
 def _why(
-    decision: Decision | None, cap: int, first: bool, final: bool = False
+    decision: Decision | None,
+    cap: int,
+    first: bool,
+    final: bool = False,
+    rounds: int = 0,
 ) -> str | None:
     """What is wrong with the decision, fed back to the lead; None if nothing."""
     if final and not isinstance(decision, WriteReportArgs):
@@ -406,6 +427,8 @@ def _why(
     if isinstance(decision, WriteReportArgs):
         if first:
             return "Nothing has been researched yet. Dispatch the first round."
+        if not final and rounds < settings.deep_min_rounds:
+            return _TOO_SOON
         return None
     if not decision.sub_questions:
         return "The round was empty. Send at least one sub-question."
