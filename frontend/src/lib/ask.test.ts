@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { back, choose, forward, formatAnswers, openQuestion, start } from "./ask";
+import { back, choose, closing, forward, formatAnswers, openQuestion, start } from "./ask";
 import { turnsFrom, type ConvMessage } from "./api";
 import type { Question, Turn } from "../types";
 
@@ -121,5 +121,16 @@ describe("turnsFrom and the mode a question was asked in", () => {
       },
     ]);
     expect(turn.mode).toBe("deep");
+  });
+});
+
+describe("closing the panel", () => {
+  it("answers a go-ahead as skipped, so the supervisor can say it is waiting", () => {
+    const go: Question = { question: "Launch it?", options: ["Launch"], confirm: true };
+    expect(closing([go])).toEqual([{ question: "Launch it?", answer: null }]);
+  });
+
+  it("sends nothing for ordinary questions: closing them is not an answer", () => {
+    expect(closing([TOPIC, LEVEL])).toBeNull();
   });
 });

@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { I } from "../icons";
-import { back, choose, forward, start, type AskState } from "../lib/ask";
+import { back, choose, closing, forward, start, type AskState } from "../lib/ask";
 import { t } from "../lib/i18n";
 import type { Answered, Question } from "../types";
 
@@ -9,7 +9,8 @@ type AskPanelProps = {
   questions: Question[];
   // Every question answered (or skipped): send them as one message.
   onAnswer: (answers: Answered[]) => void;
-  // Closed without answering: the questions stay unanswered, nothing is sent.
+  // Closed without answering: nothing is sent, except for a go-ahead, which
+  // goes back skipped through onAnswer (lib/ask.ts, closing).
   onDismiss: () => void;
 };
 
@@ -28,6 +29,12 @@ function typing(target: EventTarget | null): boolean {
 // composer instead sends an ordinary message, which closes the panel too.
 export function AskPanel({ questions, onAnswer, onDismiss }: AskPanelProps) {
   const [state, setState] = useState<AskState>(() => start(questions));
+  // Stable across renders, as the key listener below depends on it.
+  const close = useCallback(() => {
+    const skipped = closing(questions);
+    if (skipped) onAnswer(skipped);
+    else onDismiss();
+  }, [questions, onAnswer, onDismiss]);
   const [cursor, setCursor] = useState(0);
   const [other, setOther] = useState("");
   const otherRef = useRef<HTMLInputElement>(null);
@@ -64,7 +71,7 @@ export function AskPanel({ questions, onAnswer, onDismiss }: AskPanelProps) {
         // Handled here, so the chat's own Escape (leave, or stop a run) does
         // not fire as well: closing the panel is all it asked for.
         e.preventDefault();
-        onDismiss();
+        close();
         return;
       }
       if (typing(e.target)) return;
@@ -87,7 +94,7 @@ export function AskPanel({ questions, onAnswer, onDismiss }: AskPanelProps) {
     // On the document, which hears a key before the window the chat listens on.
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [onDismiss]);
+  }, [close]);
 
   const many = questions.length > 1;
   return (
@@ -117,7 +124,7 @@ export function AskPanel({ questions, onAnswer, onDismiss }: AskPanelProps) {
             </button>
           </div>
         )}
-        <button type="button" className="ask-icon" onClick={onDismiss} aria-label={t.ask.close}>
+        <button type="button" className="ask-icon" onClick={close} aria-label={t.ask.close}>
           {I.close}
         </button>
       </div>

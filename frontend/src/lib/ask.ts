@@ -51,3 +51,11 @@ export function openQuestion(turns: Turn[]): Question[] | null {
   if (!last || last.status !== "complete" || !last.ask?.length) return null;
   return last.ask;
 }
+
+// What closing the panel sends. A go-ahead closed unanswered goes back as
+// skipped, so the supervisor can say it is standing by rather than the chat
+// falling silent on a question; closing ordinary questions sends nothing.
+export const closing = (questions: Question[]): Answered[] | null =>
+  questions.some((q) => q.confirm)
+    ? questions.map((q) => ({ question: q.question, answer: null }))
+    : null;
