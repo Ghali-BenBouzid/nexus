@@ -93,14 +93,16 @@ async def run_research(
     model: BaseChatModel,
     backend: SearchBackend,
     sources: Sources,
+    worker: BaseChatModel | None = None,
     emit: Emit = _noop,
     middleware: Middleware = _no_middleware,
     limits: Limits | None = None,
     planner_prompt: ChatPromptTemplate = PROMPT,
 ) -> ResearchResult:
-    """Plan ``question``, research every sub-question at once, and collect what
-    came back. Raises only if the planner produced nothing or every researcher
-    hard-failed: one failed researcher is a gap in the result, not a failure."""
+    """Plan ``question`` with ``model``, research every sub-question at once on
+    ``worker`` (``model`` too, if none is given), and collect what came back.
+    Raises only if the planner produced nothing or every researcher hard-failed:
+    one failed researcher is a gap in the result, not a failure."""
     limits = limits or Limits.normal()
     sub_questions = await plan(
         question,
@@ -112,7 +114,7 @@ async def run_research(
     )
     findings = await research_all(
         sub_questions,
-        model=model,
+        model=worker or model,
         backend=backend,
         emit=emit,
         middleware=middleware,

@@ -2,6 +2,9 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# How hard a model thinks before it answers, as OpenRouter's reasoning.effort.
+Effort = Literal["low", "medium", "high", "xhigh"]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env")
@@ -62,6 +65,21 @@ class Settings(BaseSettings):
     # LLM provider selection: openrouter | gemini | groq | cerebras | sambanova
     llm_provider: str = "openrouter"
     llm_model: str | None = None  # overrides the provider's default model
+    # The researchers and the fact checker: many short calls to search, read and
+    # note what a page says, where glm's pace (about 20 tokens a second) made a
+    # two-claim fact check take seven minutes. gpt-6-luna answered the same step
+    # in 1.2 to 1.5 s with no spread across tries, the steadiest of the cheap
+    # models measured. High effort, so the reading still gets some thought.
+    worker_model: str = "openai/gpt-6-luna"
+    worker_effort: Effort = "high"
+    # The deep lead's effort, whatever the user picked for the chat: deciding
+    # what to research next over twenty minutes is not where to save seconds.
+    deep_effort: Effort = "high"
+    # Report writers are handed the findings and the outline; there is little
+    # left to work out. Judged against gpt-6-luna at high on eight deep runs,
+    # glm at low wrote the better report in 11 of 16 verdicts (3 ties), at the
+    # length asked for, where luna wrote two thirds of it.
+    writer_effort: Effort = "low"
     # Names each stretch of the supervisor's thinking for the live feed. Picked
     # as the cheapest fast model on OpenRouter that writes a clean title in both
     # English and French (~1 s, a hundredth of a cent). Empty turns titles off.

@@ -21,7 +21,7 @@ from app.agents.tools import SearchBackend
 from app.billing.service import has_budget
 from app.conversations import repository
 from app.conversations.schemas import Mode
-from app.core.config import settings
+from app.core.config import Effort, settings
 from app.db import session as db_session
 from app.documents import repository as documents_repository
 from app.models.conversation import Conversation, Message, MessageRole
@@ -114,6 +114,7 @@ async def submit_message(
     background_tasks: BackgroundTasks,
     document_ids: list[int] | None = None,
     mode: Mode = "answer",
+    effort: Effort = "medium",
     answers: list[dict] | None = None,
 ) -> Message:
     """Record the user's message and the assistant turn that will answer it, and
@@ -180,6 +181,7 @@ async def submit_message(
         conversation_id=conversation.id,
         message_id=assistant.id,
         mode=mode,
+        effort=effort,
     )
     return assistant
 
@@ -192,6 +194,7 @@ async def route_message(
     model: BaseChatModel | None = None,
     backend: SearchBackend | None = None,
     mode: Mode = "answer",
+    effort: Effort = "medium",
 ) -> None:
     """The job for a new message: the supervisor answers it, using whatever
     tools the answer needs. Every model call is billed to the thread's owner."""
@@ -251,6 +254,7 @@ async def route_message(
             prompt,
             history,
             model=run.model,
+            worker=run.worker,
             backend=run.backend,
             sources=run.sources,
             documents=documents,
@@ -280,7 +284,14 @@ async def route_message(
             )
             await repository.set_content(db, message_id, answer.text, ask=answer.ask)
 
-    await run_query(query_id, user_id=user_id, work=work, model=model, backend=backend)
+    await run_query(
+        query_id,
+        user_id=user_id,
+        work=work,
+        model=model,
+        backend=backend,
+        effort=effort,
+    )
 
 
 async def _read(run: Run, conversation_id: int) -> list[DocumentRow]:

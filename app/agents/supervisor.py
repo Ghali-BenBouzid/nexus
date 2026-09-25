@@ -268,6 +268,7 @@ async def respond(
     model: BaseChatModel,
     backend: SearchBackend,
     sources: Sources,
+    worker: BaseChatModel | None = None,
     documents: list[Document] | None = None,
     outputs: list[Output] | None = None,
     start_deep_research: Callable[[str, str, str], Awaitable[str]] | None = None,
@@ -288,6 +289,8 @@ async def respond(
     research run's full result to a caller that wants to look inside it: the
     eval harness, which cannot otherwise see what happened behind a tool call.
 
+    ``worker`` runs the researchers of the research tool (``model`` if none).
+
     A deep run starts only from deep mode: outside it the tool does not exist,
     because a ten-minute run is the user's call to make, not the supervisor's.
     """
@@ -306,6 +309,7 @@ async def respond(
                 documents=documents,
                 outputs=outputs,
                 model=model,
+                worker=worker or model,
                 middleware=middleware,
                 emit=emit,
                 start_deep_research=start_deep_research,
@@ -758,6 +762,7 @@ def _tools(
     documents: list[Document],
     outputs: list[Output],
     model: BaseChatModel,
+    worker: BaseChatModel,
     middleware: Middleware,
     emit: Emit,
     start_deep_research: Callable[[str, str, str], Awaitable[str]] | None,
@@ -799,6 +804,7 @@ def _tools(
         result = await run_research(
             question,
             model=model,
+            worker=worker,
             backend=backend,
             sources=sources,
             emit=tagged_emit(emit, team=tool_call_id),

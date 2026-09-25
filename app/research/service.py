@@ -32,11 +32,11 @@ from app.agents.search_cache import CachingSearchBackend
 from app.agents.sources import Sources
 from app.agents.tools import SearchBackend
 from app.billing.metering import billing
-from app.core.config import settings
+from app.core.config import Effort, settings
 from app.db import session as db_session
 from app.models.query import QueryStatus
 from app.research import bus, repository
-from app.research.dependencies import get_model, get_search_backend
+from app.research.dependencies import chat_model, get_search_backend
 
 logger = logging.getLogger(__name__)
 
@@ -159,12 +159,17 @@ async def job_liveness(query_id: int) -> AsyncIterator[Liveness]:
 
 @dataclass
 class Run:
-    """Everything a job's work is handed: the model to call, the web to call it
-    against, where progress goes, and what wraps every call."""
+    """Everything a job's work is handed: the models to call, the web to call
+    them against, where progress goes, and what wraps every call.
+
+    ``model`` thinks for the run (the supervisor, a deep lead), ``worker``
+    researches and fact-checks, ``writer`` writes reports: see models_for."""
 
     query_id: int
     user_id: int
     model: BaseChatModel
+    worker: BaseChatModel
+    writer: BaseChatModel
     backend: SearchBackend
     emit: EventSink
     sources: Sources
@@ -178,10 +183,19 @@ class Run:
         return [*self._shared, Progress(emit or self.emit, agent=agent, **data)]
 
 
-def model_for(model: BaseChatModel | None) -> BaseChatModel:
-    """The model a job runs on. An inline job reuses the request's (the tests'
-    fake); a worker builds its own from settings."""
-    return model or get_model()
+def models_for(
+    model: BaseChatModel | None, effort: Effort
+) -> tuple[BaseChatModel, BaseChatModel, BaseChatModel]:
+    """The run's model at ``effort``, its worker and its writer. An inline job
+    reuses the request's model for all three (the tests' fake); a worker builds
+    them from settings."""
+    if model is not None:
+        return model, model, model
+    return (
+        chat_model(effort=effort),
+        chat_model(settings.worker_model, settings.worker_effort),
+        chat_model(effort=settings.writer_effort),
+    )
 
 
 def _shared_middleware(*, stopped: Callable[[], bool]) -> list:
@@ -206,6 +220,7 @@ async def run_query(
     model: BaseChatModel | None = None,
     backend: SearchBackend | None = None,
     timeout: float | None = None,
+    effort: Effort = "medium",
 ) -> None:
     """Claim the query, run ``work`` against it, and always resolve its status.
 
@@ -213,7 +228,7 @@ async def run_query(
     knows what the run produced. Everything that can go wrong on the way is
     resolved here, once, so no job has to remember to.
     """
-    model = model_for(model)
+    model, worker, writer = models_for(model, effort)
     backend = CachingSearchBackend(backend or get_search_backend())
     async with db_session.SessionLocal() as db, job_liveness(query_id) as live:
         if not await repository.mark_running(db, query_id):
@@ -221,12 +236,15 @@ async def run_query(
         try:
             # Billing rides on the model, so a call is billed wherever it was
             # made, inside an agent or not.
-            model.callbacks = [billing(user_id=user_id, query_id=query_id)]
+            for each in (model, worker, writer):
+                each.callbacks = [billing(user_id=user_id, query_id=query_id)]
             async with backend:
                 run = Run(
                     query_id=query_id,
                     user_id=user_id,
                     model=model,
+                    worker=worker,
+                    writer=writer,
                     backend=backend,
                     emit=EventSink(query_id),
                     sources=Sources(),
@@ -280,6 +298,7 @@ async def run_research_job(
         result = await run_research(
             prompt,
             model=run.model,
+            worker=run.worker,
             backend=run.backend,
             sources=run.sources,
             emit=run.emit,
@@ -288,7 +307,7 @@ async def run_research_job(
         )
         report = await write_report(
             result,
-            model=run.model,
+            model=run.writer,
             emit=run.emit,
             timeout=settings.writer_timeout,
         )
