@@ -566,7 +566,7 @@ html[data-theme="light"] .tour-hole {
   padding: 6px 9px; border-radius: 9px; cursor: pointer; font-family: inherit; font-size: 12.5px;
   font-weight: 500; color: var(--faint); transition: color 0.15s, background 0.15s; }
 .tour-back:hover { color: var(--fg); background: var(--surface-2); }
-.tour-next { display: inline-flex; align-items: center; gap: 5px; cursor: pointer;
+.tour-next { display: inline-flex; white-space: nowrap; align-items: center; gap: 5px; cursor: pointer;
   padding: 6px 12px; border: none; border-radius: 9px; font-family: inherit;
   font-size: 12.5px; font-weight: 600; background: var(--accent); color: var(--accent-ink);
   transition: transform 0.15s, box-shadow 0.2s; }
@@ -1638,6 +1638,9 @@ html[data-theme="dark"] .cites-pop {
 .toasts { position: fixed; top: 14px; right: 16px; z-index: 60;
   display: flex; flex-direction: column; align-items: flex-end; gap: 10px;
   max-width: min(420px, calc(100vw - 32px)); pointer-events: none; }
+/* Where the site nav is up (the landing, the deep dive), the corner belongs to
+   its buttons, so the toast drops just below it rather than covering them. */
+body:has(.nav) .toasts { top: 86px; } /* the nav is 78px tall */
 .toast { pointer-events: auto; display: flex; align-items: center; gap: 10px; max-width: 100%;
   padding: 10px 10px 10px 15px; border-radius: 14px; border: 1px solid var(--line-strong);
   background: var(--surface-solid);

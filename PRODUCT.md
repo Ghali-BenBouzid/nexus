@@ -14,7 +14,7 @@ or start a run that takes minutes. Answers land in the conversation with every
 claim cited to a page that was actually read; live agent activity streams above
 the answer as it happens. Two kinds of work produce a document rather than a reply,
 and both run in the background: deep research, and fact-checking an uploaded file.
-Those appear in an Outputs panel, with a notification when one is ready.
+Those appear in a Reports panel, with a notification when one is ready.
 
 Live research is invite-only. Each demo account comes from an invite link, has its
 own dollar budget (shown under the composer), and is billed from what each model

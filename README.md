@@ -20,24 +20,33 @@ It's also my portfolio project: I use it to show how I build an agent system, in
 
 You type a message in a chat, and Nexus answers it.
 
-How much work that takes is its own judgement, not a mode you pick.
+How much work that takes is its own judgement.
 A follow-up it can already answer comes back immediately.
 A question that needs one fact gets one search.
 A real question gets a team of researchers working in parallel, and the answer comes back in the conversation with every claim cited to a page that was actually read.
 Each citation is a small pill that names the site it came from, and opening it shows the pages behind the claim.
+What the supervisor says between its tool calls stays in the reply, where it said it, rather than being replaced by the final answer.
+
+When a real choice would help, the supervisor asks rather than guessing: a question panel docks above the composer with a few numbered options, a free answer and Skip, several questions to a panel at most.
+Your answers come back into the thread as a card, and typing in the composer instead works just as well.
 
 ![A cited answer: each claim ends in a pill naming its source](docs/images/answer.png)
 
 Two kinds of work produce a document rather than a reply:
 
-- **Deep research**, when you want a question properly covered. A lead agent sends researchers out in rounds, reads what comes back, and goes back for the gaps, the disagreements and the angles nobody took, until it judges the question answered for what you need it for. Then it writes its own report, several paragraphs per section, and shorter when little could be found. Before it starts, the supervisor settles what the report is for: depth or breadth, and which areas. When a request is too broad to tell, it asks, with a few options and a "your call" choice. It runs in the background and survives a redeploy, so you can close the chat and come back to it, and if you change your mind while it works, the supervisor passes that on and the lead adjusts its next round.
+- **Deep research**, when you want a question properly covered. A lead agent sends researchers out in rounds, reads what comes back, and goes back for the gaps, the disagreements and the angles nobody took, until it judges the question answered for what you need it for. Then it writes its own report, several paragraphs per section, and shorter when little could be found. Before it starts, the supervisor brainstorms the brief with you in the question panel: what the report is for, then only the questions that would change what gets researched, each with a "Decide for me" option. It then restates the brief in two or three sentences and waits for your go-ahead, which cannot be skipped. A run takes about 20 to 30 minutes. It runs in the background and survives a redeploy, so you can close the chat and come back to it, and if you change your mind while it works, the supervisor passes that on and the lead adjusts its next round.
 - **A fact check** of a file you upload: it sets down the claims the document rests on, each tied to the passage it comes from, tests each against the web, and writes a report saying which held up.
 
-Both are also modes you can switch the composer into.
+Both are modes you can switch the composer into.
 A mode tells the supervisor what you are after, and the supervisor still reads the message: "hi" in deep mode gets a reply, not a ten-minute run.
-Either way the run is the same, and so is where it ends up.
+Deep research only starts in deep mode, because it costs minutes and real money; outside it, the supervisor suggests switching the mode on.
+A fact check it can start whenever you ask for one.
 
-Both land in **Outputs**, and you are told when one is ready wherever you happen to be.
+Both land in the **Reports** panel.
+When one is ready you see it in the page, with a short chime, and get a system notification if you are in another tab.
+
+A first visit gets a four-step tour of what is not obvious: where past chats are kept, the two background runs, and where their reports land.
+After that, a one-time tip points at each of those things the first time it actually happens.
 
 Files come in by the attach button or by dropping them anywhere on the page.
 A file shows up in the conversation the moment you add it, says while it is being read, and says so if it could not be.
@@ -55,8 +64,9 @@ flowchart LR
     S -.-> T2[read_document]
     S -.-> T3[research]
     T3 --> P[Plan] --> X[Researchers, in parallel] --> S
-    S -.-> T4[deep_research] --> D[Lead and rounds of researchers, checkpointed] --> Out[Report in Outputs]
+    S -.-> T4[deep_research, deep mode only] --> D[Lead and rounds of researchers, checkpointed] --> Out[Reports panel]
     S -.-> T5[fact_check] --> F[Claims checked] --> Out
+    S -.-> T6[ask_user] --> Q[Question panel]
 ```
 
 The dotted arrows are tools.
@@ -64,7 +74,9 @@ The supervisor decides which to use and how many times, and then writes the answ
 Nothing is a route: "does this need research?" is judgement, which a model does well and a classifier does badly.
 
 The browser never waits on the models.
-The API saves your message and puts a job on a queue, a separate worker runs the agents, and the browser holds a stream open so the model's thinking and its answer appear as they are written.
+The API saves your message and puts a job on a queue, a separate worker runs the agents, and the browser holds a stream open so the answer appears as it is written.
+While the run works, a live feed shows every step it takes in order: each stretch of thinking under a short title, each search with its query, each page by its domain, and each research team with its researchers.
+The raw thinking is never shown; it is too fast to read, so a small model names each stretch of it instead.
 
 What each piece is used for:
 
@@ -75,7 +87,7 @@ What each piece is used for:
 | LangGraph | The deep research run as a checkpointed graph, so a deploy mid-run costs one step |
 | LangChain | The agents themselves, their tools and their prompts |
 | Postgres (SQLAlchemy, Alembic) | Conversations, runs, progress events, the usage ledger, and deep-run checkpoints |
-| OpenRouter | The language models, through one OpenAI-compatible endpoint |
+| OpenRouter | The language models, through one OpenAI-compatible endpoint, each call routed to the cheapest upstream that is fast right now |
 | SearXNG | Web search: a metasearch proxy we run ourselves, so searching costs nothing |
 | Crawl4AI | Reading a page: fetches it in a real browser and returns pruned markdown |
 | DeepEval | Scoring the evaluation runs |
@@ -88,10 +100,11 @@ Each agent is a LangChain agent: a prompt, a set of tools and the loop that runs
 
 - The **supervisor** is the one you talk to. It answers, and when answering well needs work it has not done yet, it does that work first.
 - The **planner** splits a research question into self-contained sub-questions, as many as it genuinely needs: a plain fact gets one or two, a three-way comparison gets six.
-- The **lead** runs a deep research run instead of the planner. It sends a round of up to six researchers, reads what they found, and either sends another round or hands the writer an outline. It gets three rounds and fifteen researchers at most, and every agent is told when its next step is its last, so it synthesises rather than getting cut off.
-- Each **researcher** searches the web and reads pages in a loop, then submits claims with the sources behind them. It has a budget of three searches (five in a deep run) and is told to choose its queries carefully and read pages in full instead.
+- The **lead** runs a deep research run instead of the planner. It sends a round of up to six researchers, reads what they found, and either sends another round or hands the writer an outline. It gets three rounds and fifteen researchers at most, and cannot write after the first round, and every agent is told when its next step is its last, so it synthesises rather than getting cut off.
+- Each **researcher** searches the web and reads pages in a loop, then submits claims with the sources behind them. It has a budget of three searches (five in a deep run) and is told to choose its queries carefully and read pages in full instead. In a deep run it cannot submit before it has read two pages in full, unless it found nothing.
 - The **fact checker** reads a document and first commits to the claims it rests on, each tied to its passage, naming what it leaves out and why. Nothing is searched until that list is confirmed; then it tests each claim against independent sources.
 - Writing a report is not an agent: by then there is nothing to decide, so it is one model call in the same house style the chat answers in.
+- Two small jobs go to a small, cheap model (`mistralai/mistral-nemo`): titling each stretch of the supervisor's thinking for the live feed, and reading a reply that claims a run was started, to catch one that was not.
 
 ## Decisions and trade-offs
 
@@ -124,7 +137,8 @@ It does mean one more service to deploy (Redis) and a second process to keep ali
 **No plan approval.**
 Nexus used to propose a plan and wait for you to confirm it.
 It was a form in front of the user before a single search had been made, and it made a simple follow-up as heavy as a full run.
-The supervisor decides what work a message needs and does it; if a question deserves minutes, it says so and starts a deep run in the background instead of asking permission.
+The supervisor decides what work a message needs and does it.
+The one thing it never starts on its own is a deep run: that costs half an hour and real money, so it has to be asked for by switching deep mode on, and even then it starts only after a short brainstorm of the brief and your go-ahead.
 
 **LangGraph only where a run is long enough to be interrupted.**
 A normal research run is one fan-out, which `asyncio` already expresses, so it is plain code.
@@ -161,6 +175,8 @@ Writing the schemas out in full fixed it, and researcher success went to 100% on
 **A question about me came back in German.**
 Language detection tripped on my name: it read "Who is Ghali Ben Bouzid?" as Dutch and "Qui est Ghali Ben Bouzid ?" as German, and every agent followed it, so one report came back in German.
 Detection now needs a minimum confidence before it sets the language.
+Names still tipped it on short queries: "compare morroco's economy to algeria's" came back as Italian at full confidence, down to the step titles.
+Up to one line of text, the small words (to, and, de, qu') now decide when they all point one way, and langdetect answers the rest.
 
 **A slower model made runs time out.**
 I tried a reasoning model that spent close to a minute per researcher step and three minutes writing, so runs hit the global timeout and lost everything.
@@ -191,6 +207,34 @@ The lead now picks a few areas the brief turns on, maps them in a first round an
 A researcher that ran out of rounds could submit "I found something" with no claims, because claims were optional in its schema; they are now required, and an empty submission is sent back.
 And a deep round's researchers searching at once reached the engines behind SearXNG as one burst, which they blocked for minutes (a CAPTCHA from Google, access denied from DuckDuckGo, a 429 from Brave) while SearXNG still answered with an empty success.
 An empty search is now an error the researcher sees, each researcher has a small search budget, and every search the worker sends is paced at 40 a minute.
+
+**The supervisor started the same run twice.**
+A CV was being fact-checked, the user asked for jokes while they waited, and the supervisor started a second check of the same file.
+Separately, a guard that sent back any reply claiming a run nothing had started read a true "your run is still going" as a false claim, and the supervisor, pushed to call the tool, started the same deep run again.
+A fact check now records its document and refuses one whose check is still working, one deep run works at a time per conversation, and the guard is a small model that reads the reply alongside the runs already going.
+
+**One slow upstream made every call take a minute.**
+OpenRouter serves a model from several upstreams, and sorting them by throughput ranked them on a recent median that hid a degraded one: 12 tokens a second, over a minute for a 700-token reply.
+Sorting by latency picked a premium upstream at three times the price.
+Calls now sort by price, with throughput and latency floors that send an upstream missing them to the back of the line, and the same call went from over a minute to 4 to 11 seconds.
+
+**A long deep run ended in a raw dump of findings.**
+The deep run's writer was cut off at eight minutes and fell back to listing what the researchers found, after ten minutes of research.
+It now writes for as long as it needs, and the whole-run backstop is an hour, so it only catches a run that hangs.
+
+**A long PDF froze the server.**
+An 80-page PDF took five minutes to read and then failed, and because parsing ran on the event loop, every other request waited with it.
+Parsing now runs off the loop, and a PDF over 12 pages is refused before a page is read.
+
+**Deep runs were shallow in production.**
+Four real runs took 23 to 63 seconds, used one or two rounds, read one to four pages in all against up to 30 searches, and wrote under a thousand words, on a budget of twelve minutes, three rounds and fifteen researchers.
+Every depth decision was the model's, and a fast model took the minimum at each one: researchers submitted from search snippets, the lead wrote after one round, and no length ever reached the writer.
+The floors now live inside the tools, as errors the agent reads: a deep researcher's submission is refused until it has read two pages, and the lead's report until a second round.
+The writer gets its own length guidance, scaled to what was found, so a thin run is short and says why instead of being padded.
+
+**A skipped confirmation launched a run.**
+The go-ahead before a deep run was a question like any other, and skipping it read as a yes.
+It is now a single option, the go-ahead, beside the free answer, with no Skip, and the tool refuses any other shape.
 
 **Two fact checks of the same document checked different things.**
 The checker picked its three to ten claims silently, somewhere inside its search loop, so nothing ever reviewed the choice.
@@ -248,7 +292,7 @@ Scoring the full 150-question set is still the next step.
 
 - The backend has nearly 300 tests with pytest, and they run offline: a fake model and a fake search backend script the agents, so the suite is fast and deterministic.
 - They cover the supervisor and its tools, the research fan-out, the deep run resuming from its checkpoint after a worker dies, fact-checking a document, stopping a run, the job queue, budgets and billing, and the API.
-- The frontend has about 70 Vitest tests for the logic behind citations, the progress feed, the stream parser, credits, uploads and file previews.
+- The frontend has about 80 Vitest tests for the logic behind citations, the progress feed, the stream parser, credits, uploads and file previews.
 - Ruff for linting, and the TypeScript compiler for type checking.
 
 ## Limitations
@@ -256,10 +300,11 @@ Scoring the full 150-question set is still the next step.
 - Access is invite-only, and I create accounts by hand.
 - Research covers the web only; searching your own documents isn't built yet.
 - A chat turn or a fact check whose worker crashes is failed, not resumed; only deep runs pick up where they stopped.
-- A deep run takes around fifteen minutes on the default model, most of it spent waiting on the slowest researchers.
+- A deep run takes about 20 to 30 minutes, much of it spent waiting on the slowest researchers.
 - The search engines behind SearXNG can still block a busy worker for minutes; pacing makes it rare, and a blocked run writes a shorter report that says what it could not establish.
 - A stream that drops is not resumed automatically; reopening the conversation rejoins the run.
-- Slow reasoning models don't fit the time budget and fall back to a less polished report.
+- A PDF over 12 pages is refused.
+- In a chat turn, slow reasoning models don't fit the time budget and fall back to a less polished answer; only a deep run's writer has no time limit.
 - The evaluation relies on a model as a judge, and the scored runs so far are small.
 - Prompt injection defences are written and structured, but not yet measured on full research runs.
 

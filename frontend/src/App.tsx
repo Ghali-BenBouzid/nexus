@@ -28,6 +28,7 @@ import {
 } from "./lib/api";
 import { creditsLeft } from "./lib/credits";
 import { lang, onLangChange, t } from "./lib/i18n";
+import { announceReady, askToAnnounce } from "./lib/notify";
 import { outcomeFor } from "./lib/outcome";
 import { getRoute, inviteFromUrl, navigate, onPopState, type Route } from "./lib/router";
 import {
@@ -382,6 +383,9 @@ export default function App() {
     );
     if (!starting) return;
     revealed.current.add(starting.id);
+    // The supervisor can start one from an ordinary message too, where the send
+    // did not ask. Browsers that insist on a click simply ignore this.
+    askToAnnounce();
     setLayout("split");
     // The panel opening is movement at the edge of the eye, and the first time
     // it happens nobody knows what it means. Only for this chat's own run: one
@@ -406,9 +410,29 @@ export default function App() {
     if (finished.length === 0) return;
     for (const o of finished) watching.current.delete(o.id);
     setReady((current) => [...current, ...finished]);
+    // The toast only reaches someone looking at the page. A run takes minutes,
+    // so the user has most likely gone to another tab: the system notification
+    // (and its sound) is what brings them back.
+    for (const o of finished) announceReady(o.title, () => openReadyLatest.current(o));
   }, [outputs]);
 
   const dismiss = (id: number) => setReady((current) => current.filter((o) => o.id !== id));
+
+  async function openReady(output: Output) {
+    dismiss(output.id);
+    // The run may have finished while the user was in another chat, and the
+    // panel only holds the open one's reports. Go to the chat that asked for it
+    // first, then open it there.
+    if (output.conversationId != null && output.conversationId !== activeConversationId) {
+      await openHistory(output.conversationId);
+    }
+    setView("chat");
+    showOutput(output.id);
+  }
+  // A notification is clicked long after the render that raised it, when the
+  // chat it would compare against has moved on.
+  const openReadyLatest = useRef(openReady);
+  openReadyLatest.current = openReady;
 
   // Nav shadow on scroll + hero-focal fluid fade: the blob is full behind the
   // hero and fades out over the first ~70vh as the sections rise. On chat stages
@@ -656,6 +680,9 @@ export default function App() {
     // for and answers in the thread: the mode says what the user is after, it
     // never starts a run behind the supervisor's back.
     const runMode: Mode = fresh || !isLive() ? "answer" : (opts?.mode ?? mode);
+    // Asked here, while the click that sent it still counts as the user's own
+    // gesture: some browsers refuse a permission prompt that comes from nowhere.
+    if (runMode !== "answer") askToAnnounce();
     const turn: Turn = {
       id,
       query: prompt,
@@ -1117,20 +1144,7 @@ export default function App() {
             <Toast
               key={output.id}
               title={output.title}
-              onOpen={async () => {
-                dismiss(output.id);
-                // The run may have finished while the user was in another chat,
-                // and the panel only holds the open one's reports. Go to the
-                // chat that asked for it first, then open it there.
-                if (
-                  output.conversationId != null &&
-                  output.conversationId !== activeConversationId
-                ) {
-                  await openHistory(output.conversationId);
-                }
-                setView("chat");
-                showOutput(output.id);
-              }}
+              onOpen={() => openReady(output)}
               onDismiss={() => dismiss(output.id)}
             />
           ))}
