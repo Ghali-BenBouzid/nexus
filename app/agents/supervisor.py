@@ -20,7 +20,9 @@ from typing import Annotated
 
 from langchain.agents import create_agent
 from langchain.agents.middleware import (
+    AgentMiddleware,
     ModelCallLimitMiddleware,
+    hook_config,
 )
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
@@ -28,6 +30,7 @@ from langchain_core.messages import (
     AIMessageChunk,
     BaseMessage,
     HumanMessage,
+    ToolMessage,
 )
 from langchain_core.tools import InjectedToolCallId, StructuredTool
 from pydantic import BaseModel, Field
@@ -90,6 +93,9 @@ class Answer:
 
     text: str
     sources: list[Source] = field(default_factory=list)
+    # The questions the turn ended on, when it called ask_user: each a dict of
+    # question and options, as the user's panel shows them.
+    ask: list[dict] | None = None
 
 
 class ResearchArgs(BaseModel):
@@ -116,6 +122,25 @@ class DeepResearchArgs(BaseModel):
     title: str = Field(
         description="A short title, a few words in the user's language, naming "
         "the report this will produce"
+    )
+
+
+class AskQuestion(BaseModel):
+    question: str = Field(description="One short question, in the user's language")
+    options: list[str] = Field(
+        min_length=2,
+        max_length=4,
+        description="2 to 4 short answers built from this conversation, each a "
+        "few words. The interface adds 'Something else' and Skip itself: never "
+        "write those.",
+    )
+
+
+class AskUserArgs(BaseModel):
+    questions: list[AskQuestion] = Field(
+        min_length=1,
+        max_length=4,
+        description="1 to 4 questions, shown one after the other in one panel",
     )
 
 
@@ -190,6 +215,7 @@ async def respond(
     running = running or []
     if mode != "deep":
         start_deep_research = None
+    asked: list[dict] = []
     agent = create_agent(
         model=model,
         tools=[
@@ -208,12 +234,14 @@ async def respond(
             # Only while a deep run is working here: every other turn has
             # exactly the tools and the prompt it had before steering existed.
             *_steer_tool(running, steer_deep_research),
+            _ask_tool(asked),
         ],
         system_prompt=_system_prompt(
             message, documents, outputs, mode=mode, running=running
         ),
         middleware=[
             *middleware("supervisor", emit),
+            EndOnAsk(),
             # Out of rounds means answer with what it has, not fail the turn,
             # and it is told so on the last one rather than cut off.
             LastStep(
@@ -228,7 +256,9 @@ async def respond(
     )
     titles = step_titles(model, emit, detect_language(message))
     state = await _stream(agent, _conversation(history, message), emit, titles)
-    return _answer(_last_text(state.get("messages", [])), sources)
+    answer = _answer(_last_text(state.get("messages", [])), sources)
+    answer.ask = asked or None
+    return answer
 
 
 # The supervisor's own stage. A sub-agent called through a tool runs under its
@@ -335,6 +365,63 @@ def _running(running: list[Running]) -> str:
             "what the tool says will happen, nothing more."
         )
     return text + "\n</running>"
+
+
+ASKED = "Shown to the user. Stop here: their answer arrives as their next message."
+
+
+def _ask_tool(asked: list[dict]) -> StructuredTool:
+    """ask_user: questions with options, shown in a panel above the composer.
+
+    It ends the turn: nothing is waiting for an answer, which
+    comes back as the user's next message like anything else they say. What it
+    asked lands in ``asked``, for the turn to store with its reply. EndOnAsk
+    is what ends the turn."""
+
+    async def ask_user(questions: list[AskQuestion]) -> str:
+        asked[:] = [q.model_dump() for q in questions]
+        return ASKED
+
+    return StructuredTool.from_function(
+        coroutine=ask_user,
+        name="ask_user",
+        description=(
+            "Ask the user one to four questions, each with two to four short "
+            "options they answer with one click, shown one after the other in a "
+            "panel under your reply. Write your reply first, in the same message, "
+            "then call this alone, as the last thing in your turn: the turn ends "
+            "here, and their answers come back as their next message. For real "
+            "choices only, never to ask whether they want you to go on."
+        ),
+        args_schema=AskUserArgs,
+    )
+
+
+class EndOnAsk(AgentMiddleware):
+    """Ends the turn once ask_user has shown its questions.
+
+    Not return_direct: that ends the turn on the tool's error too, and a
+    question sent with one option would reach nobody. A call that failed its
+    schema goes back to the model to be fixed, like any other tool's."""
+
+    @hook_config(can_jump_to=["end"])
+    async def abefore_model(self, state, runtime) -> dict | None:
+        return {"jump_to": "end"} if _asked(state["messages"]) else None
+
+
+def _asked(messages: list) -> AIMessage | None:
+    """The step that asked, when the latest tool results include a successful
+    ask_user; it can share its step with another tool."""
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if not isinstance(message, ToolMessage):
+            break
+        if message.name == "ask_user" and message.status != "error":
+            return next(
+                (m for m in reversed(messages[:index]) if isinstance(m, AIMessage)),
+                None,
+            )
+    return None
 
 
 def _steer_tool(
@@ -623,7 +710,11 @@ def _tools(
 
 
 def _last_text(messages: list) -> str:
-    """The reply: the last thing the agent wrote that was not a tool call."""
+    """The reply: the last thing the agent wrote that was not a tool call, or,
+    on a turn that ended by asking, what it wrote alongside the question."""
+    step = _asked(messages)
+    if step is not None:
+        return text_of(step)
     for message in reversed(messages):
         if isinstance(message, AIMessage) and not message.tool_calls:
             text = text_of(message)
