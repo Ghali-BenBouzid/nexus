@@ -80,10 +80,23 @@ def _history(messages: list[Message]) -> list[Turn]:
         Turn(
             role="user" if m.role == MessageRole.user else "assistant",
             content=m.content,
+            # Only an asked question is replayed: on an answer, the text
+            # already says what was chosen.
+            ask=m.ask if m.role == MessageRole.assistant else None,
         )
         for m in messages[-_MAX_CONTEXT_MESSAGES:]
-        if m.content
+        # A turn that only asked, with no text beside its questions, still said
+        # something the next message answers.
+        if m.content or m.ask
     ]
+
+
+def format_answers(answers: list[dict]) -> str:
+    """A panel's answers as the message the supervisor reads: each question,
+    then what was chosen."""
+    return "\n\n".join(
+        f"{a['question']}\n→ {a.get('answer') or '(skipped)'}" for a in answers
+    )
 
 
 async def submit_message(
@@ -96,6 +109,7 @@ async def submit_message(
     background_tasks: BackgroundTasks,
     document_ids: list[int] | None = None,
     mode: Mode = "answer",
+    answers: list[dict] | None = None,
 ) -> Message:
     """Record the user's message and the assistant turn that will answer it, and
     queue the job; no model is called in the request. The turn's query tracks it
@@ -108,8 +122,12 @@ async def submit_message(
     and on "don't start a deep research"; judging the message is exactly what
     the supervisor is for, and the thread stays the supervisor's either way.
     """
+    # Answers from the question panel: the text the supervisor reads is written
+    # here, from the pairs, so it reads the same however the client sent them.
+    if answers:
+        content = format_answers(answers)
     user_message = await repository.add_message(
-        db, conversation.id, MessageRole.user, content
+        db, conversation.id, MessageRole.user, content, ask=answers
     )
     # The files were uploaded before the message, because a file belongs to a
     # conversation; this is what ties them to the message they were sent with.
@@ -237,7 +255,7 @@ async def route_message(
                 answer.text,
                 result=result,
             )
-            await repository.set_content(db, message_id, answer.text)
+            await repository.set_content(db, message_id, answer.text, ask=answer.ask)
 
     await run_query(query_id, user_id=user_id, work=work, model=model, backend=backend)
 

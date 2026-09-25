@@ -65,6 +65,7 @@ def _to_responses(
             created_at=m.created_at,
             documents=[document_summary(d) for d in by_message.get(m.id, [])],
             query=_message_query(queries.get(m.query_id)) if m.query_id else None,
+            ask=m.ask,
         )
         for m in messages
     ]
@@ -173,5 +174,6 @@ async def add_message(
         background_tasks=background_tasks,
         document_ids=payload.document_ids,
         mode=payload.mode,
+        answers=[a.model_dump() for a in payload.answers] if payload.answers else None,
     )
     return await _detail(db, conversation)

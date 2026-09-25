@@ -556,11 +556,29 @@ def _conversation(history: list[Turn], message: str) -> list[BaseMessage]:
     """The thread as real messages: each earlier turn its own, the new message
     last. Not one blob of text, so the model sees who said what."""
     messages: list[BaseMessage] = [
-        HumanMessage(turn.content) if turn.role == "user" else AIMessage(turn.content)
+        HumanMessage(turn.content)
+        if turn.role == "user"
+        else AIMessage(_with_questions(turn.content, turn.ask))
         for turn in history
     ]
     messages.append(HumanMessage(message))
     return messages
+
+
+def _with_questions(text: str, ask: list[dict] | None) -> str:
+    """An earlier reply as the model reads it back: its text, then any
+    questions it ended on with their options numbered, as the user saw them,
+    so a typed "2" is read against the right question."""
+    if not ask:
+        return text
+    lines = ["(You asked, with these options:)"]
+    for number, question in enumerate(ask, start=1):
+        lines.append(f"{number}. {question['question']}")
+        options = "  ".join(
+            f"{i}) {option}" for i, option in enumerate(question["options"], start=1)
+        )
+        lines.append(f"   {options}")
+    return "\n\n".join(part for part in (text, "\n".join(lines)) if part)
 
 
 def _tools(
