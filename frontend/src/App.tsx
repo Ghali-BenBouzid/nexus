@@ -41,11 +41,13 @@ import {
 } from "./lib/design";
 import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
 import { isLive, LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
+import { formatAnswers } from "./lib/ask";
 import { markTipSeen, tipSeen, tourSeen, type Tip as TipDef, type TipId } from "./lib/tour";
 import { isUnread, loadSeen, markSeen, saveSeen, type Seen } from "./lib/unread";
 import { stored } from "./lib/uploads";
 import { DocPreview, type PreviewTarget } from "./components/DocPreview";
 import type {
+  Answered,
   ConversationId,
   Doc,
   LayoutMode,
@@ -225,25 +227,26 @@ export default function App() {
   // timer runs (and a resumed poll, below, drives it to completion).
   const turnFromLoaded = (lt: LoadedTurn): Turn => {
     const inFlight = lt.status === "running" || lt.status === "pending";
-    // The turn's clock runs on performance.now(); the server's times are wall
-    // clock, so they are placed on it by their distance from now.
-    const onClock = (at: number | undefined) =>
-      at == null || Number.isNaN(at) ? performance.now() : performance.now() - (Date.now() - at);
     return {
       id: ++turnSeq.current,
       queryId: lt.queryId ?? undefined,
       query: lt.query,
       attachments: lt.attachments,
+      answers: lt.answers,
+      ask: lt.ask,
       title: lt.title,
       status: lt.status,
-      events: [],
+      // A turn still running is followed from its first event instead, so
+      // nothing is drawn twice.
+      events: inFlight ? [] : (lt.events ?? []),
       reply: lt.reply,
+      parts: lt.parts,
       result: lt.result,
       outcome: outcomeFor(lt.status, lt.reply ?? "", lt.result.sources.length),
       error: lt.error,
       stopped: lt.stopped,
-      startedAt: onClock(lt.askedAt),
-      endedAt: inFlight ? null : onClock(lt.endedAt),
+      startedAt: lt.startedAt ?? performance.now(),
+      endedAt: inFlight ? null : (lt.endedAt ?? performance.now()),
     };
   };
 
@@ -533,15 +536,17 @@ export default function App() {
   const callbacksFor = (id: number): ResearchCallbacks => ({
     onEvent: (e) => {
       if (cancelled.current.has(id)) return;
-      // Stamp the arrival time: the progress bar times each step from it.
+      // Stamp when it happened: the arrival time, unless it is a stored event
+      // replayed on reopening, which says when. The bar times each step from it.
       patchTurn(id, (t) => ({
         ...t,
         ...alive(),
-        events: [...t.events, { ...e, at: performance.now() }],
+        events: [...t.events, { ...e, at: e.at ?? performance.now() }],
         // A new model call replaces whatever the last one streamed. That is
         // what makes a retry safe: the failed attempt's half-written answer
-        // does not stay on screen next to the real one.
-        ...(e.kind === "thinking" ? { streamed: undefined, thinking: undefined } : {}),
+        // does not stay on screen next to the real one. What it said before a
+        // round of tool calls is kept: it arrives whole, as its own event.
+        ...(e.kind === "thinking" || e.kind === "said" ? { streamed: undefined } : {}),
       }));
     },
     onHeartbeat: (secondsSince) => {
@@ -588,6 +593,8 @@ export default function App() {
     patchTurn(id, (t) => ({
       ...t,
       reply: res.reply ?? t.reply,
+      parts: res.parts ?? t.parts,
+      ask: res.ask,
       // The stored reply replaces what was streamed; a retried call can have
       // streamed text that no longer exists.
       streamed: undefined,
@@ -632,7 +639,10 @@ export default function App() {
     startResearch(prompt, { fresh: true });
   }
 
-  async function startResearch(prompt: string, opts?: { fresh?: boolean; mode?: Mode }) {
+  async function startResearch(
+    prompt: string,
+    opts?: { fresh?: boolean; mode?: Mode; answers?: Answered[] },
+  ) {
     if (askForDemoAccount()) return;
     const fresh = opts?.fresh ?? false;
     // One run at a time: ignore a follow-up while another is in flight. A fresh
@@ -649,6 +659,7 @@ export default function App() {
     const turn: Turn = {
       id,
       query: prompt,
+      answers: opts?.answers,
       status: "running",
       events: [],
       result: null,
@@ -716,6 +727,7 @@ export default function App() {
         conversationId,
         attached.map((doc) => doc.id),
         runMode,
+        opts?.answers,
       );
       if (cancelled.current.has(id)) return;
       applyOutcome(id, res);
@@ -926,7 +938,11 @@ export default function App() {
     setActiveConversation(conv.id);
     setDocuments(conv.documents);
     setStaged([]);
-    setMode("answer"); // the mode was switched on for another chat, not this one
+    // The mode was switched on for another chat, not this one. Unless this one
+    // ends on a question: its answer belongs in the mode it was asked in, or a
+    // brainstorm reopened after a reload would be answered as a plain question.
+    const last = conv.turns[conv.turns.length - 1];
+    setMode(last?.ask?.length && last.mode ? last.mode : "answer");
     setUploadError(null);
     refreshOutputs();
     setFocusedId(null);
@@ -1046,6 +1062,7 @@ export default function App() {
           focusedId={focusedId}
           onFocus={setFocusedId}
           onSubmit={startResearch}
+          onAnswer={(answers) => startResearch(formatAnswers(answers), { answers })}
           onStop={stopResearch}
           onExit={goHome}
           mode={mode}

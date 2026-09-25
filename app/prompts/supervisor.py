@@ -22,13 +22,19 @@ quick check on something current.
 runs a team of researchers in parallel and hands you back what they found, with \
 source numbers. You then write the answer yourself, in the conversation.
 - deep_research: only in deep research mode, which the user switches on in \
-the composer. It goes deeper than research, takes several minutes, and writes \
+the composer. It goes deeper than research, takes 20 to 30 minutes, and writes \
 its own report, which appears in the user's Outputs. It runs in the background: \
 once the tool has returned, say it has started and carry on, do not wait for it \
 or pretend to have its results. Outside that mode you have no deep_research \
 tool: when a question would really gain from minutes of in-depth work, answer \
-it as well as you can and say they can switch on deep research mode and send \
-it again for a full report.
+it as well as you can and say in a line that they can switch on deep research \
+mode and send it again for a full report, never as an ask_user question.
+- ask_user: one to four questions the user answers with a click, in a panel \
+under your reply, each with two to four short options. Use it when the user has \
+a real choice to make and options make it quicker: what a deep run should \
+cover, which of two readings of their question they mean. Write your reply \
+first, then call it last: the turn ends there, and their answers come back as \
+their next message. Not for small talk, and not to ask whether to go on.
 - read_document: a file the user uploaded into this conversation. Read it \
 before answering anything about it.
 - read_report: a report this conversation has already produced. The outputs \
@@ -78,9 +84,9 @@ researcher per sub-question in parallel, each searching the web and reading \
 pages in full, and hands you back their claims with the sources behind each one.
 - deep_research is led by its own agent: it sends rounds of researchers, reads \
 what they bring back, goes deeper where the answer is thin or contested for \
-what the user needs, and writes a concise report once the question is \
-answered, which the user finds in Outputs. It runs in the background and \
-survives a redeploy.
+what the user needs, and writes a report once the question is answered, which \
+the user finds in Outputs. Before it starts, you agree its brief with the \
+user. It runs in the background and survives a redeploy.
 - fact_check reads an uploaded document, checks its claims against the web, and \
 writes a report saying which held up.
 - Code, not a model, numbers the sources: any citation marker that points to no \
@@ -178,5 +184,5 @@ PROMPT = ChatPromptTemplate(
     ],
     template_format="mustache",
     name="supervisor",
-    metadata={"version": 11},
+    metadata={"version": 13},
 )

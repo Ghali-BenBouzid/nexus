@@ -32,8 +32,11 @@ const assistant = (query: Partial<NonNullable<ConvMessage["query"]>>): ConvMessa
 
 describe("turnsFrom", () => {
   it("keeps when a turn was asked and when it ended, so a reload keeps its clock", () => {
-    const [turn] = turnsFrom([user("hi"), assistant({ completed_at: "2026-09-21T00:00:42Z" })]);
-    expect(turn.endedAt! - turn.askedAt!).toBe(42_000);
+    const [turn] = turnsFrom([
+      user("hi"),
+      assistant({ created_at: "2026-09-21T00:00:00Z", completed_at: "2026-09-21T00:00:42Z" }),
+    ]);
+    expect(turn.endedAt! - turn.startedAt!).toBeCloseTo(42_000, -1);
   });
 
   it("reads a document still being read as reading, with no reason yet", () => {

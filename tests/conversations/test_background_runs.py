@@ -85,7 +85,10 @@ class _StartsDeepResearch(ScriptedModel):
                 "deep_research",
                 question="everything about X",
                 title="All of X",
-                goal="to decide whether X is worth learning",
+                brief={
+                    "goal": "decide whether X is worth learning",
+                    "focus": ["what X is used for", "how long it takes"],
+                },
             )
         elif "deep_research" in names:
             reply = says("I have started a deep run; it will appear in Outputs.")
@@ -155,10 +158,10 @@ async def test_a_deep_run_becomes_its_own_artifact(
     [artifact] = artifacts.json()
     assert artifact["kind"] == "deep_research"
     assert artifact["title"] == "All of X"
-    # the lead reads what the run is for, so it knows how deep to go
-    assert artifact["prompt"].endswith(
-        "What it is for: to decide whether X is worth learning"
-    )
+    # the lead reads the brief the user agreed, under the question itself
+    assert artifact["prompt"].startswith("everything about X\n\n")
+    assert "- Goal: decide whether X is worth learning" in artifact["prompt"]
+    assert "what X is used for; how long it takes" in artifact["prompt"]
     assert artifact["conversation_id"] == conversation_id
     assert artifact["status"] == "complete"
 
@@ -713,7 +716,10 @@ class _ObeysTheCheck(ScriptedModel):
         refused = [m for m in messages if isinstance(m, ToolMessage)]
         if told and not refused:
             reply = call(
-                "deep_research", question="VFR weather", title="Again", goal="x"
+                "deep_research",
+                question="VFR weather",
+                title="Again",
+                brief={"goal": "x"},
             )
         else:
             reply = says("Hi! Your research on aviation weather is still running.")

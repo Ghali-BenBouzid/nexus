@@ -1,7 +1,7 @@
 // Turns a run's agent events into what the progress bar shows: the current stage,
 // one row per researcher and when the latest step began. Pure, so the bar can
 // re-derive it on every clock tick, and it is tested on its own.
-import type { TimelineEvent } from "../types";
+import type { Source, TimelineEvent } from "../types";
 
 // What a researcher (or the run) is doing right now, and since when (the
 // performance.now() instant its event reached the UI).
@@ -312,4 +312,40 @@ export function headline(p: Progress, items: Step[]): Headline {
   const step = tops[tops.length - 1];
   if (step && step.kind !== "understanding") return { kind: "step", step };
   return { kind: "stage" };
+}
+
+// One round of the supervisor's work, and what it said at the end of it. A turn
+// reads like a conversation: the work, a part of the reply, more work, the next
+// part, and so on down to the answer. `at` is when its words arrived: where the
+// round ended and the next began.
+export type Round = { events: TimelineEvent[]; said: string | null; at: number | null };
+
+export function rounds(events: TimelineEvent[]): Round[] {
+  const out: Round[] = [{ events: [], said: null, at: null }];
+  // A step is named after it ends, often once the words after it are out, and
+  // the name belongs with the step, not with whatever round is going by then.
+  const home = new Map<number, TimelineEvent[]>();
+  for (const e of events) {
+    const round = out[out.length - 1];
+    if (e.kind === "said") {
+      round.said = e.text;
+      round.at = e.at ?? null;
+      out.push({ events: [], said: null, at: null });
+      continue;
+    }
+    if (e.kind === "step") home.set(e.step, round.events);
+    (e.kind === "step_title" ? (home.get(e.step) ?? round.events) : round.events).push(e);
+  }
+  return out;
+}
+
+// Every source the reply can cite so far, where [n] finds it: at n - 1. The
+// numbers are the ones the reply uses while it is written; the stored reply is
+// renumbered, and cites the turn's final source list instead.
+export function liveSources(events: TimelineEvent[]): Source[] {
+  const out: Source[] = [];
+  for (const e of events) {
+    if (e.kind === "sources") e.items.forEach((s, i) => (out[e.first - 1 + i] = s));
+  }
+  return out;
 }

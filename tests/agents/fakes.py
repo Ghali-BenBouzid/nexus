@@ -124,11 +124,25 @@ class ScriptedModel(BaseChatModel):
                 yield ChatGenerationChunk(
                     message=AIMessageChunk(content=word + " ", additional_kwargs=here)
                 )
+            # A reply can write and call a tool at once (ask_user does): the
+            # calls ride the last word, as a provider sends them after the text.
             yield ChatGenerationChunk(
                 message=AIMessageChunk(
-                    content=text.split(" ")[-1], additional_kwargs=here
+                    content=text.split(" ")[-1],
+                    tool_calls=message.tool_calls,
+                    additional_kwargs=here,
                 )
             )
+            # Words before a tool call come first, then the call, as a
+            # provider sends them.
+            if message.tool_calls:
+                yield ChatGenerationChunk(
+                    message=AIMessageChunk(
+                        content="",
+                        tool_calls=message.tool_calls,
+                        additional_kwargs=here,
+                    )
+                )
         else:
             yield ChatGenerationChunk(
                 message=AIMessageChunk(

@@ -57,6 +57,9 @@ class QueryDetail(BaseSchema):
     status: QueryStatus
     report: str | None
     reply: str | None = None  # the supervisor's answer, on a chat turn
+    reply_parts: list[str] | None = None  # the same, in the parts it was written in
+    # The questions a chat turn ended on, if it asked the user any.
+    ask: list[dict] | None = None
     error: str | None
     stopped: bool = False  # failed because the user stopped it, not broken
     kind: str = "chat"

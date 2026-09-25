@@ -60,6 +60,10 @@ class Query(Base):
         String(32), nullable=False, default=QueryKind.chat, index=True
     )
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    # The composer mode a chat turn was sent in ("answer", "deep", "factcheck").
+    # Reopening a conversation that ends on a question puts the composer back
+    # in it, so the answer is read in the mode the question was asked in.
+    mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # The document a fact check reads, so a second check of it can be refused
     # while the first is working. Null on every other kind of run. use_alter:
     # it closes a loop (a document belongs to a message, a message to a run).
@@ -85,6 +89,11 @@ class Query(Base):
     report: Mapped[str | None] = mapped_column(Text, nullable=True)
     # The supervisor's answer, on a chat turn. Also copied onto the message.
     reply: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The same reply in the parts it was written in: what the supervisor said
+    # before each round of tool calls, then its answer. Null on older turns.
+    reply_parts: Mapped[list[str] | None] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
+    )
     # Real JSONB in Postgres; plain JSON in the aiosqlite test suite.
     result: Mapped[dict[str, Any] | None] = mapped_column(
         JSONB().with_variant(JSON(), "sqlite"), nullable=True

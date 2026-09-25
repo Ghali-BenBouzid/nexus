@@ -76,14 +76,20 @@ def test_the_language_directive_appears_only_when_detected(name: str) -> None:
 
 def test_optional_sections_render_only_when_given() -> None:
     report = PROMPTS["report"]
-    plain = render(report, findings="F", guidance="", today="T", language="")
+    plain = render(report, findings="F", guidance="", length="", today="T", language="")
     shaped = render(
-        report, findings="F", guidance="make it short", today="T", language=""
+        report,
+        findings="F",
+        guidance="make it short",
+        length="about 1000 words",
+        today="T",
+        language="",
     )
 
     assert plain[1].content == "F"
     assert "How to shape this report" in (shaped[1].content or "")
     assert "make it short" in (shaped[1].content or "")
+    assert "# Length\nabout 1000 words" in (shaped[1].content or "")
 
 
 def test_the_conversation_arrives_as_real_messages() -> None:

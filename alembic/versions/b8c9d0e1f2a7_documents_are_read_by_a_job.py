@@ -1,7 +1,7 @@
 """documents are read by a job
 
-Revision ID: f6a7b8c9d0e4
-Revises: e5f6a7b8c9d3
+Revision ID: b8c9d0e1f2a7
+Revises: e1f2a3b4c5d6
 Create Date: 2026-09-25 00:00:01.000000
 
 A file was read inside the request that uploaded it, and the message it came
@@ -18,8 +18,8 @@ import sqlalchemy as sa
 from alembic import op
 
 # revision identifiers, used by Alembic.
-revision: str = "f6a7b8c9d0e4"
-down_revision: str | None = "e5f6a7b8c9d3"
+revision: str = "b8c9d0e1f2a7"
+down_revision: str | None = "e1f2a3b4c5d6"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

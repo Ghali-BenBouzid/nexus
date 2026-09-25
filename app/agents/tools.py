@@ -228,6 +228,7 @@ def retrieval_tools(
     emit: Emit = _noop,
     agent: str = "agent",
     searches: int | None = None,
+    reads: list[int] | None = None,
 ) -> list[StructuredTool]:
     """The two tools every web-facing agent gets: search, and read a page in
     full. Both register what they retrieved into ``sources`` and append the
@@ -235,7 +236,8 @@ def retrieval_tools(
     feed, never raised: one dead search should cost a search, not the turn.
 
     ``searches`` caps how many web searches the agent may make; past it, a
-    search is refused without reaching the engines. None is no cap."""
+    search is refused without reaching the engines. None is no cap. ``reads``,
+    when given, counts the pages the agent asked to read, in its first item."""
     used = [0]
 
     async def retrieve(what: str, retrieving: _Retrieving) -> str:
@@ -271,6 +273,8 @@ def retrieval_tools(
         )
 
     async def fetch_page(url: str) -> str:
+        if reads is not None:
+            reads[0] += 1
         return await retrieve("fetch_page", lambda: fetch_page_text(backend, url))
 
     return [

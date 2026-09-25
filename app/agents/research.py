@@ -61,6 +61,7 @@ class Limits:
     concurrency: int
     budget: float  # seconds before researchers stop searching and submit
     per_researcher_timeout: float  # hard stop for one researcher
+    min_pages: int = 0  # pages a researcher reads before it may submit a finding
 
     @classmethod
     def normal(cls) -> "Limits":
@@ -82,6 +83,7 @@ class Limits:
             concurrency=settings.deep_concurrency,
             budget=settings.deep_research_budget,
             per_researcher_timeout=settings.deep_researcher_timeout,
+            min_pages=settings.deep_min_pages,
         )
 
 
@@ -196,6 +198,7 @@ async def research_task(
                     emit=own_emit,
                     max_iters=limits.max_iters,
                     searches=limits.searches,
+                    min_pages=limits.min_pages,
                     deadline=time.monotonic() + (deadline - time.time()),
                 ),
                 timeout=limits.per_researcher_timeout,
