@@ -278,3 +278,22 @@ async def test_a_note_sent_while_the_lead_decides_is_not_a_round_late() -> None:
 
     assert [r["sub_questions"] for r in final["rounds"]] == [["easa"]]
     assert final["rounds"][0]["notes_seen"] == 1
+
+
+def test_a_report_is_as_long_as_its_findings_can_carry() -> None:
+    assert deep.deep_length(14) == 1000  # a thin run is not padded to a length
+    assert deep.deep_length(40) == 2800
+    assert deep.deep_length(80) == 4500
+
+
+async def test_the_writer_is_told_how_long_to_write() -> None:
+    def lead(messages):
+        if _rounds(messages) == 0:
+            return call("DispatchResearchersArgs", reasoning="map", sub_questions=["a"])
+        return call("WriteReportArgs", reasoning="covered", outline="a")
+
+    _, model = await _run(lead)
+
+    writer = str(model.seen[-1][-1].content)
+    assert "# Length" in writer
+    assert "about 1000 words" in writer

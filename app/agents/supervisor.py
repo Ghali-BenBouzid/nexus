@@ -109,15 +109,74 @@ class ResearchArgs(BaseModel):
     tool_call_id: Annotated[str, InjectedToolCallId]
 
 
+class DeepBrief(BaseModel):
+    """What the user and the supervisor agreed a deep run is for, in the
+    brainstorm before it. Everything but the goal can be empty: a field the
+    user never touched is left out, not guessed."""
+
+    goal: str = Field(
+        description="What the user wants the report for and why, as a concrete "
+        "goal: 'choose a specialisation to train for next year', not 'learning'"
+    )
+    reader: str = Field(
+        default="", description="Who reads the report and what they already know"
+    )
+    focus: list[str] = Field(
+        default_factory=list, description="The areas to cover, most important first"
+    )
+    open: list[str] = Field(
+        default_factory=list,
+        description="What the user left open, for the research to settle",
+    )
+    decided: list[str] = Field(
+        default_factory=list,
+        description="What the user left to you with 'Decide for me', and what "
+        "you chose",
+    )
+    out_of_scope: list[str] = Field(
+        default_factory=list, description="What to leave out"
+    )
+    constraints: str = Field(
+        default="", description="Region, timeframe, budget, the language of sources"
+    )
+    shape: str = Field(
+        default="",
+        description="The kind of report: a comparison, a recommendation, a "
+        "primer, or what the user asked for",
+    )
+
+
+_BRIEF_LINES = (
+    ("goal", "Goal"),
+    ("reader", "Reader"),
+    ("focus", "Focus, most important first"),
+    ("open", "Left open, for the research to settle"),
+    ("decided", "Left to you, and what was chosen"),
+    ("out_of_scope", "Out of scope"),
+    ("constraints", "Constraints"),
+    ("shape", "Shape of the report"),
+)
+
+
+def render_brief(brief: DeepBrief) -> str:
+    """The brief as the lead reads it, under the question: one labelled line
+    per field the brainstorm filled, and nothing for the ones it did not."""
+    lines = ["The brief, agreed with the user before the run:"]
+    for name, label in _BRIEF_LINES:
+        value = getattr(brief, name)
+        text = "; ".join(value) if isinstance(value, list) else value
+        if text.strip():
+            lines.append(f"- {label}: {text.strip()}")
+    return "\n".join(lines)
+
+
 class DeepResearchArgs(BaseModel):
     question: str = Field(
         description="The user's question, self-contained and in their language, "
         "as they would ask it: not a syllabus or a list of topics to cover"
     )
-    goal: str = Field(
-        description="The brief for the run: what the user wants the report for, "
-        "depth on a few areas or a broad first look, the areas to focus on, and "
-        "what you decided for them"
+    brief: DeepBrief = Field(
+        description="The brief agreed in the brainstorm, in the user's language"
     )
     title: str = Field(
         description="A short title, a few words in the user's language, naming "
@@ -455,43 +514,69 @@ _DEEP_MODE = """\
 <mode>
 The user has switched to deep research mode for this message. They want a \
 question answered properly, so when this message is a subject or question \
-worth researching in depth, start deep_research on it, with a short title that \
-names the subject. Do not answer it with a quick research pass instead, and \
-do not judge it too small for a deep run: choosing this mode is the user \
-asking for depth, and that call is theirs. research and web_search stay for \
-what is not the run itself: a side question while a run works, or a quick \
-fact you need to ask them the right question.
+worth researching in depth, agree its brief with them, then start \
+deep_research on it, with a short title that names the subject. Do not answer \
+it with a quick research pass instead, and do not judge it too small for a \
+deep run: choosing this mode is the user asking for depth, and that call is \
+theirs. research and web_search stay for what is not the run itself: a side \
+question while a run works, or what you need to ask them good questions.
 
-A deep run is shaped by what the user wants from it, so before starting one, \
-make sure you know:
-- what they want the report for: a decision, learning a subject, writing \
-something, checking an idea;
-- whether they want depth on a few areas or a broad first look at the subject \
-(to go deep on part of it in a later run);
-- which areas matter to them, if they already know.
-When the message or the conversation already makes this clear, start at once. \
-A bare topic or a broad request ("quantum computing", "teach me about X") \
-does not: it says what to research, not what they want from it, so ask before \
-starting, not about the plan but about what they \
-want: short, with two or three concrete options each so answering takes a \
-second, and always one option that leaves it to you ("your call"). If the \
-answer still leaves it unclear, ask again, more narrowly. Only when they \
-leave it to you, by choosing that option or saying to just go, choose what \
-serves the question best and start; never decide on their behalf that they \
-left it to you.
+<brainstorm>
+A deep run takes several minutes and is only as good as its brief, so before \
+starting one you agree the brief with the user in a short brainstorm, through \
+ask_user. How much there is to ask depends on what they already said: never \
+ask what the conversation already answers.
 
-Pass all of it in the goal argument: what the report is for, depth or \
-breadth, the areas to focus on, and what you decided for them. Keep the \
-question the user's own question rather than a list of topics.
+It is three steps by default:
+1. The goal: what they want the report for, as concrete goals for this \
+subject to choose from (choose a specialisation to train for, compare two \
+offers before signing one, prepare a talk). Skip it when the conversation \
+already makes the goal clear.
+2. What that goal needs: two to four questions in one panel, chosen from the \
+goal, and only on what would change what gets researched: who reads the report \
+and what they already know; which areas matter most; depth on a few areas or \
+a broad first look; constraints such as region, timeframe or budget; the shape \
+of the report (a comparison, a recommendation, a primer).
+3. The confirmation: two or three sentences restating the brief in your own \
+words, then one question asking whether to launch the run, with an option to \
+launch it and one to change something.
+Add a panel only when an answer opens a real fork, one that changes what the \
+run should research. When the user changes their mind at any point, go back to \
+whatever it touches and carry on from there. Start deep_research only once \
+they have confirmed; if they tell you to just go, restate the brief in a line \
+and start.
+
+When their message asks something you can answer now, answer it briefly \
+before the first panel: the brainstorm shapes the report, it is not a reason \
+to leave a question unanswered. Keep that answer short; the report is where \
+the depth goes.
+
+What makes a good question:
+- Build every option from this subject and this conversation. "For a \
+decision" or "to learn" are not options; "pick between LangGraph and \
+LlamaIndex for a RAG job" is.
+- For the areas to cover, think of the people who care about this subject and \
+what each would want answered (for a job market question: a recruiter, a \
+hiring manager, someone changing careers), and offer the angles they point to.
+- Options are a few words each, distinct, and never overlap.
+- End every question with a "Decide for me" option, in the user's language. \
+When they choose it, decide what serves their goal best and say what you chose \
+in the confirmation.
+- When you do not know the subject well enough to ask good questions, search \
+first with web_search, then ask. These searches are for your questions: no \
+citations and no summary of what you found.
+
+Pass everything in the brief argument: the goal as what they want and why, the \
+reader, the areas to focus on in order, what they left open, what they left to \
+you and what you chose, what is out of scope, the constraints, and the shape \
+of the report. Keep the question the user's own question rather than a list \
+of topics.
+</brainstorm>
 
 When this message is not something to research (a greeting, small talk, a \
 question about Nexus, or a request not to research), do not start a run. \
 Answer it as you normally would, and say in a sentence what deep research is \
 for and what to send to start one.
-
-When the subject itself is too vague to research at all, pin it down the \
-same way before starting: a deep run takes several minutes, and a report built \
-on a guess about what they meant wastes all of them.
 </mode>"""
 
 # The same principle for fact checking: the mode says what the user is after,
@@ -644,10 +729,10 @@ def _tools(
             )
         return render_findings(result)
 
-    async def deep_research(question: str, title: str, goal: str) -> str:
+    async def deep_research(question: str, title: str, brief: DeepBrief) -> str:
         if start_deep_research is None:
             return "Deep research is not available here. Use research instead."
-        return await start_deep_research(question, title, goal)
+        return await start_deep_research(question, title, render_brief(brief))
 
     async def fact_check(document_id: int, title: str, focus: str = "") -> str:
         if start_fact_check is None:

@@ -20,7 +20,7 @@ def _judge(monkeypatch, *verdicts: str) -> ScriptedModel:
 
 
 async def _deep(model, running=None) -> str:
-    async def start(question: str, title: str, goal: str) -> str:
+    async def start(question: str, title: str, brief: str) -> str:
         return "Deep research has started."
 
     answer = await respond(
@@ -69,7 +69,7 @@ async def test_a_started_run_is_not_judged(monkeypatch) -> None:
     judge = _judge(monkeypatch, "yes")
     model = ScriptedModel(
         [
-            call("deep_research", question="X", title="X", goal="learn X"),
+            call("deep_research", question="X", title="X", brief={"goal": "learn X"}),
             says("Deep research on X has started."),
         ]
     )

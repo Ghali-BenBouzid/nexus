@@ -293,7 +293,7 @@ def _deep_starter(run: Run, conversation_id: int):
     hand back what to tell the user. The tool returns at once, because the point
     of a deep run is that nobody sits and waits for it."""
 
-    async def start(question: str, title: str, goal: str) -> str:
+    async def start(question: str, title: str, brief: str) -> str:
         # One deep run per conversation, held here rather than asked of the
         # model: a supervisor misled once already started a copy of a run
         # that was still going.
@@ -305,9 +305,9 @@ def _deep_starter(run: Run, conversation_id: int):
             ]
         if busy:
             return DEEP_BUSY.format(id=busy[0].id, title=busy[0].title)
-        # The goal travels with the question: the lead reads it to decide how
-        # deep to go, and a resumed run reads it back off the row.
-        prompt = f"{question}\n\nWhat it is for: {goal}" if goal.strip() else question
+        # The brief travels with the question: the lead reads it to decide what
+        # to research and how deep, and a resumed run reads it back off the row.
+        prompt = f"{question}\n\n{brief}"
         query_id = await _start_run(
             run,
             conversation_id,
