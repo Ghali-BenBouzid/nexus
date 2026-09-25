@@ -27,7 +27,7 @@ import {
   type LoadedTurn,
 } from "./lib/api";
 import { creditsLeft } from "./lib/credits";
-import { t } from "./lib/i18n";
+import { lang, onLangChange, t } from "./lib/i18n";
 import { outcomeFor } from "./lib/outcome";
 import { getRoute, inviteFromUrl, navigate, onPopState, type Route } from "./lib/router";
 import {
@@ -82,6 +82,10 @@ export default function App() {
   const [theme, setTheme] = useState<Theme>(
     () => (document.documentElement.getAttribute("data-theme") as Theme) || "light",
   );
+  // Switching language swaps the dictionary in place; re-rendering from here is
+  // what makes every component read the new one.
+  const [, setShownLang] = useState(lang);
+  useEffect(() => onLangChange(() => setShownLang(lang)), []);
   // The URL is the source of truth for the view; a deep link or reload on
   // /chat/:id starts on the chat view and the conversation is loaded on mount.
   const [view, setView] = useState<View>(() => getRoute().view);

@@ -4,9 +4,6 @@ import { NexusLockup } from "./NexusLogo";
 
 const REPO_URL = "https://github.com/Ghali-BenBouzid/nexus";
 
-const A = t.deep.agentLabels;
-const S = t.deep.sysLabels;
-
 function Notes({ notes }: { notes: readonly { lead: string; rest: string }[] }) {
   return (
     <ul className="dd-notes">
@@ -26,6 +23,8 @@ function Notes({ notes }: { notes: readonly { lead: string; rest: string }[] }) 
 // draws: solid for the path a message always takes, dashed for a tool the
 // supervisor may or may not reach for.
 function AgentDiagram() {
+  // Read at render, not at load: the language can change under a mounted page.
+  const A = t.deep.agentLabels;
   return (
     <svg className="dd-svg" viewBox="0 0 900 430" role="img" aria-label={t.deep.agentAria}>
       <defs>
@@ -106,6 +105,7 @@ function AgentDiagram() {
 // The system diagram: the same message, seen from the outside. Three hosts, and
 // the queue that keeps a model call out of an HTTP request.
 function SystemDiagram() {
+  const S = t.deep.sysLabels;
   return (
     <svg className="dd-svg" viewBox="0 0 900 400" role="img" aria-label={t.deep.sysAria}>
       <defs>
