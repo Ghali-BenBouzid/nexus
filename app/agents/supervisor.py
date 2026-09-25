@@ -93,6 +93,9 @@ class Answer:
 
     text: str
     sources: list[Source] = field(default_factory=list)
+    # The reply as it was written: what the model said before each round of
+    # tool calls, then its answer. ``text`` is these, joined.
+    parts: list[str] = field(default_factory=list)
     # The questions the turn ended on, when it called ask_user: each a dict of
     # question and options, as the user's panel shows them.
     ask: list[dict] | None = None
@@ -318,6 +321,7 @@ async def respond(
             message, documents, outputs, mode=mode, running=running
         ),
         middleware=[
+            LiveReply(emit, sources),
             *middleware("supervisor", emit),
             EndOnAsk(),
             # Out of rounds means answer with what it has, not fail the turn,
@@ -333,8 +337,9 @@ async def respond(
         ],
     )
     titles = step_titles(model, emit, detect_language(message))
-    state = await _stream(agent, _conversation(history, message), emit, titles)
-    answer = _answer(_last_text(state.get("messages", [])), sources)
+    thread = _conversation(history, message)
+    state = await _stream(agent, thread, emit, titles)
+    answer = _answer(_parts(state.get("messages", [])[len(thread) :]), sources)
     answer.ask = asked or None
     return answer
 
@@ -642,6 +647,54 @@ def _claim_check(mode: str, model: BaseChatModel, running: list[Running]) -> lis
     return [RunClaimCheck(mode, judge, [r.title for r in running if r.kind == mode])]
 
 
+class LiveReply(AgentMiddleware):
+    """What the browser needs to show the reply while it is still being written.
+
+    Before a call: the sources registered since the last one. The model can only
+    cite what a tool already showed it, so every number the coming text can use
+    is in the browser before the text is, and a citation links to its page as
+    soon as it appears rather than when the turn ends.
+
+    After a call that goes on to tools: the words it wrote first ("the first
+    pass left gaps, so let me dig further"), which are part of the reply, not a
+    draft of it. This marks where they ended, so the chat keeps them in place,
+    with the work that followed under them, instead of wiping them when the
+    next call starts.
+
+    Outermost of the supervisor's middleware, so the sources arrive before the
+    call is announced and a retried call still ends only once."""
+
+    def __init__(self, emit: Emit, sources: Sources) -> None:
+        super().__init__()
+        self.emit = emit
+        self.sources = sources
+        self.sent = 0
+
+    async def awrap_model_call(self, request, handler):
+        if new := self.sources.all[self.sent :]:
+            await self.emit(
+                AgentEvent(
+                    type="sources",
+                    message="",
+                    data={
+                        "first": self.sent + 1,
+                        "sources": [s.model_dump() for s in new],
+                    },
+                )
+            )
+            self.sent += len(new)
+        response = await handler(request)
+        for message in getattr(response, "result", [response]):
+            if _leads_to_tools(message):
+                if text := text_of(message).strip():
+                    await self.emit(
+                        AgentEvent(
+                            type="said", message=text, data={"agent": "supervisor"}
+                        )
+                    )
+        return response
+
+
 def _attachments(documents: list[Document]) -> str:
     """What is attached to this conversation, by id. Only the names: the text is
     read through the tool, so a long file never sits in the system prompt."""
@@ -844,6 +897,24 @@ def _tools(
     return tools
 
 
+def _parts(turn: list) -> list[str]:
+    """What the agent wrote this turn, in order: the words before each round of
+    tool calls, then its reply. What it wrote alongside ask_user is the reply,
+    not the words before one: the turn ends on it."""
+    said = [text for m in turn if _leads_to_tools(m) and (text := text_of(m).strip())]
+    return [*said, _last_text(turn)]
+
+
+def _leads_to_tools(message: object) -> bool:
+    """A step that goes on to tools, rather than one that ends the turn: any
+    tool call but ask_user, whose words are the reply the questions come with."""
+    return (
+        isinstance(message, AIMessage)
+        and bool(message.tool_calls)
+        and all(call["name"] != "ask_user" for call in message.tool_calls)
+    )
+
+
 def _last_text(messages: list) -> str:
     """The reply: the last thing the agent wrote that was not a tool call, or,
     on a turn that ended by asking, what it wrote alongside the question."""
@@ -858,15 +929,23 @@ def _last_text(messages: list) -> str:
     return ""
 
 
-def _answer(text: str, sources: Sources) -> Answer:
+# Between two parts while they are finalized as one text, so the citations are
+# numbered down the whole reply and not restarted in each part.
+_PART = "\x1e"
+
+
+def _answer(parts: list[str], sources: Sources) -> Answer:
     """The reply as the user sees it: invented citations dropped, and only the
     sources it really cites kept."""
-    if not text.strip():
+    if not parts[-1].strip():
         logger.warning("the supervisor produced no reply")
         return Answer(text="", sources=[])
     # keep_uncited=False: an answer that cites nothing should not drag a source
     # list behind it, unlike a report, whose sources are half the point.
-    content, cited, stripped = finalize(text, sources.all, keep_uncited=False)
+    content, cited, stripped = finalize(
+        f"\n\n{_PART}\n\n".join(parts), sources.all, keep_uncited=False
+    )
     if stripped:
         logger.warning("stripped unbacked citation markers %s", stripped)
-    return Answer(text=content.strip(), sources=cited)
+    parts = [part.strip() for part in content.split(_PART)]
+    return Answer(text="\n\n".join(parts), sources=cited, parts=parts)

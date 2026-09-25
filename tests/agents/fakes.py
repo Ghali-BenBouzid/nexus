@@ -133,6 +133,16 @@ class ScriptedModel(BaseChatModel):
                     additional_kwargs=here,
                 )
             )
+            # Words before a tool call come first, then the call, as a
+            # provider sends them.
+            if message.tool_calls:
+                yield ChatGenerationChunk(
+                    message=AIMessageChunk(
+                        content="",
+                        tool_calls=message.tool_calls,
+                        additional_kwargs=here,
+                    )
+                )
         else:
             yield ChatGenerationChunk(
                 message=AIMessageChunk(

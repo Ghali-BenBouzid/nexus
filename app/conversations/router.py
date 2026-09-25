@@ -27,11 +27,12 @@ from app.research import repository as research_repository
 from app.research.dependencies import get_model, get_search_backend
 from app.research.repository import stopped_by_user
 from app.research.router import _load_result
+from app.research.schemas import QueryEventResponse
 
 router = APIRouter(prefix="/conversations")
 
 
-def _message_query(query: Query | None) -> MessageQuery | None:
+def _message_query(query: Query | None, events: list) -> MessageQuery | None:
     if query is None:
         return None
     result = _load_result(query.result, query.id)
@@ -40,10 +41,14 @@ def _message_query(query: Query | None) -> MessageQuery | None:
         title=query.title,
         report=query.report,
         reply=query.reply,
+        reply_parts=query.reply_parts,
         error=query.error,
         stopped=stopped_by_user(query),
         sources=result.sources if result else [],
         gaps=result.gaps if result else [],
+        events=[QueryEventResponse.model_validate(e) for e in events],
+        created_at=query.created_at,
+        completed_at=query.completed_at,
         mode=query.mode,
     )
 
@@ -52,6 +57,7 @@ def _to_responses(
     messages: list[Message],
     queries: dict[int, Query],
     documents: list[Document],
+    feeds: dict[int, list],
 ) -> list[MessageResponse]:
     by_message: dict[int, list[Document]] = {}
     for document in documents:
@@ -65,7 +71,9 @@ def _to_responses(
             query_id=m.query_id,
             created_at=m.created_at,
             documents=[document_summary(d) for d in by_message.get(m.id, [])],
-            query=_message_query(queries.get(m.query_id)) if m.query_id else None,
+            query=_message_query(queries.get(m.query_id), feeds.get(m.query_id, []))
+            if m.query_id
+            else None,
             ask=m.ask,
         )
         for m in messages
@@ -76,6 +84,7 @@ async def _detail(db: AsyncSession, conversation: Conversation) -> ConversationD
     messages = await repository.list_messages(db, conversation.id)
     query_ids = [m.query_id for m in messages if m.query_id is not None]
     queries = await repository.queries_by_id(db, query_ids)
+    feeds = await research_repository.list_turn_events(db, query_ids)
     documents = await documents_repository.list_for_conversation(db, conversation.id)
     artifacts = await research_repository.list_conversation_artifacts(
         db, conversation.id
@@ -84,7 +93,7 @@ async def _detail(db: AsyncSession, conversation: Conversation) -> ConversationD
         id=conversation.public_id,
         title=conversation.title,
         created_at=conversation.created_at,
-        messages=_to_responses(messages, queries, documents),
+        messages=_to_responses(messages, queries, documents, feeds),
         documents=[document_summary(d) for d in documents],
         artifacts=artifacts,
     )

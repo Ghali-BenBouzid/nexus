@@ -53,6 +53,12 @@ export type AgentEvent =
   // later named it with. The thinking itself never reaches the browser.
   | { kind: "step"; step: number }
   | { kind: "step_title"; step: number; title: string }
+  // What the supervisor wrote before a round of tool calls: a part of its
+  // reply, and where the work that followed it begins.
+  | { kind: "said"; text: string }
+  // Sources the supervisor can cite from now on, numbered from `first` the way
+  // the reply cites them while it is being written.
+  | { kind: "sources"; first: number; items: Source[] }
   // The supervisor sent a research team after this question. ``team`` ties
   // the team's own events (its plan, its researchers) back to this step.
   | { kind: "tool"; action: "research"; text: string; team?: string; index?: undefined }
@@ -98,6 +104,9 @@ export type Turn = {
   // The assistant's answer, rendered in the thread. Every turn has one now: a
   // report is a separate output, not what a turn produces.
   reply?: string;
+  // The same reply in the parts it was written in: what the supervisor said
+  // before each round of tool calls, then its answer. Missing on older turns.
+  parts?: string[];
   // The reply as it streams in, before the finished one lands. Kept apart from
   // `reply` so the answer the user keeps is always the one the server stored.
   streamed?: string;

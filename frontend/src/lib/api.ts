@@ -41,8 +41,9 @@ type QueryDetail = {
   sources: Source[];
   consulted_sources: Source[];
   gaps: string[];
-  // The assistant's answer in the conversation.
+  // The assistant's answer in the conversation, and the parts it was written in.
   reply?: string | null;
+  reply_parts?: string[] | null;
   // The questions the turn ended on, if it asked the user any.
   ask?: Question[] | null;
   // How long ago the job last showed signs of life (null before it starts).
@@ -179,6 +180,7 @@ type BackendEvent = {
   type: string;
   message: string;
   data: Record<string, unknown> | null;
+  created_at?: string;
 };
 
 function hostname(url: unknown): string {
@@ -222,6 +224,12 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
       return typeof d.step === "number" ? { kind: "step", step: d.step } : null;
     case "step_title":
       return typeof d.step === "number" ? { kind: "step_title", step: d.step, title: e.message } : null;
+    case "said":
+      return { kind: "said", text: e.message };
+    case "sources":
+      return typeof d.first === "number" && Array.isArray(d.sources)
+        ? { kind: "sources", first: d.first, items: d.sources as Source[] }
+        : null;
     case "document_read":
       return { kind: "tool", action: "document", text: String(d.document ?? e.message) };
     case "factcheck_start":
@@ -287,10 +295,14 @@ type ConvMessageQuery = {
   title: string | null;
   report: string | null;
   reply?: string | null;
+  reply_parts?: string[] | null;
   error: string | null;
   stopped?: boolean;
   sources: Source[];
   gaps: string[];
+  events?: BackendEvent[];
+  created_at?: string | null;
+  completed_at?: string | null;
   mode?: Mode | null; // the composer mode the turn was sent in
 };
 
@@ -509,7 +521,7 @@ async function followQuery(
         message: frame.message,
         data: frame.data,
       });
-      if (mapped) cb.onEvent({ ...mapped, id: frame.id ?? lastEventId, delay: 0 });
+      if (mapped) cb.onEvent({ ...mapped, id: frame.id ?? lastEventId, delay: 0, at: clockAt(frame.at) });
     }
   } catch (err) {
     // An aborted stream is either the user stopping or our own time limit; the
@@ -546,6 +558,7 @@ function outcomeOf(detail: QueryDetail): ResearchOutcome {
     result,
     outcome: outcomeFor(detail.status, detail.reply ?? "", result.sources.length),
     reply: detail.reply ?? "",
+    parts: detail.reply_parts ?? undefined,
     ask: detail.ask ?? undefined,
     title: detail.title ?? undefined,
   };
@@ -650,6 +663,12 @@ export type LoadedTurn = {
   stopped?: boolean; // the user stopped it: not shown as an error
   result: Result;
   reply?: string; // the answer, which is what a turn produces
+  parts?: string[];
+  // What the turn did and when, on the performance.now() clock the live feed
+  // keeps, so a reloaded turn reads like it did live.
+  events?: TimelineEvent[];
+  startedAt?: number;
+  endedAt?: number;
 };
 export type LoadedConversation = {
   id: ConversationId;
@@ -673,6 +692,12 @@ export async function loadConversation(id: ConversationId): Promise<LoadedConver
     documents: (detail.documents ?? []).map(toDoc),
     outputs: (detail.artifacts ?? []).map(toOutput),
   };
+}
+
+// A server time on the performance.now() clock, which the feed's timers use.
+function clockAt(iso: string | null | undefined): number | undefined {
+  const ms = iso ? Date.parse(iso) : NaN;
+  return Number.isNaN(ms) ? undefined : performance.now() - (Date.now() - ms);
 }
 
 // The thread's messages as turns: each assistant message with the user message
@@ -720,6 +745,13 @@ export function turnsFrom(messages: ConvMessage[]): LoadedTurn[] {
       error: q?.error ?? null,
       stopped: q?.stopped,
       reply: q?.reply ?? m.content,
+      parts: q?.reply_parts ?? undefined,
+      events: (q?.events ?? []).flatMap((e) => {
+        const mapped = toAgentEvent(e);
+        return mapped ? [{ ...mapped, id: e.id, delay: 0, at: clockAt(e.created_at) }] : [];
+      }),
+      startedAt: clockAt(q?.created_at),
+      endedAt: clockAt(q?.completed_at),
       result: {
         report: "",
         sources: q?.sources ?? [],

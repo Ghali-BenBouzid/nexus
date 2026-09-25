@@ -115,3 +115,26 @@ async def test_an_ordinary_question_still_needs_a_choice() -> None:
     answer = await _respond(model)
 
     assert answer.ask == [TOPIC]
+
+
+async def test_the_words_sent_with_the_questions_are_the_reply() -> None:
+    """Words before a search are a part of the reply the work follows; words
+    sent with the questions end the turn, so they are its last part, once."""
+    before = AIMessage(
+        "Let me check first.",
+        tool_calls=[{"name": "web_search", "args": {"query": "q"}, "id": "s"}],
+    )
+    model = ScriptedModel([before, asks("Two quick questions.", TOPIC)])
+    said: list[str] = []
+
+    async def emit(event) -> None:
+        if event.type == "said":
+            said.append(event.message)
+
+    answer = await respond(
+        "quiz me", [], model=model, backend=FakeBackend(), sources=Sources(), emit=emit
+    )
+
+    assert said == ["Let me check first."]
+    assert answer.parts == ["Let me check first.", "Two quick questions."]
+    assert answer.ask == [TOPIC]

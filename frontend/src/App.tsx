@@ -231,14 +231,17 @@ export default function App() {
       ask: lt.ask,
       title: lt.title,
       status: lt.status,
-      events: [],
+      // A turn still running is followed from its first event instead, so
+      // nothing is drawn twice.
+      events: inFlight ? [] : (lt.events ?? []),
       reply: lt.reply,
+      parts: lt.parts,
       result: lt.result,
       outcome: outcomeFor(lt.status, lt.reply ?? "", lt.result.sources.length),
       error: lt.error,
       stopped: lt.stopped,
-      startedAt: performance.now(),
-      endedAt: inFlight ? null : performance.now(),
+      startedAt: lt.startedAt ?? performance.now(),
+      endedAt: inFlight ? null : (lt.endedAt ?? performance.now()),
     };
   };
 
@@ -503,15 +506,17 @@ export default function App() {
   const callbacksFor = (id: number): ResearchCallbacks => ({
     onEvent: (e) => {
       if (cancelled.current.has(id)) return;
-      // Stamp the arrival time: the progress bar times each step from it.
+      // Stamp when it happened: the arrival time, unless it is a stored event
+      // replayed on reopening, which says when. The bar times each step from it.
       patchTurn(id, (t) => ({
         ...t,
         ...alive(),
-        events: [...t.events, { ...e, at: performance.now() }],
+        events: [...t.events, { ...e, at: e.at ?? performance.now() }],
         // A new model call replaces whatever the last one streamed. That is
         // what makes a retry safe: the failed attempt's half-written answer
-        // does not stay on screen next to the real one.
-        ...(e.kind === "thinking" ? { streamed: undefined, thinking: undefined } : {}),
+        // does not stay on screen next to the real one. What it said before a
+        // round of tool calls is kept: it arrives whole, as its own event.
+        ...(e.kind === "thinking" || e.kind === "said" ? { streamed: undefined } : {}),
       }));
     },
     onHeartbeat: (secondsSince) => {
@@ -558,6 +563,7 @@ export default function App() {
     patchTurn(id, (t) => ({
       ...t,
       reply: res.reply ?? t.reply,
+      parts: res.parts ?? t.parts,
       ask: res.ask,
       // The stored reply replaces what was streamed; a retried call can have
       // streamed text that no longer exists.

@@ -254,6 +254,7 @@ async def route_message(
                 db,
                 query_id,
                 answer.text,
+                parts=answer.parts,
                 result=result,
             )
             await repository.set_content(db, message_id, answer.text, ask=answer.ask)

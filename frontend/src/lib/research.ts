@@ -48,6 +48,7 @@ export type ResearchOutcome = {
   error?: string;
   // What the turn produced: the answer, and any questions it ended on.
   reply?: string;
+  parts?: string[];
   ask?: Question[];
 };
 
