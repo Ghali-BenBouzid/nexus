@@ -222,6 +222,10 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
       return typeof d.step === "number" ? { kind: "step_title", step: d.step, title: e.message } : null;
     case "said":
       return { kind: "said", text: e.message };
+    case "sources":
+      return typeof d.first === "number" && Array.isArray(d.sources)
+        ? { kind: "sources", first: d.first, items: d.sources as Source[] }
+        : null;
     case "document_read":
       return { kind: "tool", action: "document", text: String(d.document ?? e.message) };
     case "factcheck_start":

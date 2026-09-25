@@ -1,7 +1,7 @@
 // Turns a run's agent events into what the progress bar shows: the current stage,
 // one row per researcher and when the latest step began. Pure, so the bar can
 // re-derive it on every clock tick, and it is tested on its own.
-import type { TimelineEvent } from "../types";
+import type { Source, TimelineEvent } from "../types";
 
 // What a researcher (or the run) is doing right now, and since when (the
 // performance.now() instant its event reached the UI).
@@ -335,6 +335,17 @@ export function rounds(events: TimelineEvent[]): Round[] {
     }
     if (e.kind === "step") home.set(e.step, round.events);
     (e.kind === "step_title" ? (home.get(e.step) ?? round.events) : round.events).push(e);
+  }
+  return out;
+}
+
+// Every source the reply can cite so far, where [n] finds it: at n - 1. The
+// numbers are the ones the reply uses while it is written; the stored reply is
+// renumbered, and cites the turn's final source list instead.
+export function liveSources(events: TimelineEvent[]): Source[] {
+  const out: Source[] = [];
+  for (const e of events) {
+    if (e.kind === "sources") e.items.forEach((s, i) => (out[e.first - 1 + i] = s));
   }
   return out;
 }

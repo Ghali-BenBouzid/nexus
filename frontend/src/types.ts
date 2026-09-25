@@ -56,6 +56,9 @@ export type AgentEvent =
   // What the supervisor wrote before a round of tool calls: a part of its
   // reply, and where the work that followed it begins.
   | { kind: "said"; text: string }
+  // Sources the supervisor can cite from now on, numbered from `first` the way
+  // the reply cites them while it is being written.
+  | { kind: "sources"; first: number; items: Source[] }
   // The supervisor sent a research team after this question. ``team`` ties
   // the team's own events (its plan, its researchers) back to this step.
   | { kind: "tool"; action: "research"; text: string; team?: string; index?: undefined }

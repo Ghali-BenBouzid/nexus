@@ -330,6 +330,17 @@ async def test_what_it_says_before_a_tool_call_is_kept_as_part_of_the_reply() ->
     answer = await _respond(model, backend=PerQueryBackend(), emit=_record(seen))
 
     assert [e.message for e in seen if e.type == "said"] == ["x first.[2]"]
+    # every number reaches the browser before the text that cites it, under
+    # the number the text uses while it is still being written
+    live = {
+        e.data["first"] + i: source["url"]
+        for e in seen
+        if e.type == "sources"
+        for i, source in enumerate(e.data["sources"])
+    }
+    assert live == {1: "http://y", 2: "http://x", 3: "http://z"}
+    types = [e.type for e in seen]
+    assert types.index("sources") < types.index("said")
     assert answer.parts == ["x first.[1]", "Then y.[2]"]
     assert answer.text == "x first.[1]\n\nThen y.[2]"
     assert [s.url for s in answer.sources] == ["http://x", "http://y"]

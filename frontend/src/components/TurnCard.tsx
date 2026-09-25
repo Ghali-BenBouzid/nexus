@@ -2,7 +2,7 @@ import { Fragment, useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
-import { rounds, timeline } from "../lib/progress";
+import { liveSources, rounds, timeline } from "../lib/progress";
 import type { Doc, Turn } from "../types";
 import { Markdown } from "./Markdown";
 import { Activity } from "./Activity";
@@ -56,6 +56,10 @@ export function TurnCard({
   const aligned = !turn.parts || turn.parts.length === rs.length;
   if (!aligned) rs = [{ events: turn.events, said: null, at: null }];
   const parts = aligned ? turn.parts : undefined;
+  // Until the reply is stored, it cites by the numbers it was written with,
+  // and the sources those numbers name have been arriving along with it. A
+  // turn that failed never got its stored reply, so it keeps them too.
+  const cites = turn.parts || turn.reply ? sources : liveSources(turn.events);
   const lastRound = rs.length - 1;
 
   // Clicking a [n] in the answer opens the source list, highlights that source
@@ -127,7 +131,7 @@ export function TurnCard({
                 )}
                 {text.trim() && (
                   <div className={"reply-text" + (last && streaming ? " streaming" : "")}>
-                    <Markdown text={text} onCite={onCite} sources={sources} />
+                    <Markdown text={text} onCite={onCite} sources={cites} />
                   </div>
                 )}
               </Fragment>

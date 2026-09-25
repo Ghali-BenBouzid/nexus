@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentEvent, TimelineEvent } from "../types";
-import { headline, rounds, summarize, timeline } from "./progress";
+import { headline, liveSources, rounds, summarize, timeline } from "./progress";
 
 let seq = 0;
 const at = (event: AgentEvent, when: number): TimelineEvent => ({ ...event, id: seq++, delay: 0, at: when });
@@ -236,5 +236,19 @@ describe("rounds", () => {
 
   it("is one round when nothing was said along the way", () => {
     expect(rounds([at({ kind: "step", step: 1 }, 0)])).toHaveLength(1);
+  });
+});
+
+describe("liveSources", () => {
+  it("puts each source where its number finds it", () => {
+    const a = { title: "A", url: "http://a" };
+    const b = { title: "B", url: "http://b" };
+    const c = { title: "C", url: "http://c" };
+    const got = liveSources([
+      at({ kind: "sources", first: 1, items: [a, b] }, 0),
+      at({ kind: "step", step: 1 }, 1),
+      at({ kind: "sources", first: 3, items: [c] }, 2),
+    ]);
+    expect(got).toEqual([a, b, c]);
   });
 });

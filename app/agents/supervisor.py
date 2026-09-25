@@ -214,8 +214,8 @@ async def respond(
             message, documents, outputs, mode=mode, running=running
         ),
         middleware=[
+            LiveReply(emit, sources),
             *middleware("supervisor", emit),
-            Preambles(emit),
             # Out of rounds means answer with what it has, not fail the turn,
             # and it is told so on the last one rather than cut off.
             LastStep(
@@ -441,18 +441,42 @@ def _claim_check(mode: str, model: BaseChatModel, running: list[Running]) -> lis
     return [RunClaimCheck(mode, judge, [r.title for r in running if r.kind == mode])]
 
 
-class Preambles(AgentMiddleware):
-    """What the supervisor writes before a round of tool calls ("the first pass
-    left gaps, so let me dig further") is part of its reply, not a draft of it.
-    It streams like the answer does, and this marks where it ended, before the
-    tools it leads to run: the chat keeps it in place, with the work that
-    followed under it, instead of wiping it when the next call starts."""
+class LiveReply(AgentMiddleware):
+    """What the browser needs to show the reply while it is still being written.
 
-    def __init__(self, emit: Emit) -> None:
+    Before a call: the sources registered since the last one. The model can only
+    cite what a tool already showed it, so every number the coming text can use
+    is in the browser before the text is, and a citation links to its page as
+    soon as it appears rather than when the turn ends.
+
+    After a call that goes on to tools: the words it wrote first ("the first
+    pass left gaps, so let me dig further"), which are part of the reply, not a
+    draft of it. This marks where they ended, so the chat keeps them in place,
+    with the work that followed under them, instead of wiping them when the
+    next call starts.
+
+    Outermost of the supervisor's middleware, so the sources arrive before the
+    call is announced and a retried call still ends only once."""
+
+    def __init__(self, emit: Emit, sources: Sources) -> None:
         super().__init__()
         self.emit = emit
+        self.sources = sources
+        self.sent = 0
 
     async def awrap_model_call(self, request, handler):
+        if new := self.sources.all[self.sent :]:
+            await self.emit(
+                AgentEvent(
+                    type="sources",
+                    message="",
+                    data={
+                        "first": self.sent + 1,
+                        "sources": [s.model_dump() for s in new],
+                    },
+                )
+            )
+            self.sent += len(new)
         response = await handler(request)
         for message in getattr(response, "result", [response]):
             if isinstance(message, AIMessage) and message.tool_calls:
