@@ -5,7 +5,7 @@ tool calls, then its answer. The parts are kept as well as the joined reply, so
 a reloaded thread can put the work back between them.
 
 Revision ID: e1f2a3b4c5d6
-Revises: e5f6a7b8c9d3
+Revises: f6a7b8c9d0e4
 Create Date: 2026-09-25 00:00:00.000000
 
 """
@@ -19,7 +19,7 @@ from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "e1f2a3b4c5d6"
-down_revision: str | Sequence[str] | None = "e5f6a7b8c9d3"
+down_revision: str | Sequence[str] | None = "f6a7b8c9d0e4"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 

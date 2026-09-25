@@ -29,6 +29,9 @@ type PromptBarProps = {
   // submissions are blocked until the current run is stopped or finishes.
   running?: boolean;
   onStop?: () => void;
+  // A question panel is open above the bar: the caller's placeholder, which
+  // says a typed reply answers it, wins over the mode's.
+  asking?: boolean;
   // What sending does. Leaving `onMode` out hides the control entirely, which is
   // what the demo build does: there is no background run to start without a key.
   mode?: Mode;
@@ -112,6 +115,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
     variant = "hero",
     running,
     onStop,
+    asking,
     staged,
     onAttach,
     onUnstage,
@@ -209,6 +213,9 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
 
   const onKey = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     const ta = e.currentTarget;
+    // With a question open and nothing typed, the arrows and Enter drive the
+    // panel above, as its hint says; history recall would take them first.
+    if (asking && !val && ["ArrowUp", "ArrowDown", "Enter"].includes(e.key)) return;
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       fire(val);
@@ -247,9 +254,10 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
   const active = !!running || canSend;
 
   // In deep mode the bar says what the report should cover, since that is what
-  // sending it will produce. While a run is in flight the caller's placeholder
-  // wins: what is happening now matters more than what the mode is.
-  const hint = mode !== "answer" && !running
+  // sending it will produce. While a run is in flight, or a question waits
+  // above the bar, the caller's placeholder wins: what is happening now matters
+  // more than what the mode is.
+  const hint = mode !== "answer" && !running && !asking
     ? t.modePlaceholder[mode]
     : (placeholder ?? t.hero.placeholder);
 

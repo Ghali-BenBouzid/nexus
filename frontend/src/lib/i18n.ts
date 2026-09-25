@@ -209,6 +209,20 @@ const en = {
     jumpLatest: "Jump to latest",
     showArtifacts: "Show outputs",
   },
+  // The question panel the supervisor opens above the composer.
+  ask: {
+    position: (n: number, of: number) => `${n} of ${of}`,
+    previous: "Previous question",
+    next: "Next question",
+    close: "Close",
+    other: "Something else",
+    skip: "Skip",
+    placeholder: "Or reply directly…",
+    navigate: "to navigate",
+    select: "to select",
+    typeBelow: "or type below",
+    skipped: "Skipped",
+  },
   access: {
     credits: (percent: number) => `${percent}% of your demo credits left`,
     invalid: "This invite link is not valid.",
@@ -364,7 +378,7 @@ const en = {
     },
     deep: {
       label: "Deep research",
-      note: "A full cited report. Minutes.",
+      note: "A full cited report. About 20 to 30 minutes.",
     },
     factcheck: {
       label: "Fact check",
@@ -614,6 +628,19 @@ const fr: Dict = {
     jumpLatest: "Aller au plus récent",
     showArtifacts: "Afficher les résultats",
   },
+  ask: {
+    position: (n: number, of: number) => `${n} sur ${of}`,
+    previous: "Question précédente",
+    next: "Question suivante",
+    close: "Fermer",
+    other: "Autre chose",
+    skip: "Passer",
+    placeholder: "Ou répondez directement…",
+    navigate: "pour naviguer",
+    select: "pour choisir",
+    typeBelow: "ou écrivez ci-dessous",
+    skipped: "Passée",
+  },
   access: {
     credits: (percent: number) => `Il vous reste ${percent} % de vos crédits de démo`,
     invalid: "Ce lien d'invitation n'est pas valide.",
@@ -761,7 +788,7 @@ const fr: Dict = {
     },
     deep: {
       label: "Recherche approfondie",
-      note: "Un rapport complet, avec les sources consultées. Plusieurs minutes.",
+      note: "Un rapport complet, avec les sources consultées. Environ 20 à 30 minutes.",
     },
     factcheck: {
       label: "Vérification",

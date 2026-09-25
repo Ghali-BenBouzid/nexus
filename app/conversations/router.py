@@ -49,6 +49,7 @@ def _message_query(query: Query | None, events: list) -> MessageQuery | None:
         events=[QueryEventResponse.model_validate(e) for e in events],
         created_at=query.created_at,
         completed_at=query.completed_at,
+        mode=query.mode,
     )
 
 
@@ -73,6 +74,7 @@ def _to_responses(
             query=_message_query(queries.get(m.query_id), feeds.get(m.query_id, []))
             if m.query_id
             else None,
+            ask=m.ask,
         )
         for m in messages
     ]
@@ -182,5 +184,6 @@ async def add_message(
         background_tasks=background_tasks,
         document_ids=payload.document_ids,
         mode=payload.mode,
+        answers=[a.model_dump() for a in payload.answers] if payload.answers else None,
     )
     return await _detail(db, conversation)

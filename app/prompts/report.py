@@ -30,7 +30,8 @@ Where the findings include gaps, be honest about them: state briefly what could 
 not be determined, and never fabricate an answer to close one."""
 
 # findings: the rendered research points, sources and gaps. guidance: how to
-# shape the report, empty otherwise.
+# shape the report, empty otherwise. length: how long it should run, on a deep
+# run; a quick run's report finds its own length.
 USER = """\
 {{{findings}}}{{#guidance}}
 
@@ -38,11 +39,14 @@ USER = """\
 {{{guidance}}}
 
 Follow this shaping instruction, but add no facts beyond the points above.\
-{{/guidance}}"""
+{{/guidance}}{{#length}}
+
+# Length
+{{{length}}}{{/length}}"""
 
 PROMPT = ChatPromptTemplate(
     [("system", SYSTEM + "\n\n" + style("report") + LANGUAGE), ("human", USER)],
     template_format="mustache",
     name="report",
-    metadata={"version": 1},
+    metadata={"version": 2},
 )

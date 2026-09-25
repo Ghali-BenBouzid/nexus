@@ -1,7 +1,16 @@
 // Dispatches a research run to either the simulated engine (default) or the real
 // backend (VITE_LIVE_MODE=true, with an invite). The UI calls runResearch and
 // reacts to the callbacks; it doesn't care which engine is behind them.
-import type { ConversationId, Mode, Outcome, Result, Status, TimelineEvent } from "../types";
+import type {
+  Answered,
+  ConversationId,
+  Mode,
+  Outcome,
+  Question,
+  Result,
+  Status,
+  TimelineEvent,
+} from "../types";
 import { hasInvite, runLiveResearch } from "./api";
 import { pickRun, toTimeline } from "./simulatedEngine";
 
@@ -37,9 +46,10 @@ export type ResearchOutcome = {
   outcome: Outcome;
   title?: string;
   error?: string;
-  // What the turn produced: the answer, and the follow-ups offered under it.
+  // What the turn produced: the answer, and any questions it ended on.
   reply?: string;
   parts?: string[];
+  ask?: Question[];
 };
 
 const EMPTY_RESULT: Result = { report: "", sources: [], consulted: [], gaps: [] };
@@ -56,9 +66,11 @@ export function runResearch(
   // simulate, so it answers the way it always does rather than pretending to
   // spend ten minutes.
   mode: Mode = "answer",
+  // Sent from the question panel; the server writes the message from them.
+  answers?: Answered[],
 ): Promise<ResearchOutcome | null> {
   return isLive()
-    ? runLiveResearch(prompt, cb, conversationId ?? null, documentIds, mode)
+    ? runLiveResearch(prompt, cb, conversationId ?? null, documentIds, mode, answers)
     : runSimulated(prompt, cb);
 }
 

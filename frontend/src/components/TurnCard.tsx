@@ -43,7 +43,10 @@ export function TurnCard({
   const answer = turn.reply ?? turn.streamed ?? "";
   const streaming = running && !turn.reply && !!turn.streamed;
   const sources = turn.result?.sources ?? [];
-  const isEmpty = turn.status === "complete" && !answer.trim() && sources.length === 0;
+  // A turn that only asked has no words of its own, and is not empty: its
+  // questions are in the panel, then in the answer card below it.
+  const isEmpty =
+    turn.status === "complete" && !answer.trim() && sources.length === 0 && !turn.ask?.length;
   const isFailed = !turn.stopped && (turn.status === "failed" || turn.outcome === "failed");
   const hasActivity = turn.events.length > 0;
 
@@ -97,10 +100,27 @@ export function TurnCard({
       )}
       {/* A message that was only a file has no words to put in a bubble: the
           file above is the whole message, the way it is anywhere else. */}
-      {turn.query.trim() && (
+      {/* Answers from the question panel read as what they are: each question
+          and what was chosen, not the plain text the supervisor was sent. */}
+      {turn.answers?.length ? (
         <div className="msg-row user">
-          <div className="bubble-user">{turn.query}</div>
+          <dl className="bubble-answers">
+            {turn.answers.map((pair, i) => (
+              <div className="ba-pair" key={i}>
+                <dt>{pair.question}</dt>
+                <dd className={pair.answer == null ? "skipped" : undefined}>
+                  {pair.answer ?? t.ask.skipped}
+                </dd>
+              </div>
+            ))}
+          </dl>
         </div>
+      ) : (
+        turn.query.trim() && (
+          <div className="msg-row user">
+            <div className="bubble-user">{turn.query}</div>
+          </div>
+        )
       )}
 
       <div className="msg-row assistant">

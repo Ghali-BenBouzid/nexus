@@ -60,6 +60,10 @@ class Query(Base):
         String(32), nullable=False, default=QueryKind.chat, index=True
     )
     prompt: Mapped[str] = mapped_column(Text, nullable=False)
+    # The composer mode a chat turn was sent in ("answer", "deep", "factcheck").
+    # Reopening a conversation that ends on a question puts the composer back
+    # in it, so the answer is read in the mode the question was asked in.
+    mode: Mapped[str | None] = mapped_column(String(16), nullable=True)
     # The document a fact check reads, so a second check of it can be refused
     # while the first is working. Null on every other kind of run. use_alter:
     # it closes a loop (a document belongs to a message, a message to a run).

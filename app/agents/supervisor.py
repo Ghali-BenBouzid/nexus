@@ -19,16 +19,21 @@ from dataclasses import dataclass, field
 from typing import Annotated
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import AgentMiddleware, ModelCallLimitMiddleware
+from langchain.agents.middleware import (
+    AgentMiddleware,
+    ModelCallLimitMiddleware,
+    hook_config,
+)
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
     BaseMessage,
     HumanMessage,
+    ToolMessage,
 )
 from langchain_core.tools import InjectedToolCallId, StructuredTool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.agents.citations import finalize
 from app.agents.claim_check import STARTERS, RunClaimCheck, claim_judge
@@ -91,6 +96,9 @@ class Answer:
     # The reply as it was written: what the model said before each round of
     # tool calls, then its answer. ``text`` is these, joined.
     parts: list[str] = field(default_factory=list)
+    # The questions the turn ended on, when it called ask_user: each a dict of
+    # question and options, as the user's panel shows them.
+    ask: list[dict] | None = None
 
 
 class ResearchArgs(BaseModel):
@@ -104,19 +112,116 @@ class ResearchArgs(BaseModel):
     tool_call_id: Annotated[str, InjectedToolCallId]
 
 
+class DeepBrief(BaseModel):
+    """What the user and the supervisor agreed a deep run is for, in the
+    brainstorm before it. Everything but the goal can be empty: a field the
+    user never touched is left out, not guessed."""
+
+    goal: str = Field(
+        description="What the user wants the report for and why, as a concrete "
+        "goal: 'choose a specialisation to train for next year', not 'learning'"
+    )
+    reader: str = Field(
+        default="", description="Who reads the report and what they already know"
+    )
+    focus: list[str] = Field(
+        default_factory=list, description="The areas to cover, most important first"
+    )
+    open: list[str] = Field(
+        default_factory=list,
+        description="What the user left open, for the research to settle",
+    )
+    decided: list[str] = Field(
+        default_factory=list,
+        description="What the user left to you with 'Decide for me', and what "
+        "you chose",
+    )
+    out_of_scope: list[str] = Field(
+        default_factory=list, description="What to leave out"
+    )
+    constraints: str = Field(
+        default="", description="Region, timeframe, budget, the language of sources"
+    )
+    shape: str = Field(
+        default="",
+        description="The kind of report: a comparison, a recommendation, a "
+        "primer, or what the user asked for",
+    )
+
+
+_BRIEF_LINES = (
+    ("goal", "Goal"),
+    ("reader", "Reader"),
+    ("focus", "Focus, most important first"),
+    ("open", "Left open, for the research to settle"),
+    ("decided", "Left to you, and what was chosen"),
+    ("out_of_scope", "Out of scope"),
+    ("constraints", "Constraints"),
+    ("shape", "Shape of the report"),
+)
+
+
+def render_brief(brief: DeepBrief) -> str:
+    """The brief as the lead reads it, under the question: one labelled line
+    per field the brainstorm filled, and nothing for the ones it did not."""
+    lines = ["The brief, agreed with the user before the run:"]
+    for name, label in _BRIEF_LINES:
+        value = getattr(brief, name)
+        text = "; ".join(value) if isinstance(value, list) else value
+        if text.strip():
+            lines.append(f"- {label}: {text.strip()}")
+    return "\n".join(lines)
+
+
 class DeepResearchArgs(BaseModel):
     question: str = Field(
         description="The user's question, self-contained and in their language, "
         "as they would ask it: not a syllabus or a list of topics to cover"
     )
-    goal: str = Field(
-        description="The brief for the run: what the user wants the report for, "
-        "depth on a few areas or a broad first look, the areas to focus on, and "
-        "what you decided for them"
+    brief: DeepBrief = Field(
+        description="The brief agreed in the brainstorm, in the user's language"
     )
     title: str = Field(
         description="A short title, a few words in the user's language, naming "
         "the report this will produce"
+    )
+
+
+class AskQuestion(BaseModel):
+    question: str = Field(description="One short question, in the user's language")
+    options: list[str] = Field(
+        min_length=1,
+        max_length=4,
+        description="2 to 4 short answers built from this conversation, each a "
+        "few words; a confirmation has exactly one, the go-ahead. The interface "
+        "adds 'Something else' and Skip itself: never write those.",
+    )
+    confirm: bool = Field(
+        default=False,
+        description="True for a go-ahead before acting, such as launching a "
+        "deep run: its one option says go, the panel adds a free answer for "
+        "anything else, and it cannot be skipped",
+    )
+
+    @model_validator(mode="after")
+    def _options_fit(self) -> "AskQuestion":
+        # A skipped "launch it?" read as a yes and started a run: a confirmation
+        # has no skip, and no second option to stand in for "something else".
+        if self.confirm and len(self.options) != 1:
+            raise ValueError(
+                "A confirmation has exactly one option, the go-ahead; the panel "
+                "adds a free answer for changing something."
+            )
+        if not self.confirm and len(self.options) < 2:
+            raise ValueError("A question needs at least two options to choose from.")
+        return self
+
+
+class AskUserArgs(BaseModel):
+    questions: list[AskQuestion] = Field(
+        min_length=1,
+        max_length=4,
+        description="1 to 4 questions, shown one after the other in one panel",
     )
 
 
@@ -191,6 +296,7 @@ async def respond(
     running = running or []
     if mode != "deep":
         start_deep_research = None
+    asked: list[dict] = []
     agent = create_agent(
         model=model,
         tools=[
@@ -209,6 +315,7 @@ async def respond(
             # Only while a deep run is working here: every other turn has
             # exactly the tools and the prompt it had before steering existed.
             *_steer_tool(running, steer_deep_research),
+            _ask_tool(asked),
         ],
         system_prompt=_system_prompt(
             message, documents, outputs, mode=mode, running=running
@@ -216,6 +323,7 @@ async def respond(
         middleware=[
             LiveReply(emit, sources),
             *middleware("supervisor", emit),
+            EndOnAsk(),
             # Out of rounds means answer with what it has, not fail the turn,
             # and it is told so on the last one rather than cut off.
             LastStep(
@@ -231,7 +339,9 @@ async def respond(
     titles = step_titles(model, emit, detect_language(message))
     thread = _conversation(history, message)
     state = await _stream(agent, thread, emit, titles)
-    return _answer(_parts(state.get("messages", [])[len(thread) :]), sources)
+    answer = _answer(_parts(state.get("messages", [])[len(thread) :]), sources)
+    answer.ask = asked or None
+    return answer
 
 
 # The supervisor's own stage. A sub-agent called through a tool runs under its
@@ -340,6 +450,63 @@ def _running(running: list[Running]) -> str:
     return text + "\n</running>"
 
 
+ASKED = "Shown to the user. Stop here: their answer arrives as their next message."
+
+
+def _ask_tool(asked: list[dict]) -> StructuredTool:
+    """ask_user: questions with options, shown in a panel above the composer.
+
+    It ends the turn: nothing is waiting for an answer, which
+    comes back as the user's next message like anything else they say. What it
+    asked lands in ``asked``, for the turn to store with its reply. EndOnAsk
+    is what ends the turn."""
+
+    async def ask_user(questions: list[AskQuestion]) -> str:
+        asked[:] = [q.model_dump() for q in questions]
+        return ASKED
+
+    return StructuredTool.from_function(
+        coroutine=ask_user,
+        name="ask_user",
+        description=(
+            "Ask the user one to four questions, each with two to four short "
+            "options they answer with one click, shown one after the other in a "
+            "panel under your reply. Write your reply first, in the same message, "
+            "then call this alone, as the last thing in your turn: the turn ends "
+            "here, and their answers come back as their next message. For real "
+            "choices only, never to ask whether they want you to go on."
+        ),
+        args_schema=AskUserArgs,
+    )
+
+
+class EndOnAsk(AgentMiddleware):
+    """Ends the turn once ask_user has shown its questions.
+
+    Not return_direct: that ends the turn on the tool's error too, and a
+    question sent with one option would reach nobody. A call that failed its
+    schema goes back to the model to be fixed, like any other tool's."""
+
+    @hook_config(can_jump_to=["end"])
+    async def abefore_model(self, state, runtime) -> dict | None:
+        return {"jump_to": "end"} if _asked(state["messages"]) else None
+
+
+def _asked(messages: list) -> AIMessage | None:
+    """The step that asked, when the latest tool results include a successful
+    ask_user; it can share its step with another tool."""
+    for index in range(len(messages) - 1, -1, -1):
+        message = messages[index]
+        if not isinstance(message, ToolMessage):
+            break
+        if message.name == "ask_user" and message.status != "error":
+            return next(
+                (m for m in reversed(messages[:index]) if isinstance(m, AIMessage)),
+                None,
+            )
+    return None
+
+
 def _steer_tool(
     running: list[Running],
     steer: Callable[[int, str], Awaitable[str]] | None,
@@ -371,43 +538,82 @@ _DEEP_MODE = """\
 <mode>
 The user has switched to deep research mode for this message. They want a \
 question answered properly, so when this message is a subject or question \
-worth researching in depth, start deep_research on it, with a short title that \
-names the subject. Do not answer it with a quick research pass instead, and \
-do not judge it too small for a deep run: choosing this mode is the user \
-asking for depth, and that call is theirs. research and web_search stay for \
-what is not the run itself: a side question while a run works, or a quick \
-fact you need to ask them the right question.
+worth researching in depth, agree its brief with them, then start \
+deep_research on it, with a short title that names the subject. Do not answer \
+it with a quick research pass instead, and do not judge it too small for a \
+deep run: choosing this mode is the user asking for depth, and that call is \
+theirs. research and web_search stay for what is not the run itself: a side \
+question while a run works, or what you need to ask them good questions.
 
-A deep run is shaped by what the user wants from it, so before starting one, \
-make sure you know:
-- what they want the report for: a decision, learning a subject, writing \
-something, checking an idea;
-- whether they want depth on a few areas or a broad first look at the subject \
-(to go deep on part of it in a later run);
-- which areas matter to them, if they already know.
-When the message or the conversation already makes this clear, start at once. \
-A bare topic or a broad request ("quantum computing", "teach me about X") \
-does not: it says what to research, not what they want from it, so ask before \
-starting, not about the plan but about what they \
-want: short, with two or three concrete options each so answering takes a \
-second, and always one option that leaves it to you ("your call"). If the \
-answer still leaves it unclear, ask again, more narrowly. Only when they \
-leave it to you, by choosing that option or saying to just go, choose what \
-serves the question best and start; never decide on their behalf that they \
-left it to you.
+<brainstorm>
+A deep run takes about 20 to 30 minutes and is only as good as its brief, so before \
+starting one you agree the brief with the user in a short brainstorm, through \
+ask_user. How much there is to ask depends on what they already said: never \
+ask what the conversation already answers.
 
-Pass all of it in the goal argument: what the report is for, depth or \
-breadth, the areas to focus on, and what you decided for them. Keep the \
-question the user's own question rather than a list of topics.
+It is three steps by default:
+1. The goal, alone in its panel: what they want the report for, as concrete \
+goals for this subject to choose from (choose a specialisation to train for, \
+compare two offers before signing one, prepare a talk). Skip it when the \
+conversation already makes the goal clear.
+2. What that goal needs, in a second panel once you know the goal: its \
+questions depend on the answer, so never ask them alongside it. Two to four \
+questions, only on what would change what gets researched for that goal: who \
+reads the report and what they already know; which areas matter most; depth \
+on a few areas or a broad first look; constraints such as region, timeframe or \
+budget; the shape of the report (a comparison, a recommendation, a primer).
+3. The confirmation: two or three sentences restating the brief in your own \
+words, and saying the run takes about 20 to 30 minutes, then one question \
+with confirm set and a single option to launch it. The panel gives them a \
+free answer for anything they want changed.
+Add a panel only when an answer opens a real fork, one that changes what the \
+run should research. When the user changes their mind at any point, go back to \
+whatever it touches and carry on from there.
+
+The confirmation is never skipped: not when their first message already says \
+everything, not when they say to just go or that there is nothing to ask. \
+Then it is the only panel, but it is still asked, because a run of 20 to 30 \
+minutes starts on their go-ahead, not on your reading of their message. Start \
+deep_research only when they answer the confirmation with its go-ahead; \
+anything else they write there is a change to the brief, so apply it and \
+confirm again. When the confirmation comes back skipped, with no answer, \
+they have not made up their mind: start nothing, and reply in one line that \
+you are standing by for their go-ahead whenever they are ready. Ask nothing \
+more; when they later tell you to go, that is the go-ahead.
+
+Their message is usually a question as well as a subject. Answer it first, in \
+a short paragraph giving the gist from what you know, without figures or \
+facts that would need a source, then open the first panel: they get an answer \
+now and the report later. The brainstorm shapes the report; it is not a \
+reason to leave their question unanswered.
+
+What makes a good question:
+- Build every option from this subject and this conversation. "For a \
+decision" or "to learn" are not options; "pick between LangGraph and \
+LlamaIndex for a RAG job" is.
+- For the areas to cover, think of the people who care about this subject and \
+what each would want answered (for a job market question: a recruiter, a \
+hiring manager, someone changing careers), and offer the angles they point to.
+- Options are a few words each, distinct, and never overlap. No question asks \
+again what an earlier one or its options already settled.
+- End every question with a "Decide for me" option, in the user's language. \
+When they choose it, decide what serves their goal best and say what you chose \
+in the confirmation.
+- When you do not know the subject well enough to ask good questions, search \
+first with web_search, then ask. These searches are for your questions: no \
+citations and no summary of what you found.
+
+Pass everything in the brief argument: the goal as what they want and why, the \
+reader, the areas to focus on in order, what they left open, what they left to \
+you and what you chose, what is out of scope, the constraints, and the shape \
+of the report. Keep the question the user's own question rather than a list \
+of topics.
+</brainstorm>
 
 When this message is not something to research (a greeting, small talk, a \
 question about Nexus, or a request not to research), do not start a run. \
 Answer it as you normally would, and say in a sentence what deep research is \
 for and what to send to start one.
-
-When the subject itself is too vague to research at all, pin it down the \
-same way before starting: a deep run takes several minutes, and a report built \
-on a guess about what they meant wastes all of them.
 </mode>"""
 
 # The same principle for fact checking: the mode says what the user is after,
@@ -479,7 +685,7 @@ class LiveReply(AgentMiddleware):
             self.sent += len(new)
         response = await handler(request)
         for message in getattr(response, "result", [response]):
-            if isinstance(message, AIMessage) and message.tool_calls:
+            if _leads_to_tools(message):
                 if text := text_of(message).strip():
                     await self.emit(
                         AgentEvent(
@@ -520,11 +726,29 @@ def _conversation(history: list[Turn], message: str) -> list[BaseMessage]:
     """The thread as real messages: each earlier turn its own, the new message
     last. Not one blob of text, so the model sees who said what."""
     messages: list[BaseMessage] = [
-        HumanMessage(turn.content) if turn.role == "user" else AIMessage(turn.content)
+        HumanMessage(turn.content)
+        if turn.role == "user"
+        else AIMessage(_with_questions(turn.content, turn.ask))
         for turn in history
     ]
     messages.append(HumanMessage(message))
     return messages
+
+
+def _with_questions(text: str, ask: list[dict] | None) -> str:
+    """An earlier reply as the model reads it back: its text, then any
+    questions it ended on with their options numbered, as the user saw them,
+    so a typed "2" is read against the right question."""
+    if not ask:
+        return text
+    lines = ["(You asked, with these options:)"]
+    for number, question in enumerate(ask, start=1):
+        lines.append(f"{number}. {question['question']}")
+        options = "  ".join(
+            f"{i}) {option}" for i, option in enumerate(question["options"], start=1)
+        )
+        lines.append(f"   {options}")
+    return "\n\n".join(part for part in (text, "\n".join(lines)) if part)
 
 
 def _tools(
@@ -590,10 +814,10 @@ def _tools(
             )
         return render_findings(result)
 
-    async def deep_research(question: str, title: str, goal: str) -> str:
+    async def deep_research(question: str, title: str, brief: DeepBrief) -> str:
         if start_deep_research is None:
             return "Deep research is not available here. Use research instead."
-        return await start_deep_research(question, title, goal)
+        return await start_deep_research(question, title, render_brief(brief))
 
     async def fact_check(document_id: int, title: str, focus: str = "") -> str:
         if start_fact_check is None:
@@ -675,17 +899,28 @@ def _tools(
 
 def _parts(turn: list) -> list[str]:
     """What the agent wrote this turn, in order: the words before each round of
-    tool calls, then its reply."""
-    said = [
-        text
-        for m in turn
-        if isinstance(m, AIMessage) and m.tool_calls and (text := text_of(m).strip())
-    ]
+    tool calls, then its reply. What it wrote alongside ask_user is the reply,
+    not the words before one: the turn ends on it."""
+    said = [text for m in turn if _leads_to_tools(m) and (text := text_of(m).strip())]
     return [*said, _last_text(turn)]
 
 
+def _leads_to_tools(message: object) -> bool:
+    """A step that goes on to tools, rather than one that ends the turn: any
+    tool call but ask_user, whose words are the reply the questions come with."""
+    return (
+        isinstance(message, AIMessage)
+        and bool(message.tool_calls)
+        and all(call["name"] != "ask_user" for call in message.tool_calls)
+    )
+
+
 def _last_text(messages: list) -> str:
-    """The reply: the last thing the agent wrote that was not a tool call."""
+    """The reply: the last thing the agent wrote that was not a tool call, or,
+    on a turn that ended by asking, what it wrote alongside the question."""
+    step = _asked(messages)
+    if step is not None:
+        return text_of(step)
     for message in reversed(messages):
         if isinstance(message, AIMessage) and not message.tool_calls:
             text = text_of(message)

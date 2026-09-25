@@ -6,11 +6,13 @@
 // planner/researcher/writer progress (real "researcher k/N"), not a placeholder.
 import type {
   AgentEvent,
+  Answered,
   ConversationId,
   Doc,
   Mode,
   Output,
   OutputKind,
+  Question,
   Result,
   Source,
   Status,
@@ -42,6 +44,8 @@ type QueryDetail = {
   // The assistant's answer in the conversation, and the parts it was written in.
   reply?: string | null;
   reply_parts?: string[] | null;
+  // The questions the turn ended on, if it asked the user any.
+  ask?: Question[] | null;
   // How long ago the job last showed signs of life (null before it starts).
   seconds_since_heartbeat?: number | null;
 };
@@ -299,6 +303,7 @@ type ConvMessageQuery = {
   events?: BackendEvent[];
   created_at?: string | null;
   completed_at?: string | null;
+  mode?: Mode | null; // the composer mode the turn was sent in
 };
 
 type BackendOutput = {
@@ -334,6 +339,8 @@ export type ConvMessage = {
   created_at: string;
   documents?: BackendDoc[];
   query: ConvMessageQuery | null;
+  // The question panel: asked on an assistant message, answered on a user's.
+  ask?: Question[] | Answered[] | null;
 };
 type BackendDoc = {
   id: number;
@@ -401,12 +408,13 @@ const startTurn = (
   documentIds: number[],
   token: string,
   mode: Mode,
+  answers?: Answered[],
 ) =>
   conversationId == null
     ? postConvJson(`/conversations`, { prompt, document_ids: documentIds, mode }, token)
     : postConvJson(
         `/conversations/${conversationId}/messages`,
-        { content: prompt, document_ids: documentIds, mode },
+        { content: prompt, document_ids: documentIds, mode, answers },
         token,
       );
 
@@ -425,18 +433,19 @@ export async function runLiveResearch(
   conversationId: ConversationId | null,
   documentIds: number[] = [],
   mode: Mode = "answer",
+  answers?: Answered[],
 ): Promise<ResearchOutcome | null> {
   cb.onStatus("running");
 
   let token = await ensureToken();
   let detail: ConvDetail;
   try {
-    detail = await startTurn(prompt, conversationId, documentIds, token, mode);
+    detail = await startTurn(prompt, conversationId, documentIds, token, mode, answers);
   } catch (err) {
     // One retry after a fresh session, only when the stored token went stale.
     if (!(err instanceof SessionExpiredError)) throw err;
     token = await ensureToken();
-    detail = await startTurn(prompt, conversationId, documentIds, token, mode);
+    detail = await startTurn(prompt, conversationId, documentIds, token, mode, answers);
   }
   cb.onConversation?.(detail.id);
 
@@ -550,6 +559,7 @@ function outcomeOf(detail: QueryDetail): ResearchOutcome {
     outcome: outcomeFor(detail.status, detail.reply ?? "", result.sources.length),
     reply: detail.reply ?? "",
     parts: detail.reply_parts ?? undefined,
+    ask: detail.ask ?? undefined,
     title: detail.title ?? undefined,
   };
 }
@@ -644,6 +654,9 @@ export type LoadedTurn = {
   queryId: number | null;
   query: string;
   attachments?: Doc[]; // the files sent with this message
+  answers?: Answered[]; // the message came from the question panel
+  ask?: Question[]; // the turn ended by asking these
+  mode?: Mode; // the composer mode it was sent in
   title?: string;
   status: Status;
   error: string | null;
@@ -695,18 +708,23 @@ export function turnsFrom(messages: ConvMessage[]): LoadedTurn[] {
   const turns: LoadedTurn[] = [];
   let prompt = "";
   let attached: Doc[] = [];
+  let answers: Answered[] | undefined;
   for (const m of detail.messages) {
     if (m.role === "user") {
       prompt = m.content;
       attached = (m.documents ?? []).map(toDoc);
+      answers = (m.ask as Answered[] | null | undefined) ?? undefined;
       continue;
     }
+    const ask = (m.ask as Question[] | null | undefined) ?? undefined;
     // A turn with no run behind it (an older thread) still said something.
     if (m.query_id == null) {
       turns.push({
         queryId: null,
         query: prompt,
         attachments: attached,
+        answers,
+        ask,
         status: "complete",
         error: null,
         result: { report: "", sources: [], consulted: [], gaps: [] },
@@ -719,6 +737,9 @@ export function turnsFrom(messages: ConvMessage[]): LoadedTurn[] {
       queryId: m.query_id,
       query: prompt,
       attachments: attached,
+      answers,
+      ask,
+      mode: q?.mode ?? undefined,
       title: q?.title ?? undefined,
       status: q?.status ?? "complete",
       error: q?.error ?? null,
