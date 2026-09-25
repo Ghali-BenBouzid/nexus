@@ -577,7 +577,7 @@ const fr: Dict = {
       "Les comptes sont sur invitation, et je les crée à la main.",
       "La recherche porte sur le web. Chercher en parallèle dans vos propres documents n'existe pas encore.",
       "Seule une recherche approfondie reprend après un plantage du worker. Un tour de conversation ou une vérification passe en échec.",
-      "Une recherche approfondie prend environ 20 à 30 minutes, dont une bonne partie à attendre le chercheur le plus lent.",
+      "Une recherche approfondie prend environ 20 à 30 minutes, dont une bonne partie à attendre le chercheur le plus lent.",
       "Un PDF de plus de 12 pages est refusé.",
       "L'évaluation s'appuie sur un modèle comme juge, et les séries notées restent petites.",
       "Les défenses contre l'injection de prompt sont en place mais pas encore mesurées sur des recherches complètes.",
@@ -765,7 +765,7 @@ const fr: Dict = {
     done: "Commencer",
     deep: {
       title: "Recherche approfondie",
-      body: "Pour les questions complexes qui demandent une recherche poussée. Vous recevez un rapport complet, sources à l'appui. Comptez environ 20 à 30 minutes. Vous pouvez continuer à discuter en attendant.",
+      body: "Pour les questions complexes qui demandent une recherche poussée. Vous recevez un rapport complet, sources à l'appui. Comptez environ 20 à 30 minutes. Vous pouvez continuer à discuter en attendant.",
     },
     attach: {
       title: "Vérifier un document",
@@ -784,7 +784,7 @@ const fr: Dict = {
     gotIt: "Compris",
     deep: {
       title: "Votre recherche approfondie est lancée",
-      body: "Comptez environ 20 à 30 minutes. Le rapport s'affichera ici et une notification vous préviendra dès qu'il sera prêt. D'ici là, vous pouvez continuer à discuter ou changer d'onglet.",
+      body: "Comptez environ 20 à 30 minutes. Le rapport s'affichera ici et une notification vous préviendra dès qu'il sera prêt. D'ici là, vous pouvez continuer à discuter ou changer d'onglet.",
     },
     factcheck: {
       title: "Votre vérification est lancée",
@@ -804,7 +804,7 @@ const fr: Dict = {
     },
     deep: {
       label: "Recherche approfondie",
-      note: "Pour les questions complexes. Environ 20 à 30 minutes.",
+      note: "Pour les questions complexes. Environ 20 à 30 minutes.",
     },
     factcheck: {
       label: "Vérification",
