@@ -1,4 +1,4 @@
-"""messages carry the questions of a question panel
+"""messages carry the questions of a question panel, turns their mode
 
 Revision ID: f6a7b8c9d0e4
 Revises: e5f6a7b8c9d3
@@ -8,6 +8,12 @@ The supervisor can end a turn by asking the user questions with options. The
 questions ride on the assistant message that asked them, and the answers on the
 user message that came back, so the panel and the answered card both come from
 the thread. Nullable: almost no message has one.
+
+A turn also records the composer mode it was sent in. A brainstorm before a
+deep run is a string of questions asked in deep mode; reopened after a reload,
+the conversation came back in the ordinary mode, and the answer to the next
+question was read as a plain question. The mode of the turn that asked is what
+the composer is put back in.
 """
 
 from collections.abc import Sequence
@@ -29,7 +35,9 @@ def upgrade() -> None:
         "messages",
         sa.Column("ask", postgresql.JSONB(astext_type=sa.Text()), nullable=True),
     )
+    op.add_column("queries", sa.Column("mode", sa.String(length=16), nullable=True))
 
 
 def downgrade() -> None:
+    op.drop_column("queries", "mode")
     op.drop_column("messages", "ask")

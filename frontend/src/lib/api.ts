@@ -291,6 +291,7 @@ type ConvMessageQuery = {
   stopped?: boolean;
   sources: Source[];
   gaps: string[];
+  mode?: Mode | null; // the composer mode the turn was sent in
 };
 
 type BackendOutput = {
@@ -642,6 +643,7 @@ export type LoadedTurn = {
   attachments?: Doc[]; // the files sent with this message
   answers?: Answered[]; // the message came from the question panel
   ask?: Question[]; // the turn ended by asking these
+  mode?: Mode; // the composer mode it was sent in
   title?: string;
   status: Status;
   error: string | null;
@@ -712,6 +714,7 @@ export function turnsFrom(messages: ConvMessage[]): LoadedTurn[] {
       attachments: attached,
       answers,
       ask,
+      mode: q?.mode ?? undefined,
       title: q?.title ?? undefined,
       status: q?.status ?? "complete",
       error: q?.error ?? null,

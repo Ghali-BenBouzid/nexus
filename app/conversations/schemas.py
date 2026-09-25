@@ -64,6 +64,8 @@ class MessageQuery(BaseModel):
     stopped: bool = False  # failed because the user stopped it, not broken
     sources: list[Source]
     gaps: list[str]
+    # The composer mode the turn was sent in; None on turns older than it.
+    mode: str | None = None
 
 
 class MessageResponse(BaseModel):

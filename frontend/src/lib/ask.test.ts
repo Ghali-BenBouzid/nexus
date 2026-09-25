@@ -97,3 +97,29 @@ describe("turnsFrom with questions", () => {
     expect(answered.ask).toBeUndefined();
   });
 });
+
+describe("turnsFrom and the mode a question was asked in", () => {
+  it("keeps the mode of the turn, so a reopened thread answers in it", () => {
+    const [turn] = turnsFrom([
+      { id: 1, role: "user", content: "career plan", query_id: null, created_at: "", query: null },
+      {
+        id: 2,
+        role: "assistant",
+        content: "",
+        query_id: 7,
+        created_at: "",
+        ask: [TOPIC],
+        query: {
+          status: "complete",
+          title: null,
+          report: null,
+          error: null,
+          sources: [],
+          gaps: [],
+          mode: "deep",
+        },
+      },
+    ]);
+    expect(turn.mode).toBe("deep");
+  });
+});

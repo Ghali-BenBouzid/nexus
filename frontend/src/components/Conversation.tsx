@@ -392,6 +392,7 @@ export function Conversation({
                 mode={mode}
                 onMode={onMode}
                 hasDocuments={documents.length > 0}
+                asking={!!questions}
                 autoFocus
                 placeholder={
                   running

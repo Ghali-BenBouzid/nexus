@@ -902,7 +902,11 @@ export default function App() {
     setActiveConversation(conv.id);
     setDocuments(conv.documents);
     setStaged([]);
-    setMode("answer"); // the mode was switched on for another chat, not this one
+    // The mode was switched on for another chat, not this one. Unless this one
+    // ends on a question: its answer belongs in the mode it was asked in, or a
+    // brainstorm reopened after a reload would be answered as a plain question.
+    const last = conv.turns[conv.turns.length - 1];
+    setMode(last?.ask?.length && last.mode ? last.mode : "answer");
     setUploadError(null);
     refreshOutputs();
     setFocusedId(null);

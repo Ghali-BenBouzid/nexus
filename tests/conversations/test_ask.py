@@ -67,6 +67,8 @@ async def test_the_question_rides_on_the_reply_that_asked_it(
     ).json()
     assert query["ask"] == [TOPIC, LEVEL]
     assert detail["messages"][0]["ask"] is None
+    # What it was asked in, so a reopened thread answers in the same mode.
+    assert turn["query"]["mode"] == "answer"
 
 
 async def test_a_typed_answer_still_maps_to_the_options(

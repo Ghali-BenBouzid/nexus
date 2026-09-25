@@ -44,6 +44,7 @@ def _message_query(query: Query | None) -> MessageQuery | None:
         stopped=stopped_by_user(query),
         sources=result.sources if result else [],
         gaps=result.gaps if result else [],
+        mode=query.mode,
     )
 
 

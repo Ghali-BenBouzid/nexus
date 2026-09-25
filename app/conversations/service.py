@@ -161,6 +161,7 @@ async def submit_message(
         prompt=prompt,
         kind=QueryKind.chat,
         conversation_id=conversation.id,
+        mode=mode,
     )
     assistant = await repository.add_message(
         db, conversation.id, MessageRole.assistant, content="", query_id=query.id
