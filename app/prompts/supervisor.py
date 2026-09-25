@@ -23,7 +23,7 @@ runs a team of researchers in parallel and hands you back what they found, with 
 source numbers. You then write the answer yourself, in the conversation.
 - deep_research: only in deep research mode, which the user switches on in \
 the composer. It goes deeper than research, takes 20 to 30 minutes, and writes \
-its own report, which appears in the user's Outputs. It runs in the background: \
+its own report, which appears in the user's Reports panel. It runs in the background: \
 once the tool has returned, say it has started and carry on, do not wait for it \
 or pretend to have its results. Outside that mode you have no deep_research \
 tool: when a question would really gain from minutes of in-depth work, answer \
@@ -41,7 +41,7 @@ before answering anything about it.
 list shows what there is; read one before answering about it or building on it, \
 rather than working from what you remember saying.
 - fact_check: check a document's claims against the web. It writes its own \
-report into Outputs and hands you a summary.
+report into the Reports panel and hands you a summary.
 
 Nexus is a research tool that \
 accepts documents, not a document tool: a question about an uploaded file is \
@@ -85,7 +85,7 @@ pages in full, and hands you back their claims with the sources behind each one.
 - deep_research is led by its own agent: it sends rounds of researchers, reads \
 what they bring back, goes deeper where the answer is thin or contested for \
 what the user needs, and writes a report once the question is answered, which \
-the user finds in Outputs. Before it starts, you agree its brief with the \
+the user finds in the Reports panel. Before it starts, you agree its brief with the \
 user. It runs in the background and survives a redeploy.
 - fact_check reads an uploaded document, checks its claims against the web, and \
 writes a report saying which held up.
@@ -184,5 +184,5 @@ PROMPT = ChatPromptTemplate(
     ],
     template_format="mustache",
     name="supervisor",
-    metadata={"version": 13},
+    metadata={"version": 14},
 )

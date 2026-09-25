@@ -46,7 +46,7 @@ _READING_POLL_SECONDS = 1.0
 
 DEEP_STARTED = (
     "Deep research has started on that. It takes about 20 to 30 minutes and "
-    "will appear in the user's Outputs when it is done. Tell them it is running; "
+    "will appear in the user's Reports panel when it is done. Tell them it is running; "
     "do not wait for it or make up what it will say."
 )
 DEEP_BUSY = (
@@ -57,12 +57,13 @@ DEEP_BUSY = (
 )
 FACT_CHECK_BUSY = (
     "Nothing was started: {filename} is already being checked in this "
-    "conversation (fact check {id}, {title}). Its report will appear in Outputs "
-    "when it is done; tell the user that rather than starting another."
+    "conversation (fact check {id}, {title}). Its report will appear in the "
+    "Reports panel when it is done; tell the user that rather than starting "
+    "another."
 )
 FACT_CHECK_STARTED = (
     "The fact check has started on {filename}. Its report will appear in the "
-    "user's Outputs when it is done. Tell them it is running; do not wait for it "
+    "user's Reports panel when it is done. Tell them it is running; do not wait for it "
     "or make up its verdicts."
 )
 NO_BUDGET = (

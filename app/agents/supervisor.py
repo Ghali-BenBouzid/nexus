@@ -881,7 +881,8 @@ def _tools(
                 description=(
                     "Check an attached document's claims against the web. It runs "
                     "in the background, writes its own report into the user's "
-                    "Outputs, and returns a note to pass on. Do not wait for it."
+                    "Reports panel, and returns a note to pass on. Do not wait for "
+                    "it."
                 ),
                 args_schema=FactCheckArgs,
             )
@@ -894,8 +895,9 @@ def _tools(
                 description=(
                     "Start a deep research run: deeper than research, several "
                     "minutes long, and it writes its own report into the user's "
-                    "Outputs. It runs in the background and returns at once with a "
-                    "note to pass on. Do not wait for it or invent its findings."
+                    "Reports panel. It runs in the background and returns at once "
+                    "with a note to pass on. Do not wait for it or invent its "
+                    "findings."
                 ),
                 args_schema=DeepResearchArgs,
             )
