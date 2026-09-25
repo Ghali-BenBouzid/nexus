@@ -197,6 +197,23 @@ export function Conversation({
     onAnswer(answers);
   };
 
+  // On a phone the composer floats over the thread, which keeps room at its end
+  // for it. How much room is measured, not guessed: a mode line, a staged file,
+  // a wrapped message or a question panel all make the composer taller, and a
+  // fixed allowance hid the end of the reply behind it (the brief to confirm,
+  // of all things). The thread's own observer keeps it at the bottom as it grows.
+  const composerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const composer = composerRef.current;
+    const body = bodyRef.current;
+    if (!composer || !body) return;
+    const ro = new ResizeObserver(() => {
+      body.style.setProperty("--composer-h", `${composer.offsetHeight}px`);
+    });
+    ro.observe(composer);
+    return () => ro.disconnect();
+  }, []);
+
   // Esc stops a run while one is in flight, and otherwise leaves the chat back to
   // the landing page (the conversation stays saved and reopenable from Recent).
   // Only an Escape nothing else wanted: a viewer, popover, menu or drawer that
@@ -361,7 +378,7 @@ export function Conversation({
         <div className="chat-center">
           {chatColumn}
 
-          <div className="composer">
+          <div className="composer" ref={composerRef}>
             {/* Inside the composer, so it rides on its top edge: the bar changes
                 height with a mode line, an attachment or a wrapped message, and
                 anything measuring it in pixels goes stale the first time it does. */}

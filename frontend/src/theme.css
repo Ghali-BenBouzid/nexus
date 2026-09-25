@@ -1696,9 +1696,9 @@ html[data-theme="dark"] .cites-pop {
 
   /* The thread is the only scrolling surface; the in-flow sub-bar spaces the top,
      so only the bottom needs room for the fixed composer. */
-  /* Clears the fixed composer at its tallest: a wrapped placeholder plus the
-     budget note underneath (~120px). */
-  .chat-col { padding: 10px 18px 136px; }
+  /* Clears the fixed composer, measured as it changes height (Conversation
+     sets --composer-h); the fallback covers the first frame. */
+  .chat-col { padding: 10px 18px calc(var(--composer-h, 120px) + 16px); }
 
   /* Composer pinned to the bottom, above the thread and below the sheets. */
   .composer { position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
@@ -1865,11 +1865,15 @@ html[data-theme="dark"] .cites-pop {
 .ask-icon:disabled { opacity: 0.35; cursor: default; }
 
 .ask-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.ask-options > li + li { border-top: 1px solid var(--line); }
+/* Inset hairlines between rows, drawn apart from the rows: a border on a
+   rounded row follows its corners and curves up at both ends. */
+.ask-options > li { position: relative; }
+.ask-options > li + li::before { content: ""; position: absolute; top: 0; left: 10px; right: 10px;
+  height: 1px; background: var(--line); }
 /* The highlighted row is a filled shape: the rules on either side of it would
    cut into it, so they give way. */
-.ask-options > li:has(> .active), .ask-options > li:has(> .active) + li,
-.ask-options > li.active, .ask-options > li.active + li { border-top-color: transparent; }
+.ask-options > li:has(> .active)::before, .ask-options > li:has(> .active) + li::before,
+.ask-options > li.active::before, .ask-options > li.active + li::before { opacity: 0; }
 .ask-opt, .ask-other { display: flex; align-items: center; gap: 12px; width: 100%; padding: 7px 10px;
   border-radius: 10px; font-size: 14px; color: var(--muted); }
 .ask-opt { border: none; background: none; font-family: inherit; text-align: left; cursor: pointer; }

@@ -42,7 +42,10 @@ export function TurnCard({
   const answer = turn.reply ?? turn.streamed ?? "";
   const streaming = running && !turn.reply && !!turn.streamed;
   const sources = turn.result?.sources ?? [];
-  const isEmpty = turn.status === "complete" && !answer.trim() && sources.length === 0;
+  // A turn that only asked has no words of its own, and is not empty: its
+  // questions are in the panel, then in the answer card below it.
+  const isEmpty =
+    turn.status === "complete" && !answer.trim() && sources.length === 0 && !turn.ask?.length;
   const isFailed = !turn.stopped && (turn.status === "failed" || turn.outcome === "failed");
   const hasActivity = turn.events.length > 0;
 
