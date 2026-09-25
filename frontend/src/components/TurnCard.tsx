@@ -81,10 +81,27 @@ export function TurnCard({
       )}
       {/* A message that was only a file has no words to put in a bubble: the
           file above is the whole message, the way it is anywhere else. */}
-      {turn.query.trim() && (
+      {/* Answers from the question panel read as what they are: each question
+          and what was chosen, not the plain text the supervisor was sent. */}
+      {turn.answers?.length ? (
         <div className="msg-row user">
-          <div className="bubble-user">{turn.query}</div>
+          <dl className="bubble-answers">
+            {turn.answers.map((pair, i) => (
+              <div className="ba-pair" key={i}>
+                <dt>{pair.question}</dt>
+                <dd className={pair.answer == null ? "skipped" : undefined}>
+                  {pair.answer ?? t.ask.skipped}
+                </dd>
+              </div>
+            ))}
+          </dl>
         </div>
+      ) : (
+        turn.query.trim() && (
+          <div className="msg-row user">
+            <div className="bubble-user">{turn.query}</div>
+          </div>
+        )
       )}
 
       <div className="msg-row assistant">

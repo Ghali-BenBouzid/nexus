@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
+import { openQuestion } from "../lib/ask";
 import { useIsMobile } from "../lib/useIsMobile";
 import type { Account } from "../lib/api";
 import type {
+  Answered,
   ConversationId,
   Doc,
   LayoutMode,
@@ -14,6 +16,7 @@ import type {
   Theme,
   Turn,
 } from "../types";
+import { AskPanel } from "./AskPanel";
 import { OutputsPanel } from "./OutputsPanel";
 import { ChatHistory } from "./ChatHistory";
 import { NexusLockup } from "./NexusLogo";
@@ -28,6 +31,8 @@ type ConversationProps = {
   focusedId: number | null;
   onFocus: (id: number | null) => void;
   onSubmit: (prompt: string) => void;
+  // Answers from the question panel, sent as one message.
+  onAnswer: (answers: Answered[]) => void;
   onStop: () => void;
   onExit: () => void;
   // What sending does, owned by App because App is what sends.
@@ -77,6 +82,7 @@ export function Conversation({
   focusedId,
   onFocus,
   onSubmit,
+  onAnswer,
   onStop,
   onExit,
   mode,
@@ -176,6 +182,19 @@ export function Conversation({
   const submit = (prompt: string) => {
     following.current = true;
     onSubmit(prompt);
+  };
+
+  // The questions the latest turn ended on, until they are answered (any new
+  // message does that) or closed. Closing is for this view only: the thread
+  // still ends on a question, so a reload shows it again.
+  const asked = openQuestion(turns);
+  const askingTurn = turns[turns.length - 1]?.id;
+  const [closedFor, setClosedFor] = useState<number | null>(null);
+  const questions = asked && closedFor !== askingTurn ? asked : null;
+  const closeQuestions = useCallback(() => setClosedFor(askingTurn ?? null), [askingTurn]);
+  const answer = (answers: Answered[]) => {
+    following.current = true;
+    onAnswer(answers);
   };
 
   // Esc stops a run while one is in flight, and otherwise leaves the chat back to
@@ -352,6 +371,14 @@ export function Conversation({
               </button>
             )}
             <div className="composer-inner" data-tour="composer">
+              {questions && (
+                <AskPanel
+                  key={askingTurn}
+                  questions={questions}
+                  onAnswer={answer}
+                  onDismiss={closeQuestions}
+                />
+              )}
               <PromptBar
                 variant="composer"
                 onSubmit={submit}
@@ -366,8 +393,20 @@ export function Conversation({
                 onMode={onMode}
                 hasDocuments={documents.length > 0}
                 autoFocus
-                placeholder={running ? t.chat.runningPlaceholder : t.chat.idlePlaceholder}
+                placeholder={
+                  running
+                    ? t.chat.runningPlaceholder
+                    : questions
+                      ? t.ask.placeholder
+                      : t.chat.idlePlaceholder
+                }
               />
+              {questions && (
+                <p className="composer-note ask-hints" aria-hidden="true">
+                  <kbd>↑</kbd>
+                  <kbd>↓</kbd> {t.ask.navigate} · <kbd>↵</kbd> {t.ask.select} · {t.ask.typeBelow}
+                </p>
+              )}
               {accessNote && <p className="composer-note">{accessNote}</p>}
             </div>
           </div>

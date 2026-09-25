@@ -1843,3 +1843,62 @@ html[data-theme="dark"] .cites-pop {
 .demo-body p { margin: 0 0 22px; color: var(--muted); font-size: 14.5px; line-height: 1.55; }
 .demo-actions { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
 .demo-actions svg { width: 14px; height: 14px; }
+
+/* ---- The question panel: the supervisor's questions, docked above the
+   composer. Built from the composer's own surface so the two read as one
+   control: the panel asks, the bar below still takes a typed answer. ---- */
+.ask-panel { margin-bottom: 8px; padding: 10px 8px 8px; border-radius: 18px; background: var(--panel);
+  border: 1px solid var(--line); box-shadow: var(--shadow); backdrop-filter: blur(12px);
+  animation: askIn 0.22s var(--ease); }
+@keyframes askIn { from { opacity: 0; transform: translateY(6px); } }
+.ask-head { display: flex; align-items: center; gap: 6px; padding: 2px 4px 8px 10px; }
+.ask-q { flex: 1; min-width: 0; margin: 0; font-size: 14.5px; font-weight: 600; line-height: 1.4; color: var(--fg); }
+.ask-nav { display: flex; align-items: center; color: var(--faint); }
+.ask-pos { padding: 0 2px; font-family: var(--font-mono); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.ask-icon { flex: none; width: 28px; height: 28px; display: grid; place-items: center; padding: 0; border: none;
+  border-radius: 8px; background: none; color: var(--faint); cursor: pointer; transition: color 0.15s, background 0.15s; }
+.ask-icon svg { width: 16px; height: 16px; }
+/* The chevron points down: turned a quarter each way for back and next. */
+.ask-nav .ask-icon svg { transform: rotate(-90deg); }
+.ask-nav .ask-icon.flip svg { transform: rotate(90deg); }
+.ask-icon:hover:not(:disabled) { color: var(--fg); background: var(--surface-2); }
+.ask-icon:disabled { opacity: 0.35; cursor: default; }
+
+.ask-options { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.ask-options > li + li { border-top: 1px solid var(--line); }
+/* The highlighted row is a filled shape: the rules on either side of it would
+   cut into it, so they give way. */
+.ask-options > li:has(> .active), .ask-options > li:has(> .active) + li,
+.ask-options > li.active, .ask-options > li.active + li { border-top-color: transparent; }
+.ask-opt, .ask-other { display: flex; align-items: center; gap: 12px; width: 100%; padding: 7px 10px;
+  border-radius: 10px; font-size: 14px; color: var(--muted); }
+.ask-opt { border: none; background: none; font-family: inherit; text-align: left; cursor: pointer; }
+.ask-opt.active, .ask-other.active { background: var(--surface-2); color: var(--fg); }
+.ask-num { flex: none; width: 26px; height: 26px; display: grid; place-items: center; border-radius: 7px;
+  background: var(--surface-2); font-family: var(--font-mono); font-size: 12px; color: var(--faint); }
+.ask-num svg { width: 13px; height: 13px; }
+.ask-opt.active .ask-num { background: var(--line-strong); color: var(--fg); }
+.ask-opt.chosen .ask-num { box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent-text); }
+.ask-label { flex: 1; min-width: 0; overflow-wrap: anywhere; line-height: 1.4; }
+.ask-enter { flex: none; display: grid; color: var(--faint); }
+.ask-enter svg { width: 15px; height: 15px; }
+.ask-input { flex: 1; min-width: 0; padding: 4px 0; border: none; outline: none; background: none;
+  font: inherit; font-size: 14px; color: var(--fg); }
+.ask-input::placeholder { color: var(--faint); }
+.ask-skip { flex: none; padding: 5px 11px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--surface-2); font: inherit; font-size: 12.5px; font-weight: 600; color: var(--fg); cursor: pointer; }
+.ask-skip:hover { border-color: var(--line-strong); }
+.ask-opt:focus-visible, .ask-icon:focus-visible, .ask-skip:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.ask-hints kbd { display: inline-block; min-width: 16px; margin-right: 2px; padding: 0 4px; border: 1px solid var(--line);
+  border-radius: 4px; background: var(--surface); font-family: var(--font-mono); font-size: 10.5px; line-height: 16px; text-align: center; }
+/* No keyboard to navigate with on a touch screen. */
+@media (hover: none) { .ask-hints { display: none; } }
+@media (prefers-reduced-motion: reduce) { .ask-panel { animation: none; } }
+
+/* Answers sent from the panel, in the thread: each question, then the choice. */
+.bubble-answers { display: flex; flex-direction: column; gap: 10px; margin: 0; max-width: 82%;
+  min-width: min(300px, 82%); padding: 12px 15px; border-radius: 18px; background: var(--surface-2);
+  border: 1px solid var(--line); }
+.ba-pair dt { margin: 0 0 2px; font-size: 13px; line-height: 1.4; color: var(--faint); }
+.ba-pair dd { margin: 0; font-size: 14.5px; font-weight: 600; line-height: 1.45; color: var(--fg); overflow-wrap: anywhere; }
+.ba-pair dd.skipped { font-weight: 400; font-style: italic; color: var(--faint); }

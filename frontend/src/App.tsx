@@ -41,10 +41,12 @@ import {
 } from "./lib/design";
 import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
 import { isLive, LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
+import { formatAnswers } from "./lib/ask";
 import { markTipSeen, tipSeen, tourSeen, type Tip as TipDef, type TipId } from "./lib/tour";
 import { isUnread, loadSeen, markSeen, saveSeen, type Seen } from "./lib/unread";
 import { DocPreview, type PreviewTarget } from "./components/DocPreview";
 import type {
+  Answered,
   ConversationId,
   Doc,
   LayoutMode,
@@ -225,6 +227,8 @@ export default function App() {
       queryId: lt.queryId ?? undefined,
       query: lt.query,
       attachments: lt.attachments,
+      answers: lt.answers,
+      ask: lt.ask,
       title: lt.title,
       status: lt.status,
       events: [],
@@ -554,6 +558,7 @@ export default function App() {
     patchTurn(id, (t) => ({
       ...t,
       reply: res.reply ?? t.reply,
+      ask: res.ask,
       // The stored reply replaces what was streamed; a retried call can have
       // streamed text that no longer exists.
       streamed: undefined,
@@ -598,7 +603,10 @@ export default function App() {
     startResearch(prompt, { fresh: true });
   }
 
-  async function startResearch(prompt: string, opts?: { fresh?: boolean; mode?: Mode }) {
+  async function startResearch(
+    prompt: string,
+    opts?: { fresh?: boolean; mode?: Mode; answers?: Answered[] },
+  ) {
     if (askForDemoAccount()) return;
     const fresh = opts?.fresh ?? false;
     // One run at a time: ignore a follow-up while another is in flight. A fresh
@@ -615,6 +623,7 @@ export default function App() {
     const turn: Turn = {
       id,
       query: prompt,
+      answers: opts?.answers,
       status: "running",
       events: [],
       result: null,
@@ -682,6 +691,7 @@ export default function App() {
         conversationId,
         attached.map((doc) => doc.id),
         runMode,
+        opts?.answers,
       );
       if (cancelled.current.has(id)) return;
       applyOutcome(id, res);
@@ -1012,6 +1022,7 @@ export default function App() {
           focusedId={focusedId}
           onFocus={setFocusedId}
           onSubmit={startResearch}
+          onAnswer={(answers) => startResearch(formatAnswers(answers), { answers })}
           onStop={stopResearch}
           onExit={goHome}
           mode={mode}
