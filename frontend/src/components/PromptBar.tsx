@@ -6,6 +6,7 @@ import { t } from "../lib/i18n";
 import { useQueryHistory } from "../lib/history";
 import { UPLOAD_ACCEPT, dragHasFiles, isSupported } from "../lib/uploads";
 import type { Mode } from "../types";
+import { EffortPicker } from "./EffortPicker";
 import { ModePicker } from "./ModePicker";
 import { FileTile } from "./FileTile";
 
@@ -330,8 +331,13 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
       document.body,
     );
 
+  // The effort goes with the mode: both only where a message reaches the
+  // supervisor, which is where either means anything.
   const modeButton = onMode && (
-    <ModePicker mode={mode} onMode={onMode} canFactCheck={attachments.length > 0 || !!hasDocuments} />
+    <>
+      <ModePicker mode={mode} onMode={onMode} canFactCheck={attachments.length > 0 || !!hasDocuments} />
+      <EffortPicker />
+    </>
   );
 
   const attachButton = onAttach && (

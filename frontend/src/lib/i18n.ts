@@ -392,6 +392,22 @@ const en = {
       request: (file: string) => `Fact-check ${file}`,
     },
   },
+  // How hard the supervisor thinks before replying. Relative times on purpose:
+  // seconds depend on the question as much as on the setting.
+  effort: {
+    pick: "Effort",
+    head: "How long it thinks before replying",
+    low: { label: "Low", note: "Quick replies to simple questions. The fastest." },
+    medium: { label: "Medium", note: "Balanced, right for most questions." },
+    high: {
+      label: "High",
+      note: "Thinks longer first, for comparisons, plans and trade-offs. Slower.",
+    },
+    xhigh: {
+      label: "Max",
+      note: "Its most careful reasoning, for hard problems. A reply can take a minute or more.",
+    },
+  },
   // What the bar asks for once a mode changes what sending means.
   modePlaceholder: {
     answer: "",
@@ -811,6 +827,20 @@ const fr: Dict = {
       note: "Évalue la véracité d'un document face à des sources indépendantes.",
       needsFile: "Joignez d'abord un document",
       request: (file: string) => `Vérifie ${file}`,
+    },
+  },
+  effort: {
+    pick: "Effort",
+    head: "Le temps de réflexion avant de répondre",
+    low: { label: "Faible", note: "Des réponses rapides aux questions simples. Le plus rapide." },
+    medium: { label: "Moyen", note: "Équilibré, adapté à la plupart des questions." },
+    high: {
+      label: "Élevé",
+      note: "Réfléchit plus longtemps : comparaisons, plans, arbitrages. Plus lent.",
+    },
+    xhigh: {
+      label: "Max",
+      note: "Son raisonnement le plus poussé, pour les problèmes difficiles. Une réponse peut prendre une minute ou plus.",
     },
   },
   modePlaceholder: {

@@ -18,6 +18,7 @@ import type {
   Status,
   TimelineEvent,
 } from "../types";
+import { getEffort } from "./effort";
 import { t } from "./i18n";
 import { outcomeFor } from "./outcome";
 import type { ResearchCallbacks, ResearchOutcome } from "./research";
@@ -415,10 +416,14 @@ const startTurn = (
   answers?: Answered[],
 ) =>
   conversationId == null
-    ? postConvJson(`/conversations`, { prompt, document_ids: documentIds, mode }, token)
+    ? postConvJson(
+        `/conversations`,
+        { prompt, document_ids: documentIds, mode, effort: getEffort() },
+        token,
+      )
     : postConvJson(
         `/conversations/${conversationId}/messages`,
-        { content: prompt, document_ids: documentIds, mode, answers },
+        { content: prompt, document_ids: documentIds, mode, effort: getEffort(), answers },
         token,
       );
 
