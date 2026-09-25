@@ -106,6 +106,15 @@ Each agent is a LangChain agent: a prompt, a set of tools and the loop that runs
 - Writing a report is not an agent: by then there is nothing to decide, so it is one model call in the same house style the chat answers in.
 - Two small jobs go to a small, cheap model (`mistralai/mistral-nemo`): titling each stretch of the supervisor's thinking for the live feed, and reading a reply that claims a run was started, to catch one that was not.
 
+Not every agent runs on the same model, and each thinks as hard as its job needs (how they were chosen is in [Evaluation](#evaluation)):
+
+| Agent | Model | Reasoning effort |
+| --- | --- | --- |
+| Supervisor | `z-ai/glm-5.3-flash` | Picked by the user in the composer: High or Max |
+| Deep research lead | `z-ai/glm-5.3-flash` | High, whatever the user picked |
+| Report writer | `z-ai/glm-5.3-flash` | Low: the findings and the outline are already decided |
+| Researchers and fact checker | `openai/gpt-6-luna` | High |
+
 ## Decisions and trade-offs
 
 **Citations are assigned by code, not by the model.**
@@ -286,13 +295,70 @@ Two honest notes about the judge.
 It moved from `openai/gpt-5-mini` to `openai/gpt-oss-120b`, about a sixth of the cost, after the cheaper model agreed with the expensive one on 90% of verdicts in a side-by-side run.
 It is not neutral about style: in several pairs it preferred the shorter of two correct answers, and on the plans its criteria penalize extra angles as drift, which is why the breadth change stays an open question until reports are compared rather than plans.
 
+**Choosing a model for each job.**
+A fact check of a two-line text file (Einstein won the Fields Medal; Trump is the first president to run for a third term) took 6 minutes 44 seconds.
+Its tool calls took seconds each; nearly all the rest was `glm-5.3-flash` thinking, which it does at about 20 tokens a second and cannot be told not to do.
+Three measurements settled which model does what.
+
+*1. A faster model for the workers.*
+Researchers and the fact checker make dozens of short calls, so latency matters more there than anywhere.
+Every cheap model on OpenRouter that supports tools got the fact checker's first step twice, through the same upstream routing the app uses:
+
+| Model | $ per M tokens (in / out) | Two tries | Thinking tokens | Outcome |
+| --- | --- | --- | --- | --- |
+| `openai/gpt-6-luna` | 0.10 / 0.50 | 1.5 s, 1.2 s | 0 | Chosen: fastest valid call, and the steadiest |
+| `deepseek/deepseek-v4.1-flash` | 0.10 / 0.60 | 2.7 s, 1.3 s | 43 to 140 | Close second |
+| `tencent/hy3` | 0.08 / 0.33 | 1.7 s, 2.2 s | 0 | Steady, less known |
+| `qwen/qwen3.7-flash` | 0.03 / 0.13 | 6.6 s, 3.0 s | 160 to 394 | Same price as glm, still thinks |
+| `z-ai/glm-5.3-flash` | 0.04 / 0.14 | 8.3 s, 14.9 s | 286 to 391 | The model it replaces |
+
+The rest were ruled out: one skipped the claim list, some returned provider errors, and others thought for 800 tokens or more a step or swung widely between the two tries.
+`google/gemini-3.1-flash-lite` was the fastest of all (the whole fact check in 12 s), but it judged from search snippets without reading a single page, which is the failure the deep-run floors exist to stop.
+
+*2. What reasoning effort actually changes.*
+Every call used to ask for reasoning without saying how much, and `glm-5.3-flash` then thinks at its own ceiling.
+Three calls per setting on the same business-comparison question:
+
+| Effort sent | `glm-5.3-flash` | `gpt-6-luna` |
+| --- | --- | --- |
+| None (the old default) | 70 to 114 s | 7 to 12 s |
+| low | 30 to 42 s | 7 to 8 s |
+| medium | 29 to 40 s | 7 to 12 s |
+| high | 49 to 85 s | 12 to 18 s |
+| xhigh | 49 to 74 s | 18 to 33 s |
+
+glm has two real steps, not four: low answers like medium, and high like xhigh.
+Luna steps cleanly, and even at xhigh it is faster than glm at low.
+The composer offers only High and Max, where Max sends no effort at all: below high, the supervisor had too little thought left to cite what it found.
+
+*3. Who writes the report.*
+A faster writer would shorten the last and longest wait of a deep run, so `python -m app.evals.writers` put `glm-5.3-flash` at low effort against `gpt-6-luna` at high on eight finished deep runs, on meteorology, aviation weather, solid-state batteries, heat pumps, a used electric car, an AI job search and two economic comparisons.
+Both writers got the same curated findings, the same outline and the same length target, exactly as a deep run hands them over.
+The judges were `anthropic/claude-sonnet-5` and `google/gemini-3.8-flash`, two families neither writer belongs to, looking twice at each pair in a shuffled, unnamed order and asked for faithfulness to the findings first, then synthesis, then usefulness, then clarity.
+
+| | `glm-5.3-flash`, low | `gpt-6-luna`, high |
+| --- | --- | --- |
+| Verdicts from `claude-sonnet-5` | **6 wins** | 1 win, 1 tie |
+| Verdicts from `gemini-3.8-flash` | **5 wins** | 3 wins |
+| Mean time to write | 162 s (37 to 310 s) | 78 s |
+| Mean length (target mostly 4,000 to 4,500 words) | 3,947 words | 2,671 words |
+| Citations to sources that do not exist | 0 | 0 |
+| Cost of the eight reports | $0.03 | $0.05 |
+
+glm stays the writer.
+Luna was twice as fast but wrote two thirds of the length it was asked for, and both judges preferred the fuller synthesis.
+The judges disagreed on three of the eight runs, so the margin is real but not overwhelming.
+The outlines were not kept once those runs finished, so each was rewritten once by the lead's model under the lead's own rules and shared by both writers.
+
+With the workers on Luna and every call's effort set, the same two-claim fact check takes 1 minute 28 seconds instead of 6 minutes 44, with the same verdicts.
+
 Scoring the full 150-question set is still the next step.
 
 ## Tests
 
-- The backend has nearly 300 tests with pytest, and they run offline: a fake model and a fake search backend script the agents, so the suite is fast and deterministic.
+- The backend has over 350 tests with pytest, and they run offline: a fake model and a fake search backend script the agents, so the suite is fast and deterministic.
 - They cover the supervisor and its tools, the research fan-out, the deep run resuming from its checkpoint after a worker dies, fact-checking a document, stopping a run, the job queue, budgets and billing, and the API.
-- The frontend has about 80 Vitest tests for the logic behind citations, the progress feed, the stream parser, credits, uploads and file previews.
+- The frontend has about 90 Vitest tests for the logic behind citations, the progress feed, the stream parser, credits, uploads and file previews.
 - Ruff for linting, and the TypeScript compiler for type checking.
 
 ## Limitations
