@@ -344,7 +344,7 @@ const en = {
     done: "Start asking",
     deep: {
       title: "Deep research",
-      body: "For complex questions that need real digging. You get a full report with its sources. It takes about 20 to 30 minutes, and you can keep chatting in the meantime.",
+      body: "For complex questions that need real digging. You get a full report with its sources. It takes up to around 25 minutes, depending on the task, and you can keep chatting in the meantime.",
     },
     attach: {
       title: "Fact-check a document",
@@ -363,7 +363,7 @@ const en = {
     gotIt: "Got it",
     deep: {
       title: "Your deep research has started",
-      body: "It takes about 20 to 30 minutes. Your report will appear here, and you will get a notification when it is ready. Feel free to keep chatting or switch tabs.",
+      body: "It takes up to around 25 minutes, depending on the task. Your report will appear here, and you will get a notification when it is ready. Feel free to keep chatting or switch tabs.",
     },
     factcheck: {
       title: "Your fact check has started",
@@ -383,7 +383,7 @@ const en = {
     },
     deep: {
       label: "Deep research",
-      note: "For complex questions. About 20 to 30 minutes.",
+      note: "For complex questions. Up to around 25 minutes, depending on the task.",
     },
     factcheck: {
       label: "Fact check",
@@ -765,7 +765,7 @@ const fr: Dict = {
     done: "Commencer",
     deep: {
       title: "Recherche approfondie",
-      body: "Pour les questions complexes qui demandent une recherche poussée. Vous recevez un rapport complet, sources à l'appui. Comptez environ 20 à 30 minutes. Vous pouvez continuer à discuter en attendant.",
+      body: "Pour les questions complexes qui demandent une recherche poussée. Vous recevez un rapport complet, sources à l'appui. Comptez jusqu'à 25 minutes environ, selon la demande. Vous pouvez continuer à discuter en attendant.",
     },
     attach: {
       title: "Vérifier un document",
@@ -784,7 +784,7 @@ const fr: Dict = {
     gotIt: "Compris",
     deep: {
       title: "Votre recherche approfondie est lancée",
-      body: "Comptez environ 20 à 30 minutes. Le rapport s'affichera ici et une notification vous préviendra dès qu'il sera prêt. D'ici là, vous pouvez continuer à discuter ou changer d'onglet.",
+      body: "Comptez jusqu'à 25 minutes environ, selon la demande. Le rapport s'affichera ici et une notification vous préviendra dès qu'il sera prêt. D'ici là, vous pouvez continuer à discuter ou changer d'onglet.",
     },
     factcheck: {
       title: "Votre vérification est lancée",
@@ -804,7 +804,7 @@ const fr: Dict = {
     },
     deep: {
       label: "Recherche approfondie",
-      note: "Pour les questions complexes. Environ 20 à 30 minutes.",
+      note: "Pour les questions complexes. Jusqu'à 25 minutes environ, selon la demande.",
     },
     factcheck: {
       label: "Vérification",
