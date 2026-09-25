@@ -1,8 +1,10 @@
-// Lightweight, framework-free i18n. The language is resolved once at module load
-// from the browser's default (French if the primary preference is French, English
-// otherwise) and never changes during a session, so components import the already
-// resolved `t` dictionary and re-render nothing. Backend-streamed agent text stays
-// in whatever language the API returns; this only covers the static UI.
+// Lightweight, framework-free i18n. Components import `t` and `lang`, which are
+// live bindings: switching language swaps them and tells the app to re-render,
+// so every `t.x` read at render picks up the new language. Nothing may copy a
+// string out of `t` at module load, or it stays in the old language. Switching
+// used to reload the page, which threw away everything not yet saved: files
+// attached but not sent, the draft, an upload on its way. Backend-streamed agent
+// text stays in whatever language the API returns; this only covers the static UI.
 
 export type Lang = "fr" | "en";
 
@@ -29,19 +31,7 @@ function detect(): Lang {
   return storedLang() ?? "en";
 }
 
-export const lang: Lang = detect();
-
-if (typeof document !== "undefined") document.documentElement.lang = lang;
-
-// Persist the choice and reload so the resolved-once dictionary is rebuilt.
-export function setLang(next: Lang): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, next);
-  } catch {
-    /* ignore */
-  }
-  if (typeof window !== "undefined") window.location.reload();
-}
+export let lang: Lang = detect();
 
 const en = {
   docTitle: "Nexus, answers you can check",
@@ -96,6 +86,7 @@ const en = {
       { lead: "The dashed arrows are tools.", rest: " The supervisor picks which to use and how many times. Three of them answer back; the two background runs take the work away and write their own report, so the chat is not blocked waiting for something that takes minutes. Deep research is only on offer when you switch its mode on: it costs minutes and real money, so the supervisor suggests it rather than starting it." },
       { lead: "The plan decides its own size.", rest: " I capped it rather than fixing it: a plain fact gets one sub-question, a comparison across three options gets six. Forcing a number either wasted researchers or starved the answer. A deep run has no fixed plan at all: a lead agent sends up to six researchers a round, reads what they found and decides whether to go back, for three rounds and fifteen researchers at most." },
       { lead: "Researchers run in parallel, on a shared clock.", rest: " Each sub-question is its own agent. They share a time budget, and when it runs out they submit what they have. Each also gets three web searches (five in a deep run) and is told to read pages in full rather than search again. The clock came after a slow model made whole runs time out; the search budget came after the search engines started blocking whole rounds." },
+      { lead: "It asks when a choice would help.", rest: " A question panel docks above the composer with numbered options, a free answer and Skip. Before a deep run, that panel is how the supervisor works out the brief with you: what the report is for, then only what would change the research, and a go-ahead that cannot be skipped, because a skipped confirmation once read as a yes and launched a run." },
       { lead: "Code assigns the citations, not the model.", rest: " Left to cite on their own, models sometimes cite a page they never opened. So a registry numbers each source as a tool returns it, and an agent can only cite a number it was handed. Anything else is stripped before it reaches you. The trade is real: nothing in an answer can go past what was actually retrieved." },
     ],
 
@@ -117,7 +108,7 @@ const en = {
       { lead: "The agents run on LangChain's loop.", rest: " Writing a tool loop is a day's work; keeping it correct is not. What the app cannot hand over rides alongside as middleware. Billing and pacing sit on the model itself, because two of the agents call the model directly and middleware would never see them: the first version billed only what agents spent." },
       { lead: "Prompts are versioned.", rest: " Each prompt carries a version, and a lock file pins it to a hash of its text, so a test fails if the wording changes without a bump. Every evaluation run records the versions it used, which is what makes \"did this change help?\" a question with an answer. It costs a little ceremony on every edit." },
       { lead: "The conversation reaches the model as real messages.", rest: " It used to be one long user message where your words, the app's labels and past reports all looked alike. Now anything retrieved (a report, search results, a page) arrives inside a tag the prompts define as data, so a page that says \"ignore your instructions\" reads as page content." },
-      { lead: "There is no plan to approve.", rest: " Nexus used to propose a plan and wait for a click. That put a form in front of you before a single search, and made a simple follow-up as heavy as a full run. The supervisor now does the work, and asks only when a deep run could go several ways." },
+      { lead: "There is no plan to approve.", rest: " Nexus used to propose a plan and wait for a click. That put a form in front of you before a single search, and made a simple follow-up as heavy as a full run. The supervisor now does the work. The exception is a deep run, which costs half an hour: it starts only after a short brainstorm of the brief and your go-ahead." },
       { lead: "A run is one row with a kind.", rest: " A chat turn, a deep run and a fact check all need an owner, a status, a heartbeat, a live feed, a stop button and a bill. Keeping them in one table means everything built around a run works for all three." },
       { lead: "Each account has a dollar budget.", rest: " The demo runs on paid models, so there is no public signup. I create each account with a budget, every model call is priced into a ledger, and new work is refused once it is spent. The catch is that I hand the accounts out myself." },
     ],
@@ -132,6 +123,7 @@ const en = {
       { lead: "The search engines blocked a whole round.", rest: " Six researchers searching at once reached the engines behind SearXNG as one burst. They answered with a CAPTCHA, an access denied and a 429 for minutes, while SearXNG reported an empty success. Researchers now have a small search budget, every search is paced, and an empty result is an error the agent sees." },
       { lead: "The same run started twice.", rest: " A CV was being fact-checked, the user asked for jokes while they waited, and the supervisor checked the same file again. A fact check now records its document and refuses one already being checked, and only one deep run works at a time in a conversation." },
       { lead: "One slow upstream made every call take a minute.", rest: " OpenRouter serves a model from several providers, and ranking them by throughput kept picking a degraded one. Calls now go to the cheapest provider that clears a speed floor, and the same 700-token call dropped from over a minute to 4 to 11 seconds." },
+      { lead: "Deep runs were shallow in production.", rest: " Four real runs took under a minute, read one to four pages and wrote under a thousand words, on a budget of twelve minutes. A fast model took the minimum at every depth decision. The floors now live in the tools: a deep researcher cannot submit before reading two pages, the lead cannot write after one round, and the writer scales its length to what was found." },
       { lead: "Two fact checks of one document checked different things.", rest: " The checker chose its claims silently, somewhere inside its search loop. It now commits to them first, each tied to the passage it comes from, and nothing is searched until a review confirms the list covers the document." },
     ],
 
@@ -151,7 +143,7 @@ const en = {
       "Accounts are invite-only, and I create them by hand.",
       "Research covers the web. Searching your own documents alongside it is not built.",
       "Only a deep run resumes after a worker crash. A chat turn or a fact check is marked failed.",
-      "A deep run takes minutes, and much of that is waiting on the slowest researcher.",
+      "A deep run takes about 20 to 30 minutes, and much of that is waiting on the slowest researcher.",
       "A PDF over 12 pages is refused.",
       "The evaluation leans on a model as judge, and the scored runs are still small.",
       "The prompt injection defences are in place but not yet measured on full research runs.",
@@ -212,6 +204,20 @@ const en = {
     idlePlaceholder: "Ask anything",
     jumpLatest: "Jump to latest",
     showArtifacts: "Show reports",
+  },
+  // The question panel the supervisor opens above the composer.
+  ask: {
+    position: (n: number, of: number) => `${n} of ${of}`,
+    previous: "Previous question",
+    next: "Next question",
+    close: "Close",
+    other: "Something else",
+    skip: "Skip",
+    placeholder: "Or reply directly…",
+    navigate: "to navigate",
+    select: "to select",
+    typeBelow: "or type below",
+    skipped: "Skipped",
   },
   access: {
     credits: (percent: number) => `${percent}% of your demo credits left`,
@@ -283,10 +289,13 @@ const en = {
     truncated: "shortened",
     pages: (n: number) => (n === 1 ? "1 page" : `${n} pages`),
     ready: (name: string) => `${name} is attached. Ask about it, or fact-check it.`,
-    // A file is read on the way in, and a long PDF takes a while. The tile says
+    // A file goes up, then is read, and a long PDF takes a while. The tile says
     // so from the first frame rather than sitting there looking finished.
+    uploading: "Uploading",
     reading: "Reading",
-    failedFile: "Not added",
+    // A refused upload, or a file that could not be read: the reason is on
+    // hover and in the Uploads list.
+    failedFile: "Failed",
     retry: "Try again",
     drop: "Drop to attach",
     dropHint: "PDF, Word or text",
@@ -335,7 +344,7 @@ const en = {
     done: "Start asking",
     deep: {
       title: "Deep research",
-      body: "For complex questions that need real digging. You get a full report with its sources. It takes a few minutes, sometimes up to around 25, and you can keep chatting in the meantime.",
+      body: "For complex questions that need real digging. You get a full report with its sources. It takes about 20 to 30 minutes, and you can keep chatting in the meantime.",
     },
     attach: {
       title: "Fact-check a document",
@@ -354,7 +363,7 @@ const en = {
     gotIt: "Got it",
     deep: {
       title: "Your deep research has started",
-      body: "It can take a few minutes, sometimes up to around 25. Your report will appear here, and you will get a notification when it is ready. Feel free to keep chatting or switch tabs.",
+      body: "It takes about 20 to 30 minutes. Your report will appear here, and you will get a notification when it is ready. Feel free to keep chatting or switch tabs.",
     },
     factcheck: {
       title: "Your fact check has started",
@@ -374,7 +383,7 @@ const en = {
     },
     deep: {
       label: "Deep research",
-      note: "For complex questions. A few minutes, up to around 25.",
+      note: "For complex questions. About 20 to 30 minutes.",
     },
     factcheck: {
       label: "Fact check",
@@ -511,6 +520,7 @@ const fr: Dict = {
       { lead: "Les flèches en pointillés sont des outils.", rest: " Le superviseur choisit lesquels et combien de fois. Trois d'entre eux lui répondent ; les deux traitements en arrière-plan emportent le travail et écrivent leur propre rapport, pour que la conversation ne reste pas bloquée sur une tâche de plusieurs minutes. La recherche approfondie n'est proposée que si vous activez son mode : elle coûte du temps et de l'argent, alors le superviseur la suggère au lieu de la lancer." },
       { lead: "Le plan décide de sa propre taille.", rest: " Je l'ai plafonné plutôt que fixé : un fait simple donne une sous-question, une comparaison à trois options en donne six. Imposer un nombre gaspillait des chercheurs ou appauvrissait la réponse. Une recherche approfondie n'a pas de plan fixe : un agent pilote envoie jusqu'à six chercheurs par tour, lit ce qu'ils rapportent et décide s'il faut y retourner, en trois tours et quinze chercheurs au plus." },
       { lead: "Les chercheurs travaillent en parallèle, sur une horloge commune.", rest: " Chaque sous-question est un agent. Ils partagent un budget de temps et, à son terme, rendent ce qu'ils ont. Chacun a aussi droit à trois recherches web (cinq en recherche approfondie), avec la consigne de lire les pages en entier plutôt que de chercher à nouveau. L'horloge est arrivée après qu'un modèle lent a fait expirer des recherches entières ; le budget de recherches, après que les moteurs ont commencé à bloquer des tours complets." },
+      { lead: "Il pose des questions quand c'est utile.", rest: " Un panneau de questions s'ouvre au-dessus de la zone de saisie, avec des options numérotées, une réponse libre et un bouton pour passer. Avant une recherche approfondie, c'est ainsi que le superviseur établit le cahier des charges avec vous : à quoi servira le rapport, puis seulement ce qui changerait la recherche, et enfin un feu vert impossible à passer, car une confirmation ignorée a déjà été prise pour un accord et a lancé une recherche." },
       { lead: "C'est le code qui attribue les citations, pas le modèle.", rest: " Laissés à eux-mêmes, les modèles citent parfois une page qu'ils n'ont jamais ouverte. Un registre numérote donc chaque source à mesure qu'un outil la renvoie, et un agent ne peut citer qu'un numéro qu'on lui a donné. Le reste est retiré avant de vous parvenir. La contrepartie est réelle : rien dans une réponse ne peut dépasser ce qui a été réellement récupéré." },
     ],
 
@@ -532,7 +542,7 @@ const fr: Dict = {
       { lead: "Les agents tournent sur la boucle de LangChain.", rest: " Écrire une boucle d'outils prend une journée ; la garder correcte, non. Ce que l'application ne peut pas déléguer s'y greffe en middleware. La facturation et le cadencement se font au niveau du modèle lui-même, parce que deux des agents appellent le modèle directement et qu'un middleware ne les verrait jamais : la première version ne facturait que ce que dépensaient les agents." },
       { lead: "Les prompts sont versionnés.", rest: " Chaque prompt porte une version, et un fichier de verrouillage la lie à une empreinte de son texte : un test échoue si la formulation change sans que la version bouge. Chaque évaluation enregistre les versions utilisées, et c'est ce qui permet de répondre à « est-ce que ce changement a aidé ? ». Le prix : un peu de cérémonie à chaque modification." },
       { lead: "La conversation arrive au modèle sous forme de vrais messages.", rest: " C'était un long message unique où vos mots, les libellés de l'application et les anciens rapports se ressemblaient tous. Désormais tout ce qui est récupéré (un rapport, des résultats de recherche, une page) arrive dans une balise que les prompts définissent comme des données, et une page qui dit « ignore tes instructions » se lit comme le contenu d'une page." },
-      { lead: "Il n'y a pas de plan à valider.", rest: " Nexus proposait un plan et attendait un clic. Cela mettait un formulaire devant vous avant la moindre recherche, et rendait une simple question de suivi aussi lourde qu'une recherche complète. Le superviseur fait maintenant le travail, et ne pose une question que lorsqu'une recherche approfondie peut partir dans plusieurs directions." },
+      { lead: "Il n'y a pas de plan à valider.", rest: " Nexus proposait un plan et attendait un clic. Cela mettait un formulaire devant vous avant la moindre recherche, et rendait une simple question de suivi aussi lourde qu'une recherche complète. Le superviseur fait maintenant le travail. Seule exception : la recherche approfondie, qui prend une demi-heure, ne démarre qu'après un bref échange sur le cahier des charges et votre feu vert." },
       { lead: "Un traitement est une ligne avec un type.", rest: " Un tour de conversation, une recherche approfondie et une vérification ont tous besoin d'un propriétaire, d'un statut, d'un battement, d'un flux en direct, d'un bouton d'arrêt et d'une facture. Les garder dans une seule table permet à tout ce qui est construit autour d'un traitement de servir aux trois." },
       { lead: "Chaque compte a un budget en dollars.", rest: " La démo tourne sur des modèles payants, donc pas d'inscription publique. Je crée chaque compte avec un budget, chaque appel de modèle est chiffré dans un registre, et tout nouveau travail est refusé une fois le budget dépensé. La limite : c'est moi qui distribue les comptes." },
     ],
@@ -547,6 +557,7 @@ const fr: Dict = {
       { lead: "Les moteurs de recherche ont bloqué un tour entier.", rest: " Six chercheurs lancés en même temps arrivaient sur les moteurs derrière SearXNG comme une seule rafale. Ils répondaient par un CAPTCHA, un accès refusé et une erreur 429 pendant des minutes, pendant que SearXNG annonçait un succès vide. Les chercheurs ont maintenant un petit budget de recherches, chaque recherche est cadencée, et un résultat vide est une erreur que l'agent voit." },
       { lead: "La même tâche lancée deux fois.", rest: " Pendant qu'un CV était en cours de vérification, l'utilisateur a demandé des blagues pour patienter, et le superviseur a relancé la vérification du même fichier. Une vérification enregistre désormais son document et refuse celui qui est déjà en cours, et une seule recherche approfondie peut tourner à la fois dans une conversation." },
       { lead: "Un fournisseur lent faisait durer chaque appel plus d'une minute.", rest: " OpenRouter sert un même modèle par plusieurs fournisseurs, et les classer par débit revenait sans cesse à un fournisseur dégradé. Les appels vont maintenant au moins cher parmi ceux qui atteignent un seuil de vitesse, et un même appel de 700 tokens est passé de plus d'une minute à 4 à 11 secondes." },
+      { lead: "En production, les recherches approfondies restaient superficielles.", rest: " Quatre recherches réelles ont duré moins d'une minute, lu une à quatre pages et produit moins de mille mots, pour un budget de douze minutes. À chaque décision de profondeur, un modèle rapide choisissait le minimum. Les seuils sont désormais inscrits dans les outils : un chercheur ne peut rien soumettre avant d'avoir lu deux pages, l'agent pilote ne peut pas rédiger après un seul tour, et le rédacteur ajuste la longueur du rapport à ce qui a été trouvé." },
       { lead: "Deux vérifications du même document ne vérifiaient pas la même chose.", rest: " Le vérificateur choisissait ses affirmations en silence, quelque part dans sa boucle de recherche. Il s'engage maintenant sur sa liste d'abord, chaque affirmation liée au passage d'où elle vient, et rien n'est cherché tant qu'une relecture n'a pas confirmé que la liste couvre le document." },
     ],
 
@@ -566,7 +577,7 @@ const fr: Dict = {
       "Les comptes sont sur invitation, et je les crée à la main.",
       "La recherche porte sur le web. Chercher en parallèle dans vos propres documents n'existe pas encore.",
       "Seule une recherche approfondie reprend après un plantage du worker. Un tour de conversation ou une vérification passe en échec.",
-      "Une recherche approfondie prend plusieurs minutes, dont une bonne partie à attendre le chercheur le plus lent.",
+      "Une recherche approfondie prend environ 20 à 30 minutes, dont une bonne partie à attendre le chercheur le plus lent.",
       "Un PDF de plus de 12 pages est refusé.",
       "L'évaluation s'appuie sur un modèle comme juge, et les séries notées restent petites.",
       "Les défenses contre l'injection de prompt sont en place mais pas encore mesurées sur des recherches complètes.",
@@ -627,6 +638,19 @@ const fr: Dict = {
     idlePlaceholder: "Posez une question",
     jumpLatest: "Aller au plus récent",
     showArtifacts: "Afficher les rapports",
+  },
+  ask: {
+    position: (n: number, of: number) => `${n} sur ${of}`,
+    previous: "Question précédente",
+    next: "Question suivante",
+    close: "Fermer",
+    other: "Autre chose",
+    skip: "Passer",
+    placeholder: "Ou répondez directement…",
+    navigate: "pour naviguer",
+    select: "pour choisir",
+    typeBelow: "ou écrivez ci-dessous",
+    skipped: "Ignorée",
   },
   access: {
     credits: (percent: number) => `Il vous reste ${percent} % de vos crédits de démo`,
@@ -694,8 +718,9 @@ const fr: Dict = {
     pages: (n: number) => (n === 1 ? "1 page" : `${n} pages`),
     ready: (name: string) =>
       `${name} est joint. Posez une question dessus, ou faites-le vérifier.`,
+    uploading: "Envoi",
     reading: "Lecture",
-    failedFile: "Non ajouté",
+    failedFile: "Échec",
     retry: "Réessayer",
     drop: "Déposez pour joindre",
     dropHint: "PDF, Word ou texte",
@@ -740,7 +765,7 @@ const fr: Dict = {
     done: "Commencer",
     deep: {
       title: "Recherche approfondie",
-      body: "Pour les questions complexes qui demandent une recherche poussée. Vous recevez un rapport complet, sources à l'appui. Comptez quelques minutes, parfois près de 25 minutes. Vous pouvez continuer à discuter en attendant.",
+      body: "Pour les questions complexes qui demandent une recherche poussée. Vous recevez un rapport complet, sources à l'appui. Comptez environ 20 à 30 minutes. Vous pouvez continuer à discuter en attendant.",
     },
     attach: {
       title: "Vérifier un document",
@@ -759,7 +784,7 @@ const fr: Dict = {
     gotIt: "Compris",
     deep: {
       title: "Votre recherche approfondie est lancée",
-      body: "Comptez quelques minutes, parfois près de 25 minutes. Le rapport s'affichera ici et une notification vous préviendra dès qu'il sera prêt. D'ici là, vous pouvez continuer à discuter ou changer d'onglet.",
+      body: "Comptez environ 20 à 30 minutes. Le rapport s'affichera ici et une notification vous préviendra dès qu'il sera prêt. D'ici là, vous pouvez continuer à discuter ou changer d'onglet.",
     },
     factcheck: {
       title: "Votre vérification est lancée",
@@ -779,7 +804,7 @@ const fr: Dict = {
     },
     deep: {
       label: "Recherche approfondie",
-      note: "Pour les questions complexes. De quelques minutes à près de 25 minutes.",
+      note: "Pour les questions complexes. Environ 20 à 30 minutes.",
     },
     factcheck: {
       label: "Vérification",
@@ -864,5 +889,34 @@ const fr: Dict = {
   },
 };
 
-export const t: Dict = lang === "fr" ? fr : en;
-if (typeof document !== "undefined") document.title = t.docTitle;
+export let t: Dict = lang === "fr" ? fr : en;
+
+function applyToDocument(): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = lang;
+  document.title = t.docTitle;
+}
+applyToDocument();
+
+const listeners = new Set<() => void>();
+
+// Called on every switch, so the app can re-render. Returns an unsubscribe.
+export function onLangChange(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+// Persist the choice and switch in place, without a reload.
+export function setLang(next: Lang): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, next);
+  } catch {
+    /* ignore */
+  }
+  lang = next;
+  t = next === "fr" ? fr : en;
+  applyToDocument();
+  listeners.forEach((listener) => listener());
+}

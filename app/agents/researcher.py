@@ -21,7 +21,7 @@ from langchain.agents.middleware import AgentMiddleware, ModelCallLimitMiddlewar
 from langchain.agents.structured_output import ToolStrategy
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import HumanMessage
-from pydantic import ValidationError
+from pydantic import ConfigDict, ValidationError, model_validator
 
 from app.agents.language import detect_language
 from app.agents.model import Deadline, LastStep
@@ -56,6 +56,7 @@ async def research_one(
     emit: Emit = _noop,
     max_iters: int = 3,
     searches: int = 3,
+    min_pages: int = 0,
     deadline: float | None = None,
 ) -> Finding:
     """Answer one sub-question and return what was found, with its sources.
@@ -65,18 +66,28 @@ async def research_one(
     finding self-contained, which is what lets a deep run checkpoint one.
     """
     sources = Sources()
+    reads = [0]
     agent = create_agent(
         model=model,
         tools=retrieval_tools(
-            backend, sources, emit=emit, agent="researcher", searches=searches
+            backend,
+            sources,
+            emit=emit,
+            agent="researcher",
+            searches=searches,
+            reads=reads,
         ),
         system_prompt=_system_prompt(sub_question, searches),
         response_format=ToolStrategy(
-            SubmitFindingArgs,
+            _submit_schema(lambda: reads[0], min_pages),
             # A malformed submission is fed back rather than lost: the researcher
-            # has already paid for the searching by this point.
-            handle_errors="submit_finding arguments were invalid: {error}. "
-            "Call it again with valid arguments.",
+            # has already paid for the searching by this point. A callable, not
+            # a string: a string is sent as it is, and "{error}" reached the
+            # model literally, so it was never told what was wrong.
+            handle_errors=lambda error: (
+                f"submit_finding arguments were invalid: {error}. "
+                "Call it again with valid arguments."
+            ),
         ),
         middleware=[
             *(middleware or []),
@@ -97,6 +108,36 @@ async def research_one(
         submission = await _forced_finish(model, state["messages"])
 
     return _finding(sub_question, submission, sources)
+
+
+def _submit_schema(read: Callable[[], int], least: int) -> type[SubmitFindingArgs]:
+    """submit_finding, refusing a finding built on fewer than ``least`` pages.
+
+    The refusal is the tool's own validation error, fed back like any other, so
+    the researcher reads and submits again. Pages asked for count, not pages that
+    loaded (ponytail: a dead crawler must not trap a researcher; if reading is
+    down, the last-step finish still submits what the snippets gave). Finding
+    nothing is never held back."""
+    if not least:
+        return SubmitFindingArgs
+
+    class Submit(SubmitFindingArgs):
+        # The name the model sees stays submit_finding's.
+        model_config = ConfigDict(title="SubmitFindingArgs")
+
+        @model_validator(mode="after")
+        def _read_enough(self) -> "Submit":
+            if self.found_info and read() < least:
+                raise ValueError(
+                    f"Read at least {least} of the most relevant pages in full "
+                    "with fetch_page before submitting: claims from search "
+                    "snippets are too thin for a deep report. If nothing "
+                    "relevant exists, submit with found_info=false."
+                )
+            return self
+
+    Submit.__name__ = "SubmitFindingArgs"
+    return Submit
 
 
 LAST_STEP = (

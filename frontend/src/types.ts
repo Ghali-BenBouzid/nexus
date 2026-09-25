@@ -53,6 +53,12 @@ export type AgentEvent =
   // later named it with. The thinking itself never reaches the browser.
   | { kind: "step"; step: number }
   | { kind: "step_title"; step: number; title: string }
+  // What the supervisor wrote before a round of tool calls: a part of its
+  // reply, and where the work that followed it begins.
+  | { kind: "said"; text: string }
+  // Sources the supervisor can cite from now on, numbered from `first` the way
+  // the reply cites them while it is being written.
+  | { kind: "sources"; first: number; items: Source[] }
   // The supervisor sent a research team after this question. ``team`` ties
   // the team's own events (its plan, its researchers) back to this step.
   | { kind: "tool"; action: "research"; text: string; team?: string; index?: undefined }
@@ -73,6 +79,13 @@ export type AgentEvent =
 // instant it reached the UI (what the step timers count from).
 export type TimelineEvent = AgentEvent & { id: number; delay: number; at?: number };
 
+// A question the supervisor put to the user, answered with one click.
+// `confirm`: a go-ahead before acting (launching a deep run). One option, the
+// free answer for anything else, and no skip: a skipped go-ahead read as a yes.
+export type Question = { question: string; options: string[]; confirm?: boolean };
+// What the user chose for one question; null when they skipped it.
+export type Answered = { question: string; answer: string | null };
+
 // One turn in the conversation: a submitted query and everything that run
 // produced. The thread is an ordered list of these; each runs independently.
 export type Turn = {
@@ -81,12 +94,22 @@ export type Turn = {
   query: string;
   // The files sent with this message, shown on the bubble that carries them.
   attachments?: Doc[];
+  // Stopped before the message reached the server: the files it carried were
+  // dropped with it, so there is nothing left to run again.
+  unsent?: boolean;
+  // The user's message came from the question panel: drawn as these pairs.
+  answers?: Answered[];
+  // The turn ended by asking these; the panel shows them while it is the latest.
+  ask?: Question[];
   title?: string; // the supervisor-given report/artifact title
   status: Status;
   events: TimelineEvent[];
   // The assistant's answer, rendered in the thread. Every turn has one now: a
   // report is a separate output, not what a turn produces.
   reply?: string;
+  // The same reply in the parts it was written in: what the supervisor said
+  // before each round of tool calls, then its answer. Missing on older turns.
+  parts?: string[];
   // The reply as it streams in, before the finished one lands. Kept apart from
   // `reply` so the answer the user keeps is always the one the server stored.
   streamed?: string;
@@ -133,11 +156,13 @@ export type Doc = {
   chars: number;
   truncated: boolean;
   ocr: boolean;
-  // Client-side only, and only while a file is on its way to the server: the
-  // tile exists the moment the file is picked and says how it is going, rather
-  // than appearing minutes later when the parse finishes. A document the server
-  // has confirmed carries no state at all. Placeholders hold a negative id, so
+  // How far the file has got. "uploading" is client-side only, while its bytes
+  // go up: the tile exists the moment the file is picked rather than appearing
+  // when it lands. "reading" is the server's own job turning it into text, and
+  // outlives the page, so it comes back on a reload. "failed" is either a
+  // refused upload or a file that could not be read, with the reason in error.
+  // A read file carries no state at all. Placeholders hold a negative id, so
   // nothing mistakes one for something that can be fetched or deleted.
-  state?: "uploading" | "failed";
+  state?: "uploading" | "reading" | "failed";
   error?: string;
 };

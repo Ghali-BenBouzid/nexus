@@ -1,0 +1,140 @@
+"""ask_user: the supervisor puts questions to the user and the turn ends there.
+
+The answer comes back as the user's next message, so all this pins is the turn
+itself: what it says, which questions it carries, and that a malformed call is
+sent back to be fixed rather than shown.
+"""
+
+from langchain_core.messages import AIMessage, ToolMessage
+
+from app.agents.sources import Sources
+from app.agents.supervisor import respond
+from tests.agents.fakes import ScriptedModel, says
+from tests.agents.test_supervisor import FakeBackend
+
+TOPIC = {
+    "question": "Which topic?",
+    "options": ["History", "Science"],
+    "confirm": False,
+}
+LEVEL = {"question": "How hard?", "options": ["Easy", "Hard"], "confirm": False}
+
+
+def asks(text: str, *questions: dict, id: str = "ask") -> AIMessage:
+    return AIMessage(
+        content=text,
+        tool_calls=[
+            {"name": "ask_user", "args": {"questions": list(questions)}, "id": id}
+        ],
+    )
+
+
+async def _respond(model):
+    return await respond(
+        "quiz me", [], model=model, backend=FakeBackend(), sources=Sources()
+    )
+
+
+async def test_asking_ends_the_turn_with_the_reply_and_the_questions() -> None:
+    model = ScriptedModel([asks("Two quick questions.", TOPIC, LEVEL)])
+
+    answer = await _respond(model)
+
+    assert answer.text == "Two quick questions."
+    assert answer.ask == [TOPIC, LEVEL]
+    assert len(model.seen) == 1  # nothing after the question
+
+
+async def test_a_question_with_no_reply_text_still_reaches_the_user() -> None:
+    answer = await _respond(ScriptedModel([asks("", TOPIC)]))
+
+    assert answer.text == ""
+    assert answer.ask == [TOPIC]
+
+
+async def test_a_malformed_question_is_sent_back_to_be_fixed() -> None:
+    one_option = {"question": "Which topic?", "options": ["History"]}
+    model = ScriptedModel(
+        [asks("Pick one.", one_option, id="a"), asks("Pick one.", TOPIC, id="b")]
+    )
+
+    answer = await _respond(model)
+
+    errors = [m for m in model.seen[1] if isinstance(m, ToolMessage)]
+    assert errors and "options" in errors[-1].content
+    assert answer.ask == [TOPIC]
+
+
+async def test_a_turn_that_asks_nothing_carries_no_questions() -> None:
+    answer = await _respond(ScriptedModel([says("Hello.")]))
+
+    assert answer.ask is None
+
+
+async def test_asking_beside_another_tool_still_ends_with_the_questions() -> None:
+    both = AIMessage(
+        content="Let me check, then ask.",
+        tool_calls=[
+            {"name": "web_search", "args": {"query": "q", "max_results": 5}, "id": "s"},
+            {"name": "ask_user", "args": {"questions": [TOPIC]}, "id": "a"},
+        ],
+    )
+    model = ScriptedModel([both])
+
+    answer = await _respond(model)
+
+    assert answer.text == "Let me check, then ask."
+    assert answer.ask == [TOPIC]
+    assert len(model.seen) == 1
+
+
+async def test_a_confirmation_offers_one_go_ahead_and_nothing_to_skip() -> None:
+    # "Skip" on "launch the run?" read as consent: a user skipped it and the
+    # run started. A confirmation has one option, the go-ahead; anything else
+    # is typed into the panel's free answer.
+    two = {"question": "Launch?", "options": ["Go", "Change"], "confirm": True}
+    one = {"question": "Launch?", "options": ["Go"], "confirm": True}
+    model = ScriptedModel(
+        [
+            asks("Here is the brief.", two, id="a"),
+            asks("Here is the brief.", one, id="b"),
+        ]
+    )
+
+    answer = await _respond(model)
+
+    errors = [m for m in model.seen[1] if isinstance(m, ToolMessage)]
+    assert errors and "exactly one option" in errors[-1].content
+    assert answer.ask == [one]
+
+
+async def test_an_ordinary_question_still_needs_a_choice() -> None:
+    lone = {"question": "Which topic?", "options": ["History"]}
+    model = ScriptedModel([asks("Pick.", lone, id="a"), asks("Pick.", TOPIC, id="b")])
+
+    answer = await _respond(model)
+
+    assert answer.ask == [TOPIC]
+
+
+async def test_the_words_sent_with_the_questions_are_the_reply() -> None:
+    """Words before a search are a part of the reply the work follows; words
+    sent with the questions end the turn, so they are its last part, once."""
+    before = AIMessage(
+        "Let me check first.",
+        tool_calls=[{"name": "web_search", "args": {"query": "q"}, "id": "s"}],
+    )
+    model = ScriptedModel([before, asks("Two quick questions.", TOPIC)])
+    said: list[str] = []
+
+    async def emit(event) -> None:
+        if event.type == "said":
+            said.append(event.message)
+
+    answer = await respond(
+        "quiz me", [], model=model, backend=FakeBackend(), sources=Sources(), emit=emit
+    )
+
+    assert said == ["Let me check first."]
+    assert answer.parts == ["Let me check first.", "Two quick questions."]
+    assert answer.ask == [TOPIC]

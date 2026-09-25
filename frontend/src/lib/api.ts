@@ -6,11 +6,13 @@
 // planner/researcher/writer progress (real "researcher k/N"), not a placeholder.
 import type {
   AgentEvent,
+  Answered,
   ConversationId,
   Doc,
   Mode,
   Output,
   OutputKind,
+  Question,
   Result,
   Source,
   Status,
@@ -39,9 +41,11 @@ type QueryDetail = {
   sources: Source[];
   consulted_sources: Source[];
   gaps: string[];
-  // The assistant's answer in the conversation.
+  // The assistant's answer in the conversation, and the parts it was written in.
   reply?: string | null;
-  // Follow-up questions offered under the answer.
+  reply_parts?: string[] | null;
+  // The questions the turn ended on, if it asked the user any.
+  ask?: Question[] | null;
   // How long ago the job last showed signs of life (null before it starts).
   seconds_since_heartbeat?: number | null;
 };
@@ -176,6 +180,7 @@ type BackendEvent = {
   type: string;
   message: string;
   data: Record<string, unknown> | null;
+  created_at?: string;
 };
 
 function hostname(url: unknown): string {
@@ -219,6 +224,12 @@ function toAgentEvent(e: BackendEvent): AgentEvent | null {
       return typeof d.step === "number" ? { kind: "step", step: d.step } : null;
     case "step_title":
       return typeof d.step === "number" ? { kind: "step_title", step: d.step, title: e.message } : null;
+    case "said":
+      return { kind: "said", text: e.message };
+    case "sources":
+      return typeof d.first === "number" && Array.isArray(d.sources)
+        ? { kind: "sources", first: d.first, items: d.sources as Source[] }
+        : null;
     case "document_read":
       return { kind: "tool", action: "document", text: String(d.document ?? e.message) };
     case "factcheck_start":
@@ -284,10 +295,15 @@ type ConvMessageQuery = {
   title: string | null;
   report: string | null;
   reply?: string | null;
+  reply_parts?: string[] | null;
   error: string | null;
   stopped?: boolean;
   sources: Source[];
   gaps: string[];
+  events?: BackendEvent[];
+  created_at?: string | null;
+  completed_at?: string | null;
+  mode?: Mode | null; // the composer mode the turn was sent in
 };
 
 type BackendOutput = {
@@ -323,6 +339,8 @@ export type ConvMessage = {
   created_at: string;
   documents?: BackendDoc[];
   query: ConvMessageQuery | null;
+  // The question panel: asked on an assistant message, answered on a user's.
+  ask?: Question[] | Answered[] | null;
 };
 type BackendDoc = {
   id: number;
@@ -334,6 +352,8 @@ type BackendDoc = {
   chars: number;
   truncated: boolean;
   ocr: boolean;
+  status: "reading" | "ready" | "failed";
+  error?: string | null;
 };
 
 function toDoc(raw: BackendDoc): Doc {
@@ -347,6 +367,8 @@ function toDoc(raw: BackendDoc): Doc {
     chars: raw.chars,
     truncated: raw.truncated,
     ocr: raw.ocr,
+    ...(raw.status === "ready" ? {} : { state: raw.status }),
+    ...(raw.error ? { error: raw.error } : {}),
   };
 }
 
@@ -390,12 +412,13 @@ const startTurn = (
   documentIds: number[],
   token: string,
   mode: Mode,
+  answers?: Answered[],
 ) =>
   conversationId == null
     ? postConvJson(`/conversations`, { prompt, document_ids: documentIds, mode }, token)
     : postConvJson(
         `/conversations/${conversationId}/messages`,
-        { content: prompt, document_ids: documentIds, mode },
+        { content: prompt, document_ids: documentIds, mode, answers },
         token,
       );
 
@@ -414,18 +437,19 @@ export async function runLiveResearch(
   conversationId: ConversationId | null,
   documentIds: number[] = [],
   mode: Mode = "answer",
+  answers?: Answered[],
 ): Promise<ResearchOutcome | null> {
   cb.onStatus("running");
 
   let token = await ensureToken();
   let detail: ConvDetail;
   try {
-    detail = await startTurn(prompt, conversationId, documentIds, token, mode);
+    detail = await startTurn(prompt, conversationId, documentIds, token, mode, answers);
   } catch (err) {
     // One retry after a fresh session, only when the stored token went stale.
     if (!(err instanceof SessionExpiredError)) throw err;
     token = await ensureToken();
-    detail = await startTurn(prompt, conversationId, documentIds, token, mode);
+    detail = await startTurn(prompt, conversationId, documentIds, token, mode, answers);
   }
   cb.onConversation?.(detail.id);
 
@@ -501,7 +525,7 @@ async function followQuery(
         message: frame.message,
         data: frame.data,
       });
-      if (mapped) cb.onEvent({ ...mapped, id: frame.id ?? lastEventId, delay: 0 });
+      if (mapped) cb.onEvent({ ...mapped, id: frame.id ?? lastEventId, delay: 0, at: clockAt(frame.at) });
     }
   } catch (err) {
     // An aborted stream is either the user stopping or our own time limit; the
@@ -538,6 +562,8 @@ function outcomeOf(detail: QueryDetail): ResearchOutcome {
     result,
     outcome: outcomeFor(detail.status, detail.reply ?? "", result.sources.length),
     reply: detail.reply ?? "",
+    parts: detail.reply_parts ?? undefined,
+    ask: detail.ask ?? undefined,
     title: detail.title ?? undefined,
   };
 }
@@ -632,12 +658,21 @@ export type LoadedTurn = {
   queryId: number | null;
   query: string;
   attachments?: Doc[]; // the files sent with this message
+  answers?: Answered[]; // the message came from the question panel
+  ask?: Question[]; // the turn ended by asking these
+  mode?: Mode; // the composer mode it was sent in
   title?: string;
   status: Status;
   error: string | null;
   stopped?: boolean; // the user stopped it: not shown as an error
   result: Result;
   reply?: string; // the answer, which is what a turn produces
+  parts?: string[];
+  // What the turn did and when, on the performance.now() clock the live feed
+  // keeps, so a reloaded turn reads like it did live.
+  events?: TimelineEvent[];
+  startedAt?: number;
+  endedAt?: number;
 };
 export type LoadedConversation = {
   id: ConversationId;
@@ -663,6 +698,12 @@ export async function loadConversation(id: ConversationId): Promise<LoadedConver
   };
 }
 
+// A server time on the performance.now() clock, which the feed's timers use.
+function clockAt(iso: string | null | undefined): number | undefined {
+  const ms = iso ? Date.parse(iso) : NaN;
+  return Number.isNaN(ms) ? undefined : performance.now() - (Date.now() - ms);
+}
+
 // The thread's messages as turns: each assistant message with the user message
 // before it. Exported, and separate from the fetch, so the mapping can be
 // checked on its own: it is where a turn decides what it is and what it said.
@@ -671,18 +712,23 @@ export function turnsFrom(messages: ConvMessage[]): LoadedTurn[] {
   const turns: LoadedTurn[] = [];
   let prompt = "";
   let attached: Doc[] = [];
+  let answers: Answered[] | undefined;
   for (const m of detail.messages) {
     if (m.role === "user") {
       prompt = m.content;
       attached = (m.documents ?? []).map(toDoc);
+      answers = (m.ask as Answered[] | null | undefined) ?? undefined;
       continue;
     }
+    const ask = (m.ask as Question[] | null | undefined) ?? undefined;
     // A turn with no run behind it (an older thread) still said something.
     if (m.query_id == null) {
       turns.push({
         queryId: null,
         query: prompt,
         attachments: attached,
+        answers,
+        ask,
         status: "complete",
         error: null,
         result: { report: "", sources: [], consulted: [], gaps: [] },
@@ -695,11 +741,21 @@ export function turnsFrom(messages: ConvMessage[]): LoadedTurn[] {
       queryId: m.query_id,
       query: prompt,
       attachments: attached,
+      answers,
+      ask,
+      mode: q?.mode ?? undefined,
       title: q?.title ?? undefined,
       status: q?.status ?? "complete",
       error: q?.error ?? null,
       stopped: q?.stopped,
       reply: q?.reply ?? m.content,
+      parts: q?.reply_parts ?? undefined,
+      events: (q?.events ?? []).flatMap((e) => {
+        const mapped = toAgentEvent(e);
+        return mapped ? [{ ...mapped, id: e.id, delay: 0, at: clockAt(e.created_at) }] : [];
+      }),
+      startedAt: clockAt(q?.created_at),
+      endedAt: clockAt(q?.completed_at),
       result: {
         report: "",
         sources: q?.sources ?? [],
@@ -735,8 +791,19 @@ export async function listDocuments(conversationId: ConversationId): Promise<Doc
   return ((await res.json()) as BackendDoc[]).map(toDoc);
 }
 
-// Upload one file into a conversation. Throws with the server's own reason (too
-// large, unreadable, too many), which is written to be shown as it is.
+// Files whose bytes are still going up. Leaving the page drops them, and the
+// message waiting on them, so the browser asks first. It is only the transfer:
+// once the server has a file, it reads it whatever the page does.
+let sending = 0;
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", (e) => {
+    if (sending > 0) e.preventDefault();
+  });
+}
+
+// Upload one file into a conversation. It answers once the file is stored, and
+// the server reads it after (the doc comes back "reading"). Throws with the
+// server's own reason (too large, wrong type, too many), written to be shown.
 export async function uploadDocument(
   conversationId: ConversationId,
   file: File,
@@ -745,14 +812,19 @@ export async function uploadDocument(
   const token = await ensureToken();
   const body = new FormData();
   body.append("file", file);
-  const res = await fetch(`${BASE}/conversations/${conversationId}/documents`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body,
-    signal,
-  });
-  if (!res.ok) throw new Error(await errorMessage(res, t.uploads.failed));
-  return toDoc((await res.json()) as BackendDoc);
+  sending++;
+  try {
+    const res = await fetch(`${BASE}/conversations/${conversationId}/documents`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body,
+      signal,
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, t.uploads.failed));
+    return toDoc((await res.json()) as BackendDoc);
+  } finally {
+    sending--;
+  }
 }
 
 // The original file, as the user uploaded it. Fetched rather than linked: the

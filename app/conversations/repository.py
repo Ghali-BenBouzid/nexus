@@ -56,12 +56,14 @@ async def add_message(
     role: MessageRole,
     content: str = "",
     query_id: int | None = None,
+    ask: list[dict] | None = None,
 ) -> Message:
     message = Message(
         conversation_id=conversation_id,
         role=role,
         content=content,
         query_id=query_id,
+        ask=ask,
     )
     db.add(message)
     # Adding a message makes the conversation the most recently active one.
@@ -75,12 +77,21 @@ async def add_message(
     return message
 
 
-async def set_content(db: AsyncSession, message_id: int, content: str) -> None:
-    """Fill in an assistant message once its turn has produced a reply."""
+async def set_content(
+    db: AsyncSession, message_id: int, content: str, ask: list[dict] | None = None
+) -> None:
+    """Fill in an assistant message once its turn has produced a reply, and
+    the questions it ended on, if it asked any."""
     await db.execute(
-        update(Message).where(Message.id == message_id).values(content=content)
+        update(Message).where(Message.id == message_id).values(content=content, ask=ask)
     )
     await db.commit()
+
+
+async def ask_for_query(db: AsyncSession, query_id: int) -> list[dict] | None:
+    """The questions a turn asked, read off the message its query filled in."""
+    result = await db.execute(select(Message.ask).where(Message.query_id == query_id))
+    return result.scalars().first()
 
 
 async def set_title(db: AsyncSession, conversation_id: int, title: str) -> None:

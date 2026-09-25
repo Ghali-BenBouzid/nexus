@@ -1,5 +1,6 @@
 from datetime import datetime
 
+from app.models.document import DocumentStatus
 from app.schemas.base import BaseSchema
 
 
@@ -16,4 +17,6 @@ class DocumentSummary(BaseSchema):
     chars: int
     truncated: bool  # the file was longer than max_document_chars
     ocr: bool  # read off pictures of pages, so the text may contain mistakes
+    status: DocumentStatus  # reading until its job has turned it into text
+    error: str | None = None  # why it could not be read
     created_at: datetime

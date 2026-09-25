@@ -24,6 +24,8 @@ from app import jobs
 from app.conversations.service import route_message
 from app.core.config import settings
 from app.db import session as db_session
+from app.documents import repository as documents
+from app.documents.service import read_document
 from app.jobs import Job
 from app.observability import configure_tracing
 from app.research import bus, repository
@@ -34,6 +36,7 @@ from app.research.service import run_research_job
 logger = logging.getLogger(__name__)
 
 JOBS: tuple[Job, ...] = (
+    read_document,
     route_message,
     run_research_job,
     run_deep_research_job,
@@ -42,6 +45,9 @@ JOBS: tuple[Job, ...] = (
 
 # A job beats every 5 s, so this long without one means its worker died.
 STALE_AFTER_SECONDS = 90
+# Reading a file has no heartbeat, but the longest a parser allows (a dozen
+# pages, ten of them by OCR) is well under a minute.
+READING_STALE_AFTER_SECONDS = 300
 
 
 def _task(job: Job) -> Function:
@@ -60,11 +66,14 @@ async def reap_stalled(ctx: dict[str, Any]) -> None:
     async with db_session.SessionLocal() as db:
         resumable = await repository.stalled_deep_runs(db, STALE_AFTER_SECONDS)
         reaped = await repository.reap_stalled_queries(db, STALE_AFTER_SECONDS)
+        unread = await documents.fail_stalled_reading(db, READING_STALE_AFTER_SECONDS)
     for query_id in resumable:
         logger.warning("resuming deep research %s after its worker stopped", query_id)
         await jobs.spawn(run_deep_research_job, query_id=query_id)
     if reaped:
         logger.warning("failed %d run(s) whose job stopped responding", reaped)
+    if unread:
+        logger.warning("failed %d document(s) whose reading stopped", unread)
 
 
 async def startup(ctx: dict[str, Any]) -> None:

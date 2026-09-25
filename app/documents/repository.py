@@ -1,7 +1,11 @@
+from datetime import UTC, datetime, timedelta
+
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.document import Document
+from app.models.document import Document, DocumentStatus
+
+READING_STOPPED = "Reading this file stopped partway. Remove it and add it again."
 
 
 async def add(db: AsyncSession, document: Document) -> Document:
@@ -59,3 +63,45 @@ async def attach_to_message(
 async def remove(db: AsyncSession, document: Document) -> None:
     await db.delete(document)
     await db.commit()
+
+
+async def finish_reading(
+    db: AsyncSession,
+    document_id: int,
+    *,
+    text: str = "",
+    pages: int | None = None,
+    ocr: bool = False,
+    error: str | None = None,
+) -> None:
+    """Record how reading a file went: its text, or why there is none."""
+    await db.execute(
+        update(Document)
+        .where(Document.id == document_id)
+        .values(
+            text=text,
+            pages=pages,
+            ocr=ocr,
+            error=error,
+            status=DocumentStatus.failed if error else DocumentStatus.ready,
+        )
+    )
+    await db.commit()
+
+
+async def fail_stalled_reading(db: AsyncSession, stale_after_seconds: float) -> int:
+    """Fail the files whose reading job died with its worker. A read takes well
+    under a minute, so one still going after this long is not going to finish,
+    and the turn waiting for it has to be told."""
+    cutoff = datetime.now(UTC) - timedelta(seconds=stale_after_seconds)
+    result = await db.execute(
+        update(Document)
+        .where(
+            Document.status == DocumentStatus.reading,
+            Document.created_at < cutoff,
+        )
+        .values(status=DocumentStatus.failed, error=READING_STOPPED)
+        .execution_options(synchronize_session=False)
+    )
+    await db.commit()
+    return result.rowcount or 0

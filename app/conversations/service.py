@@ -7,6 +7,7 @@ runs. Those two are wired here, because starting a run means writing a row and
 queueing a job, which is the application's business and not the agent's.
 """
 
+import asyncio
 import logging
 
 from fastapi import BackgroundTasks
@@ -24,6 +25,8 @@ from app.core.config import settings
 from app.db import session as db_session
 from app.documents import repository as documents_repository
 from app.models.conversation import Conversation, Message, MessageRole
+from app.models.document import Document as DocumentRow
+from app.models.document import DocumentStatus
 from app.models.query import Query, QueryKind, QueryStatus
 from app.research import repository as research_repository
 from app.research.deep import run_deep_research_job
@@ -38,11 +41,13 @@ _MAX_CONTEXT_MESSAGES = 12
 # A conversation is named from its first message rather than by a model. A title
 # is a sidebar label, and paying for a call to write one is not worth it.
 _TITLE_CHARS = 60
+# How often a turn looks again at files still being read.
+_READING_POLL_SECONDS = 1.0
 
 DEEP_STARTED = (
-    "Deep research has started on that. It takes several minutes and will appear "
-    "in the user's Outputs when it is done. Tell them it is running; do not wait "
-    "for it or make up what it will say."
+    "Deep research has started on that. It takes about 20 to 30 minutes and "
+    "will appear in the user's Outputs when it is done. Tell them it is running; "
+    "do not wait for it or make up what it will say."
 )
 DEEP_BUSY = (
     "Nothing was started: deep research run {id} ({title}) is still working in "
@@ -80,10 +85,23 @@ def _history(messages: list[Message]) -> list[Turn]:
         Turn(
             role="user" if m.role == MessageRole.user else "assistant",
             content=m.content,
+            # Only an asked question is replayed: on an answer, the text
+            # already says what was chosen.
+            ask=m.ask if m.role == MessageRole.assistant else None,
         )
         for m in messages[-_MAX_CONTEXT_MESSAGES:]
-        if m.content
+        # A turn that only asked, with no text beside its questions, still said
+        # something the next message answers.
+        if m.content or m.ask
     ]
+
+
+def format_answers(answers: list[dict]) -> str:
+    """A panel's answers as the message the supervisor reads: each question,
+    then what was chosen."""
+    return "\n\n".join(
+        f"{a['question']}\n→ {a.get('answer') or '(skipped)'}" for a in answers
+    )
 
 
 async def submit_message(
@@ -96,6 +114,7 @@ async def submit_message(
     background_tasks: BackgroundTasks,
     document_ids: list[int] | None = None,
     mode: Mode = "answer",
+    answers: list[dict] | None = None,
 ) -> Message:
     """Record the user's message and the assistant turn that will answer it, and
     queue the job; no model is called in the request. The turn's query tracks it
@@ -108,8 +127,12 @@ async def submit_message(
     and on "don't start a deep research"; judging the message is exactly what
     the supervisor is for, and the thread stays the supervisor's either way.
     """
+    # Answers from the question panel: the text the supervisor reads is written
+    # here, from the pairs, so it reads the same however the client sent them.
+    if answers:
+        content = format_answers(answers)
     user_message = await repository.add_message(
-        db, conversation.id, MessageRole.user, content
+        db, conversation.id, MessageRole.user, content, ask=answers
     )
     # The files were uploaded before the message, because a file belongs to a
     # conversation; this is what ties them to the message they were sent with.
@@ -143,6 +166,7 @@ async def submit_message(
         prompt=prompt,
         kind=QueryKind.chat,
         conversation_id=conversation.id,
+        mode=mode,
     )
     assistant = await repository.add_message(
         db, conversation.id, MessageRole.assistant, content="", query_id=query.id
@@ -181,15 +205,11 @@ async def route_message(
 
         messages = await repository.list_messages(db, conversation_id)
         before = [m for m in messages if m.id < message_id]
+        question_id = None
         if before and before[-1].role == MessageRole.user:
+            question_id = before[-1].id
             before = before[:-1]  # the user's message is the question itself
         history = _history(before)
-        documents = [
-            Document(id=d.id, filename=d.filename, text=d.text)
-            for d in await documents_repository.list_for_conversation(
-                db, conversation_id
-            )
-        ]
         outputs = [
             Output(id=q.id, title=q.title or q.prompt, content=q.report or "")
             for q in await research_repository.list_conversation_reports(
@@ -207,8 +227,28 @@ async def route_message(
         ]
 
     async def work(run: Run) -> None:
+        # The files are read by jobs of their own, and the message went as soon
+        # as they were stored, so some may still be being read.
+        rows = await _read(run, conversation_id)
+        documents = [
+            Document(id=d.id, filename=d.filename, text=d.text)
+            for d in rows
+            if d.status == DocumentStatus.ready
+        ]
+        unread = [
+            f"{d.filename} ({d.error})"
+            for d in rows
+            if d.status == DocumentStatus.failed and d.message_id == question_id
+        ]
+        # A file sent with this message that could not be read is still part of
+        # what the user asked; left out silently, the supervisor told them no
+        # file was attached.
+        prompt = message
+        if unread:
+            prompt += "\n\n(Sent with this message but could not be read: "
+            prompt += "; ".join(unread) + ")"
         answer = await respond(
-            message,
+            prompt,
             history,
             model=run.model,
             backend=run.backend,
@@ -235,11 +275,37 @@ async def route_message(
                 db,
                 query_id,
                 answer.text,
+                parts=answer.parts,
                 result=result,
             )
-            await repository.set_content(db, message_id, answer.text)
+            await repository.set_content(db, message_id, answer.text, ask=answer.ask)
 
     await run_query(query_id, user_id=user_id, work=work, model=model, backend=backend)
+
+
+async def _read(run: Run, conversation_id: int) -> list[DocumentRow]:
+    """The conversation's documents, once none of them is still being read. Each
+    one being waited on shows in the turn's feed, so the wait reads as work. A
+    stop cancels the wait like any other step, and a read that never ends is
+    failed by the worker's reaper, which ends the wait too."""
+    announced: set[int] = set()
+    while True:
+        async with db_session.SessionLocal() as db:
+            rows = await documents_repository.list_for_conversation(db, conversation_id)
+        reading = [d for d in rows if d.status == DocumentStatus.reading]
+        if not reading:
+            return rows
+        for document in reading:
+            if document.id not in announced:
+                announced.add(document.id)
+                await run.emit(
+                    AgentEvent(
+                        type="document_read",
+                        message=f"Reading {document.filename}",
+                        data={"agent": "supervisor", "document": document.filename},
+                    )
+                )
+        await asyncio.sleep(_READING_POLL_SECONDS)
 
 
 _MODE_OF = {QueryKind.deep_research: "deep", QueryKind.fact_check: "factcheck"}
@@ -275,7 +341,7 @@ def _deep_starter(run: Run, conversation_id: int):
     hand back what to tell the user. The tool returns at once, because the point
     of a deep run is that nobody sits and waits for it."""
 
-    async def start(question: str, title: str, goal: str) -> str:
+    async def start(question: str, title: str, brief: str) -> str:
         # One deep run per conversation, held here rather than asked of the
         # model: a supervisor misled once already started a copy of a run
         # that was still going.
@@ -287,9 +353,9 @@ def _deep_starter(run: Run, conversation_id: int):
             ]
         if busy:
             return DEEP_BUSY.format(id=busy[0].id, title=busy[0].title)
-        # The goal travels with the question: the lead reads it to decide how
-        # deep to go, and a resumed run reads it back off the row.
-        prompt = f"{question}\n\nWhat it is for: {goal}" if goal.strip() else question
+        # The brief travels with the question: the lead reads it to decide what
+        # to research and how deep, and a resumed run reads it back off the row.
+        prompt = f"{question}\n\n{brief}"
         query_id = await _start_run(
             run,
             conversation_id,

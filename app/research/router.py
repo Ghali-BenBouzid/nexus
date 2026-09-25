@@ -14,6 +14,7 @@ from app.agents.schemas import ResearchResult
 from app.agents.tools import SearchBackend
 from app.auth.dependencies import get_current_user
 from app.billing.service import ensure_budget
+from app.conversations import repository as conversations
 from app.db.session import get_db
 from app.models.query import Query, QueryStatus
 from app.models.user import User
@@ -163,7 +164,9 @@ async def feed(db: AsyncSession, query: Query, *, after: int = 0) -> AsyncIterat
         db=db, query_id=query.id, after_id=after
     ):
         seen = stored.id
-        yield _frame(stored.type, stored.message, stored.data, stored.id)
+        yield _frame(
+            stored.type, stored.message, stored.data, stored.id, stored.created_at
+        )
     # A run that ended while nobody watched has nothing left to send.
     if query.status in (QueryStatus.complete, QueryStatus.failed):
         yield _frame(bus.DONE, "", None, seen)
@@ -185,13 +188,21 @@ async def feed(db: AsyncSession, query: Query, *, after: int = 0) -> AsyncIterat
 
 
 def _frame(
-    type_: str, message: str, data: dict[str, Any] | None, event_id: int | None
+    type_: str,
+    message: str,
+    data: dict[str, Any] | None,
+    event_id: int | None,
+    at: datetime | None = None,
 ) -> str:
     """One SSE frame. ``id`` is the durable feed's cursor, present only on an
-    event that was stored, so a reconnecting client can resume from it."""
+    event that was stored, so a reconnecting client can resume from it. ``at``
+    is when a replayed event happened: it arrives all at once with the rest of
+    what was missed, and its arrival says nothing about how long a step took."""
     payload: dict[str, Any] = {"type": type_, "message": message, "data": data}
     if event_id is not None:
         payload["id"] = event_id
+    if at is not None:
+        payload["at"] = at.isoformat()
     return f"data: {json.dumps(payload)}\n\n"
 
 
@@ -247,6 +258,13 @@ async def get_query(
         status=query.status,
         report=query.report,
         reply=query.reply,
+        reply_parts=query.reply_parts,
+        # Only a chat turn can ask; the live thread reads it here, at the end.
+        ask=(
+            await conversations.ask_for_query(db, query.id)
+            if query.kind == "chat"
+            else None
+        ),
         error=query.error,
         stopped=repository.stopped_by_user(query),
         kind=query.kind,

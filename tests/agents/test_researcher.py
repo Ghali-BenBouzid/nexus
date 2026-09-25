@@ -304,3 +304,56 @@ async def test_a_researcher_out_of_searches_is_told_so_and_spares_the_engines() 
     refusal = str(model.seen[-1][-1].content)
     assert refusal.startswith("No searches left: all 2 are used")
     assert "You have 2 web searches" in str(model.seen[0][0].content)
+
+
+def _read(url: str = "http://a") -> object:
+    return call("fetch_page", url=url)
+
+
+async def test_a_deep_researcher_reads_pages_before_it_may_submit() -> None:
+    # Prod deep runs submitted from search snippets: 60 searches, 9 pages read.
+    # A submission before two reads is sent back, with why, and kept after.
+    model = ScriptedModel(
+        [
+            _search(),
+            _submit(
+                claims=[{"text": "thin", "cited_source_ids": [1]}], found_info=True
+            ),
+            _read("http://a"),
+            _read("http://b"),
+            _submit(
+                claims=[{"text": "read", "cited_source_ids": [1]}], found_info=True
+            ),
+        ]
+    )
+
+    finding = await research_one(
+        "sub q", model=model, backend=FakeSearchBackend(), max_iters=8, min_pages=2
+    )
+
+    refused = [m for m in model.seen[2] if getattr(m, "type", "") == "tool"]
+    assert "fetch_page" in refused[-1].content
+    assert finding.answer == "read"
+
+
+async def test_a_deep_researcher_that_found_nothing_is_not_held_back() -> None:
+    model = ScriptedModel([_search(), _submit(claims=[], found_info=False)])
+
+    finding = await research_one(
+        "sub q", model=model, backend=FakeSearchBackend(), max_iters=5, min_pages=2
+    )
+
+    assert finding.found_info is False
+    assert len(model.seen) == 2
+
+
+async def test_a_quick_researcher_has_no_reading_floor() -> None:
+    model = ScriptedModel(
+        [_submit(claims=[{"text": "ok", "cited_source_ids": []}], found_info=True)]
+    )
+
+    finding = await research_one(
+        "sub q", model=model, backend=FakeSearchBackend(), max_iters=5
+    )
+
+    assert finding.answer == "ok"

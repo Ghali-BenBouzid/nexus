@@ -1,23 +1,23 @@
 {
   "supervisor": {
-    "version": 11,
-    "sha256": "450df7d3d23caf8e4ee66386bcfa19d0be64dc31602001791d1d994bfe372683"
+    "version": 13,
+    "sha256": "df5b9a966bc82e1c9eb349895d619334787b746d56deba041f7b755611978adc"
   },
   "planner": {
     "version": 6,
     "sha256": "e229a8032f5fbff4648cee47deccf6f506d5395adf3b84d6b552821db629756d"
   },
   "deep_lead": {
-    "version": 5,
-    "sha256": "8334ad6d58024149cea0ae9b7f0bd8dd1bdb77001bb5246e03a1ff8468498b31"
+    "version": 6,
+    "sha256": "4e93cddd3bf75a3bf17ce2a559d075bd419e8a2ed8e7c32d4c8613b8893261a8"
   },
   "researcher": {
     "version": 7,
     "sha256": "b13cdf6a3c6ad22f786ce851ab06be0a4d6e90780045922b04a18f2a0b338b25"
   },
   "report": {
-    "version": 1,
-    "sha256": "cf5a3546d3381107747d92e8ae26ea50e96a2c897b67358a25c468812069819d"
+    "version": 2,
+    "sha256": "023430158330b009802e463a4a89b730b5ba0e34b40e1a77fce9d3450a714584"
   },
   "fact_check": {
     "version": 5,

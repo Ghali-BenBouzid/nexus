@@ -56,9 +56,11 @@ async def test_the_feed_replays_what_was_missed_then_follows_along(
     assert [frame["type"] for frame in frames] == ["thinking", "token", "done"]
     assert frames[0]["message"] == "already happened"
     assert frames[1]["message"] == "Hi"
-    # The replayed event carries the durable cursor; a live one has none to carry.
+    # The replayed event carries the durable cursor and when it happened, since
+    # it arrives with everything else that was missed; a live one needs neither.
     assert frames[0]["id"] > 0
-    assert "id" not in frames[1]
+    assert frames[0]["at"]
+    assert "id" not in frames[1] and "at" not in frames[1]
 
 
 async def test_the_feed_resumes_from_where_a_client_left_off(

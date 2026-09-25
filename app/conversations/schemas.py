@@ -8,7 +8,7 @@ from app.agents.schemas import Source
 from app.documents.schemas import DocumentSummary
 from app.models.conversation import MessageRole
 from app.models.query import QueryStatus
-from app.research.schemas import ArtifactSummary
+from app.research.schemas import ArtifactSummary, QueryEventResponse
 from app.schemas.base import BaseSchema
 
 # What the user switched the composer to for this message. Never an order: it
@@ -28,11 +28,20 @@ class ConversationCreate(BaseModel):
     mode: Mode = "answer"
 
 
+class Answered(BaseModel):
+    """One question of a panel, with what the user chose; None if skipped."""
+
+    question: str
+    answer: str | None = None
+
+
 class MessageCreate(BaseModel):
     content: str
     # Files uploaded into this conversation and sent with this message.
     document_ids: list[int] = []
     mode: Mode = "answer"
+    # Sent from the question panel: the message's text is written from these.
+    answers: list[Answered] | None = None
 
 
 class ConversationSummary(BaseSchema):
@@ -51,10 +60,18 @@ class MessageQuery(BaseModel):
     title: str | None = None  # the artifact's title, on a run that makes one
     report: str | None
     reply: str | None = None  # the supervisor's answer, on a chat turn
+    reply_parts: list[str] | None = None  # the same, in the parts it was written in
     error: str | None
     stopped: bool = False  # failed because the user stopped it, not broken
     sources: list[Source]
     gaps: list[str]
+    # The turn's feed and how long it took, so a reloaded thread shows the work
+    # between the parts of the reply the way it did live.
+    events: list[QueryEventResponse] = []
+    created_at: datetime | None = None
+    completed_at: datetime | None = None
+    # The composer mode the turn was sent in; None on turns older than it.
+    mode: str | None = None
 
 
 class MessageResponse(BaseModel):
@@ -67,6 +84,8 @@ class MessageResponse(BaseModel):
     documents: list[DocumentSummary] = []
     # Present on an assistant message that carries a research run.
     query: MessageQuery | None = None
+    # The question panel: asked, on an assistant message; answered, on a user's.
+    ask: list[dict] | None = None
 
 
 class ConversationDetail(BaseSchema):

@@ -1,7 +1,9 @@
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
+import { liveSources, rounds, timeline } from "../lib/progress";
+import { stored } from "../lib/uploads";
 import type { Doc, Turn } from "../types";
 import { Markdown } from "./Markdown";
 import { Activity } from "./Activity";
@@ -42,9 +44,31 @@ export function TurnCard({
   const answer = turn.reply ?? turn.streamed ?? "";
   const streaming = running && !turn.reply && !!turn.streamed;
   const sources = turn.result?.sources ?? [];
-  const isEmpty = turn.status === "complete" && !answer.trim() && sources.length === 0;
+  // A turn that only asked has no words of its own, and is not empty: its
+  // questions are in the panel, then in the answer card below it.
+  const isEmpty =
+    turn.status === "complete" && !answer.trim() && sources.length === 0 && !turn.ask?.length;
   const isFailed = !turn.stopped && (turn.status === "failed" || turn.outcome === "failed");
   const hasActivity = turn.events.length > 0;
+  // Running a message again sends its words again. A message that was only a
+  // file has none, and one stopped before it was sent lost its files with it:
+  // offering to run either again only led to "attach the document first".
+  const canRerun = !turn.unsent && !!turn.query.trim();
+
+  // The reply as it was written: a round of work, the part of the reply that
+  // came after it, and so on down to the answer. The stored parts line up with
+  // the rounds once the turn is done, and stand in for what each round said. A
+  // turn that failed has no parts, only what it said before it failed; one
+  // whose parts do not line up reads as a single round and a single reply.
+  let rs = rounds(turn.events);
+  const aligned = !turn.parts || turn.parts.length === rs.length;
+  if (!aligned) rs = [{ events: turn.events, said: null, at: null }];
+  const parts = aligned ? turn.parts : undefined;
+  // Until the reply is stored, it cites by the numbers it was written with,
+  // and the sources those numbers name have been arriving along with it. A
+  // turn that failed never got its stored reply, so it keeps them too.
+  const cites = turn.parts || turn.reply ? sources : liveSources(turn.events);
+  const lastRound = rs.length - 1;
 
   // Clicking a [n] in the answer opens the source list, highlights that source
   // and moves the view to it. The seq is what lets the same citation be clicked
@@ -73,7 +97,7 @@ export function TurnCard({
                 bytes={doc.sizeBytes}
                 state={doc.state}
                 error={doc.error}
-                onOpen={onPreview && !doc.state ? () => onPreview(doc) : undefined}
+                onOpen={onPreview && stored(doc) ? () => onPreview(doc) : undefined}
               />
             ))}
           </div>
@@ -81,23 +105,63 @@ export function TurnCard({
       )}
       {/* A message that was only a file has no words to put in a bubble: the
           file above is the whole message, the way it is anywhere else. */}
-      {turn.query.trim() && (
+      {/* Answers from the question panel read as what they are: each question
+          and what was chosen, not the plain text the supervisor was sent. */}
+      {turn.answers?.length ? (
         <div className="msg-row user">
-          <div className="bubble-user">{turn.query}</div>
+          <dl className="bubble-answers">
+            {turn.answers.map((pair, i) => (
+              <div className="ba-pair" key={i}>
+                <dt>{pair.question}</dt>
+                <dd className={pair.answer == null ? "skipped" : undefined}>
+                  {pair.answer ?? t.ask.skipped}
+                </dd>
+              </div>
+            ))}
+          </dl>
         </div>
+      ) : (
+        turn.query.trim() && (
+          <div className="msg-row user">
+            <div className="bubble-user">{turn.query}</div>
+          </div>
+        )
       )}
 
       <div className="msg-row assistant">
         <div className="assistant-reply">
-          {/* The live feed stays above the answer once it lands, so the work is
-              still inspectable after the fact. */}
-          {(running || hasActivity) && <Activity turn={turn} now={now} />}
-
-          {answer.trim() && (
-            <div className={"reply-text" + (streaming ? " streaming" : "")}>
-              <Markdown text={answer} onCite={onCite} sources={sources} />
-            </div>
-          )}
+          {/* Each round of work stays above the words that followed it once
+              they land, so the work is still inspectable after the fact. */}
+          {rs.map((round, i) => {
+            const last = i === lastRound;
+            const text = last ? (parts?.[i] ?? answer) : (parts?.[i] ?? round.said ?? "");
+            // With one round, the row is there from the start, as the sign the
+            // turn is working. Between parts, a round shows once it has done
+            // something: words straight after words need nothing between them.
+            const chip =
+              rs.length === 1
+                ? running || hasActivity
+                : timeline(round.events, "done").some((s) => s.kind !== "understanding");
+            return (
+              <Fragment key={i}>
+                {chip && (
+                  <Activity
+                    turn={turn}
+                    events={round.events}
+                    from={i === 0 ? turn.startedAt : (rs[i - 1].at ?? turn.startedAt)}
+                    to={last ? null : round.at}
+                    last={last}
+                    now={now}
+                  />
+                )}
+                {text.trim() && (
+                  <div className={"reply-text" + (last && streaming ? " streaming" : "")}>
+                    <Markdown text={text} onCite={onCite} sources={cites} />
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
 
           {sources.length > 0 && (
             <div className="reply-sources" onClick={(e) => e.stopPropagation()}>
@@ -125,26 +189,32 @@ export function TurnCard({
           {isEmpty && (
             <div className="reply-note">
               {t.turn.emptyNote}
-              <button className="linkish" onClick={() => onRerun(turn.query)}>
-                {t.turn.tryRewording}
-              </button>
+              {canRerun && (
+                <button className="linkish" onClick={() => onRerun(turn.query)}>
+                  {t.turn.tryRewording}
+                </button>
+              )}
             </div>
           )}
           {turn.stopped && (
             <div className="reply-note">
               {t.turn.stoppedNote}
-              <button className="linkish" onClick={() => onRerun(turn.query)}>
-                {t.turn.rerun}
-              </button>
+              {canRerun && (
+                <button className="linkish" onClick={() => onRerun(turn.query)}>
+                  {t.turn.rerun}
+                </button>
+              )}
             </div>
           )}
           {isFailed && (
             <div className="reply-error">
               <div className="re-title">{t.turn.runFailed}</div>
               <div className="re-msg">{turn.error || t.turn.defaultError}</div>
-              <button className="linkish" onClick={() => onRerun(turn.query)}>
-                {t.turn.tryAgain}
-              </button>
+              {canRerun && (
+                <button className="linkish" onClick={() => onRerun(turn.query)}>
+                  {t.turn.tryAgain}
+                </button>
+              )}
             </div>
           )}
         </div>

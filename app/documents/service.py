@@ -1,20 +1,28 @@
-"""Uploading a document: read it, turn it into text, keep both.
+"""Uploading a document: keep the file, then turn it into text.
 
 The text goes in the database (the agents read it), the original file goes in the
-bucket (the interface shows it). Everything that can go wrong for a reason the
-user can act on, an unreadable file, one too large, too many in a conversation,
-raises ``UploadError`` with a message meant to be shown as it is.
+bucket (the interface shows it). The upload only checks and stores the file; a
+job reads it (``read_document``), because reading a scan takes long enough that
+the user reloads the page, and a read held in the upload's request died with it.
+
+Everything that can go wrong for a reason the user can act on, an unreadable
+file, one too large, too many in a conversation, is worded to be shown as it is:
+refused at once with ``UploadError``, or found while reading and kept on the row.
 """
 
 import asyncio
+import logging
 
 from fastapi import UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.db import session as db_session
 from app.documents import repository, storage
-from app.documents.parser import ParseError, parse
-from app.models.document import Document
+from app.documents.parser import ParseError, check_type, parse
+from app.models.document import Document, DocumentStatus
+
+logger = logging.getLogger(__name__)
 
 _CHUNK = 1024 * 1024
 
@@ -61,15 +69,12 @@ async def upload(
         )
 
     filename = (upload_file.filename or "document").strip()
-    data = await _read(upload_file)
     try:
-        # Off the event loop: reading a PDF is seconds of CPU, and run inline it
-        # froze every other request on this server until it was done.
-        parsed = await asyncio.to_thread(parse, filename, data)
+        # The one refusal that needs no reading, so it is still instant.
+        check_type(filename)
     except ParseError as exc:
         raise UploadError(str(exc)) from exc
-
-    text = parsed.text[: settings.max_document_chars]
+    data = await _read(upload_file)
 
     media_type = upload_file.content_type or "application/octet-stream"
     key = storage.key_for(user_id, filename)
@@ -84,9 +89,8 @@ async def upload(
         filename=filename,
         media_type=media_type,
         size_bytes=len(data),
-        pages=parsed.pages,
-        text=text,
-        ocr=parsed.ocr,
+        text="",
+        status=DocumentStatus.reading,
         storage_key=key,
     )
     try:
@@ -95,6 +99,38 @@ async def upload(
         # Nothing points at the object any more, so leave nothing behind.
         await _forget(key)
         raise
+
+
+async def read_document(document_id: int) -> None:
+    """The job that turns a stored file into text. It answers to nobody's
+    request, so a reload, or a stop, while it reads loses nothing: the row says
+    where it got to, and the turn the file came with waits for it."""
+    async with db_session.SessionLocal() as db:
+        document = await db.get(Document, document_id)
+        # Removed before its turn came, or read already.
+        if document is None or document.status != DocumentStatus.reading:
+            return
+        try:
+            data = await storage.get(document.storage_key or "")
+            # Off the event loop: reading a PDF is seconds of CPU, and run
+            # inline it froze every other request on this process.
+            parsed = await asyncio.to_thread(parse, document.filename, data)
+        except ParseError as exc:
+            await repository.finish_reading(db, document_id, error=str(exc))
+            return
+        except Exception:
+            logger.exception("reading document %s failed", document_id)
+            await repository.finish_reading(
+                db, document_id, error=f"{document.filename} could not be read."
+            )
+            return
+        await repository.finish_reading(
+            db,
+            document_id,
+            text=parsed.text[: settings.max_document_chars],
+            pages=parsed.pages,
+            ocr=parsed.ocr,
+        )
 
 
 async def delete(db: AsyncSession, document: Document) -> None:

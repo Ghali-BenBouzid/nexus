@@ -1,8 +1,10 @@
 import enum
 import uuid
 from datetime import datetime
+from typing import Any
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Text, Uuid, func
+from sqlalchemy import JSON, DateTime, Enum, ForeignKey, Text, Uuid, func
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
@@ -59,6 +61,12 @@ class Message(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False, default="")
     query_id: Mapped[int | None] = mapped_column(
         ForeignKey("queries.id", ondelete="SET NULL"), nullable=True
+    )
+    # A question panel. On an assistant message, the questions its turn asked
+    # (question, options); on the user's answer, the questions with what was
+    # chosen (question, answer, None when skipped). Plain JSON in the tests.
+    ask: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

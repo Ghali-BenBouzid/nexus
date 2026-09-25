@@ -8,6 +8,7 @@ written, and a tool it has no business having is not offered.
 """
 
 import pytest
+from langchain_core.messages import AIMessage
 
 from app.agents import supervisor
 from app.agents.schemas import AgentEvent, Turn
@@ -160,8 +161,8 @@ async def test_a_deep_run_can_only_be_started_from_deep_mode() -> None:
 async def test_a_background_run_is_started_once_and_not_waited_for() -> None:
     started: list[tuple[str, str, str]] = []
 
-    async def start(question: str, title: str, goal: str) -> str:
-        started.append((question, title, goal))
+    async def start(question: str, title: str, brief: str) -> str:
+        started.append((question, title, brief))
         return "Deep research has started."
 
     model = ScriptedModel(
@@ -170,7 +171,7 @@ async def test_a_background_run_is_started_once_and_not_waited_for() -> None:
                 "deep_research",
                 question="all about X",
                 title="About X",
-                goal="an overview",
+                brief={"goal": "an overview", "shape": "a primer"},
             ),
             says("I have started a deep run on that."),
         ]
@@ -178,7 +179,9 @@ async def test_a_background_run_is_started_once_and_not_waited_for() -> None:
 
     answer = await _respond(model, start_deep_research=start, mode="deep")
 
-    assert started == [("all about X", "About X", "an overview")]
+    [(question, title, brief)] = started
+    assert (question, title) == ("all about X", "About X")
+    assert "- Goal: an overview" in brief and "- Shape of the report: a primer" in brief
     assert answer.text == "I have started a deep run on that."
 
 
@@ -306,6 +309,45 @@ def _titled_by(titler: ScriptedModel, monkeypatch: pytest.MonkeyPatch) -> None:
     )
 
 
+class PerQueryBackend(FakeBackend):
+    """A different page for every query, so each search adds a source."""
+
+    async def search(self, query: str, max_results: int) -> list[SearchHit]:
+        self.searches.append(query)
+        return [SearchHit(title=query, url=f"http://{query}", content=query)]
+
+
+async def test_what_it_says_before_a_tool_call_is_kept_as_part_of_the_reply() -> None:
+    """Words written alongside a tool call ("x first, now z") are the reply
+    being written, not a draft of it. They are marked where they end, so the
+    chat keeps them in place, and they stay in the reply, numbered with the
+    rest of it: a source first cited there is [1] all the way down."""
+    preamble = AIMessage(
+        "x first.[2]",
+        tool_calls=[{"name": "web_search", "args": {"query": "z"}, "id": "z"}],
+    )
+    model = ScriptedModel([_search("y"), _search("x"), preamble, says("Then y.[1]")])
+    seen: list[AgentEvent] = []
+
+    answer = await _respond(model, backend=PerQueryBackend(), emit=_record(seen))
+
+    assert [e.message for e in seen if e.type == "said"] == ["x first.[2]"]
+    # every number reaches the browser before the text that cites it, under
+    # the number the text uses while it is still being written
+    live = {
+        e.data["first"] + i: source["url"]
+        for e in seen
+        if e.type == "sources"
+        for i, source in enumerate(e.data["sources"])
+    }
+    assert live == {1: "http://y", 2: "http://x", 3: "http://z"}
+    types = [e.type for e in seen]
+    assert types.index("sources") < types.index("said")
+    assert answer.parts == ["x first.[1]", "Then y.[2]"]
+    assert answer.text == "x first.[1]\n\nThen y.[2]"
+    assert [s.url for s in answer.sources] == ["http://x", "http://y"]
+
+
 def _joined(events: list[AgentEvent], type_: str) -> str:
     return "".join(e.message for e in events if e.type == type_).strip()
 
@@ -373,3 +415,22 @@ async def test_a_change_of_mind_is_passed_to_the_running_run() -> None:
     # Steering counts as acting in deep mode: no "you started nothing" check.
     assert len(model.seen) == 2
     assert answer.text.startswith("Done")
+
+
+def test_a_brief_reads_as_labelled_lines_and_skips_what_is_empty() -> None:
+    brief = supervisor.DeepBrief(
+        goal="choose a specialisation",
+        focus=["frameworks recruiters ask for", "sectors hiring"],
+        decided=["broad first look, chosen for them"],
+    )
+
+    text = supervisor.render_brief(brief)
+
+    assert text.splitlines()[0].startswith("The brief")
+    assert "- Goal: choose a specialisation" in text
+    assert (
+        "- Focus, most important first: frameworks recruiters ask for; sectors hiring"
+        in text
+    )
+    assert "- Left to you" in text
+    assert "Reader" not in text and "Out of scope" not in text

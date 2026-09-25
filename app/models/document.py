@@ -1,9 +1,29 @@
+import enum
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import (
+    Boolean,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.base import Base
+
+
+class DocumentStatus(enum.StrEnum):
+    """Where a file is in being turned into text. The upload only stores it; a
+    job reads it, because reading a scan takes long enough that a user reloads
+    the page, and a read that lived in the upload's request died with it."""
+
+    reading = "reading"
+    ready = "ready"
+    failed = "failed"
 
 
 class Document(Base):
@@ -36,7 +56,16 @@ class Document(Base):
     media_type: Mapped[str] = mapped_column(String(100), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     pages: Mapped[int | None] = mapped_column(Integer, nullable=True)  # PDFs only
+    # Empty until the file has been read.
     text: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[DocumentStatus] = mapped_column(
+        Enum(DocumentStatus, name="document_status"),
+        nullable=False,
+        default=DocumentStatus.ready,
+        server_default=DocumentStatus.ready.value,
+    )
+    # Why the file could not be read, worded for the user.
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
     # The text was read off pictures of pages, so it carries OCR mistakes.
     ocr: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     # Where the original file sits in the bucket. Null once storage is unavailable

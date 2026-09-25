@@ -50,19 +50,25 @@ def suffix_of(filename: str) -> str:
     return f".{suffix.lower()}" if dot else ""
 
 
+def check_type(filename: str) -> None:
+    """Refuse a file type there is no extractor for. Needs only the name, so an
+    upload can be refused at once rather than after it has been stored."""
+    if suffix_of(filename) not in SUPPORTED:
+        supported = ", ".join(sorted(SUPPORTED))
+        raise ParseError(
+            f"{filename} is not a file type Nexus can read. Supported: {supported}."
+        )
+
+
 def parse(filename: str, data: bytes) -> Parsed:
+    check_type(filename)
     suffix = suffix_of(filename)
     if suffix == ".pdf":
         parsed = _pdf(data)
     elif suffix == ".docx":
         parsed = _docx(data)
-    elif suffix in TEXT_SUFFIXES:
-        parsed = _plain(data)
     else:
-        supported = ", ".join(sorted(SUPPORTED))
-        raise ParseError(
-            f"{filename} is not a file type Nexus can read. Supported: {supported}."
-        )
+        parsed = _plain(data)
     if len(parsed.text.strip()) < _MIN_CHARS:
         raise ParseError(f"No text could be read from {filename}.")
     return parsed
