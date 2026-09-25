@@ -323,6 +323,8 @@ const en = {
   // The browser notification when a report finishes in a tab nobody is looking at.
   notify: {
     title: "Your report is ready",
+    // The tab's title while finished reports wait for the user to come back.
+    tab: (n: number) => (n === 1 ? "Report ready" : `${n} reports ready`),
   },
   tour: {
     title: "A quick tour of Nexus",
@@ -727,6 +729,7 @@ const fr: Dict = {
   },
   notify: {
     title: "Votre rapport est prêt",
+    tab: (n: number) => (n === 1 ? "Rapport prêt" : `${n} rapports prêts`),
   },
   tour: {
     title: "Nexus en bref",

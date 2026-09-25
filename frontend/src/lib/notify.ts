@@ -13,7 +13,28 @@ export function askToAnnounce(): void {
   }
 }
 
+// Reports that finished while the user was in another tab. The tab itself
+// says so, in its title and with a dot on its icon, until they come back:
+// the one place a user glances at among a row of tabs.
+let unseen = 0;
+
+function badgeTab(): void {
+  unseen += 1;
+  document.title = `● ${t.notify.tab(unseen)} · Nexus`;
+  document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.setAttribute("href", "/favicon-ready.svg");
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden || unseen === 0) return;
+    unseen = 0;
+    document.title = t.docTitle;
+    document.querySelector<HTMLLinkElement>('link[rel="icon"]')?.setAttribute("href", "/favicon.svg");
+  });
+}
+
 export function announceReady(title: string, open: () => void): void {
+  if (document.hidden) badgeTab();
   // In another tab or window: a system notification, which also carries the
   // system's own sound. Clicking it brings the user straight to the report.
   if (document.hidden && supported() && Notification.permission === "granted") {
