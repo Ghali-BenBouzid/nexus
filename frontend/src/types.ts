@@ -81,6 +81,9 @@ export type Turn = {
   query: string;
   // The files sent with this message, shown on the bubble that carries them.
   attachments?: Doc[];
+  // Stopped before the message reached the server: the files it carried were
+  // dropped with it, so there is nothing left to run again.
+  unsent?: boolean;
   title?: string; // the supervisor-given report/artifact title
   status: Status;
   events: TimelineEvent[];
@@ -133,11 +136,13 @@ export type Doc = {
   chars: number;
   truncated: boolean;
   ocr: boolean;
-  // Client-side only, and only while a file is on its way to the server: the
-  // tile exists the moment the file is picked and says how it is going, rather
-  // than appearing minutes later when the parse finishes. A document the server
-  // has confirmed carries no state at all. Placeholders hold a negative id, so
+  // How far the file has got. "uploading" is client-side only, while its bytes
+  // go up: the tile exists the moment the file is picked rather than appearing
+  // when it lands. "reading" is the server's own job turning it into text, and
+  // outlives the page, so it comes back on a reload. "failed" is either a
+  // refused upload or a file that could not be read, with the reason in error.
+  // A read file carries no state at all. Placeholders hold a negative id, so
   // nothing mistakes one for something that can be fetched or deleted.
-  state?: "uploading" | "failed";
+  state?: "uploading" | "reading" | "failed";
   error?: string;
 };

@@ -33,7 +33,7 @@ export function FileTile({
   // How far the file has got. A tile appears the instant a file is picked, so
   // it has to be able to say "still reading this" and "this one did not work"
   // as well as it says how big the file is.
-  state?: "uploading" | "failed";
+  state?: "uploading" | "reading" | "failed";
   error?: string;
   // Anything already known about the file (pages, OCR, truncation). Falls back
   // to the size when there is nothing more interesting to say.
@@ -53,12 +53,16 @@ export function FileTile({
       <div className="ftile-foot">
         <span className="ftile-name">{name}</span>
         <span className="ftile-meta">
-          {state === "uploading" && <span className="spin" aria-hidden="true" />}
+          {(state === "uploading" || state === "reading") && (
+            <span className="spin" aria-hidden="true" />
+          )}
           {state === "uploading"
-            ? t.uploads.reading
-            : state === "failed"
-              ? t.uploads.failedFile
-              : (meta ?? (bytes != null ? kb(bytes) : ""))}
+            ? t.uploads.uploading
+            : state === "reading"
+              ? t.uploads.reading
+              : state === "failed"
+                ? t.uploads.failedFile
+                : (meta ?? (bytes != null ? kb(bytes) : ""))}
         </span>
       </div>
       {onOpen && (

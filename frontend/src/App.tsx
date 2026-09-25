@@ -43,6 +43,7 @@ import { initFluidBackground, type FluidHandle } from "./lib/fluidBackground";
 import { isLive, LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/research";
 import { markTipSeen, tipSeen, tourSeen, type Tip as TipDef, type TipId } from "./lib/tour";
 import { isUnread, loadSeen, markSeen, saveSeen, type Seen } from "./lib/unread";
+import { stored } from "./lib/uploads";
 import { DocPreview, type PreviewTarget } from "./components/DocPreview";
 import type {
   ConversationId,
@@ -75,7 +76,7 @@ function placeholder(file: File): Doc {
   };
 }
 
-const pending = (doc: Doc) => doc.id < 0;
+const pending = (doc: Doc) => !stored(doc);
 
 export default function App() {
   const [theme, setTheme] = useState<Theme>(
@@ -157,7 +158,7 @@ export default function App() {
   // here rather than in whichever of the four places it was opened from.
   const [preview, setPreview] = useState<PreviewTarget | null>(null);
   const previewDoc = (doc: Doc) =>
-    !doc.state && setPreview({ name: doc.filename, bytes: doc.sizeBytes, docId: doc.id });
+    stored(doc) && setPreview({ name: doc.filename, bytes: doc.sizeBytes, docId: doc.id });
   const previewFile = (file: File) => setPreview({ name: file.name, bytes: file.size, file });
   const [openOutputId, setOpenOutputId] = useState<number | null>(null);
   const [openOutputResult, setOpenOutputResult] = useState<Result | null>(null);
@@ -220,6 +221,10 @@ export default function App() {
   // timer runs (and a resumed poll, below, drives it to completion).
   const turnFromLoaded = (lt: LoadedTurn): Turn => {
     const inFlight = lt.status === "running" || lt.status === "pending";
+    // The turn's clock runs on performance.now(); the server's times are wall
+    // clock, so they are placed on it by their distance from now.
+    const onClock = (at: number | undefined) =>
+      at == null || Number.isNaN(at) ? performance.now() : performance.now() - (Date.now() - at);
     return {
       id: ++turnSeq.current,
       queryId: lt.queryId ?? undefined,
@@ -233,8 +238,8 @@ export default function App() {
       outcome: outcomeFor(lt.status, lt.reply ?? "", lt.result.sources.length),
       error: lt.error,
       stopped: lt.stopped,
-      startedAt: performance.now(),
-      endedAt: inFlight ? null : performance.now(),
+      startedAt: onClock(lt.askedAt),
+      endedAt: inFlight ? null : onClock(lt.endedAt),
     };
   };
 
@@ -484,6 +489,31 @@ export default function App() {
     lastView.current = view;
   }, [view]);
 
+  // A file is read by a job of its own, which takes a while for a scan and goes
+  // on whatever the page does. While one is being read, its tiles are brought
+  // up to date from the server, in the panel and on the message it came with.
+  const readingIds = [...documents, ...turns.flatMap((turn) => turn.attachments ?? [])]
+    .filter((doc) => doc.state === "reading")
+    .map((doc) => doc.id)
+    .join(",");
+  useEffect(() => {
+    if (!readingIds || activeConversationId == null) return;
+    const conversationId = activeConversationId;
+    const id = setInterval(async () => {
+      const latest = new Map((await listDocuments(conversationId)).map((doc) => [doc.id, doc]));
+      const fresh = (doc: Doc) => (doc.state === "reading" && latest.get(doc.id)) || doc;
+      setDocuments((docs) => docs.map(fresh));
+      setTurns((prev) =>
+        prev.map((turn) =>
+          turn.attachments?.some((doc) => doc.state === "reading")
+            ? { ...turn, attachments: turn.attachments.map(fresh) }
+            : turn,
+        ),
+      );
+    }, 1500);
+    return () => clearInterval(id);
+  }, [readingIds, activeConversationId]);
+
   // Update only one turn; turns run independently and never clobber each other.
   const patchTurn = (id: number, fn: (t: Turn) => Turn) =>
     setTurns((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
@@ -669,7 +699,7 @@ export default function App() {
         if (cancelled.current.has(id)) {
           const dropped = new Set([...holding, ...attached].map((doc) => doc.id));
           setDocuments((docs) => docs.filter((doc) => !dropped.has(doc.id)));
-          patchTurn(id, (t) => ({ ...t, attachments: [] }));
+          patchTurn(id, (t) => ({ ...t, attachments: [], unsent: true }));
           attached.forEach((doc) => deleteDocument(doc.id).catch(() => {}));
           return;
         }

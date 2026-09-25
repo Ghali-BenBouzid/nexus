@@ -315,11 +315,15 @@ def _bucket(monkeypatch):
     async def put(key: str, data: bytes, media_type: str) -> None:
         files[key] = data
 
+    async def get(key: str) -> bytes:
+        return files[key]
+
     async def delete(key: str) -> None:
         files.pop(key, None)
 
     monkeypatch.setattr(storage, "available", lambda: True)
     monkeypatch.setattr(storage, "put", put)
+    monkeypatch.setattr(storage, "get", get)
     monkeypatch.setattr(storage, "delete", delete)
     return files
 

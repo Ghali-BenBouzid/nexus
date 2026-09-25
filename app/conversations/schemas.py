@@ -55,6 +55,8 @@ class MessageQuery(BaseModel):
     stopped: bool = False  # failed because the user stopped it, not broken
     sources: list[Source]
     gaps: list[str]
+    # When it ended, so a reopened thread says how long it took.
+    completed_at: datetime | None = None
 
 
 class MessageResponse(BaseModel):

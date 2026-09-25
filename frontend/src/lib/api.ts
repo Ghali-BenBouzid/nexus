@@ -288,6 +288,7 @@ type ConvMessageQuery = {
   stopped?: boolean;
   sources: Source[];
   gaps: string[];
+  completed_at?: string | null;
 };
 
 type BackendOutput = {
@@ -334,6 +335,8 @@ type BackendDoc = {
   chars: number;
   truncated: boolean;
   ocr: boolean;
+  status: "reading" | "ready" | "failed";
+  error?: string | null;
 };
 
 function toDoc(raw: BackendDoc): Doc {
@@ -347,6 +350,8 @@ function toDoc(raw: BackendDoc): Doc {
     chars: raw.chars,
     truncated: raw.truncated,
     ocr: raw.ocr,
+    ...(raw.status === "ready" ? {} : { state: raw.status }),
+    ...(raw.error ? { error: raw.error } : {}),
   };
 }
 
@@ -638,6 +643,10 @@ export type LoadedTurn = {
   stopped?: boolean; // the user stopped it: not shown as an error
   result: Result;
   reply?: string; // the answer, which is what a turn produces
+  // When it was asked and when it ended (ms since the epoch), so a reloaded
+  // turn's clock carries on from where it was rather than restarting at zero.
+  askedAt?: number;
+  endedAt?: number;
 };
 export type LoadedConversation = {
   id: ConversationId;
@@ -671,10 +680,12 @@ export function turnsFrom(messages: ConvMessage[]): LoadedTurn[] {
   const turns: LoadedTurn[] = [];
   let prompt = "";
   let attached: Doc[] = [];
+  let askedAt: number | undefined;
   for (const m of detail.messages) {
     if (m.role === "user") {
       prompt = m.content;
       attached = (m.documents ?? []).map(toDoc);
+      askedAt = Date.parse(m.created_at);
       continue;
     }
     // A turn with no run behind it (an older thread) still said something.
@@ -700,6 +711,8 @@ export function turnsFrom(messages: ConvMessage[]): LoadedTurn[] {
       error: q?.error ?? null,
       stopped: q?.stopped,
       reply: q?.reply ?? m.content,
+      askedAt,
+      endedAt: q?.completed_at ? Date.parse(q.completed_at) : undefined,
       result: {
         report: "",
         sources: q?.sources ?? [],
@@ -735,8 +748,19 @@ export async function listDocuments(conversationId: ConversationId): Promise<Doc
   return ((await res.json()) as BackendDoc[]).map(toDoc);
 }
 
-// Upload one file into a conversation. Throws with the server's own reason (too
-// large, unreadable, too many), which is written to be shown as it is.
+// Files whose bytes are still going up. Leaving the page drops them, and the
+// message waiting on them, so the browser asks first. It is only the transfer:
+// once the server has a file, it reads it whatever the page does.
+let sending = 0;
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeunload", (e) => {
+    if (sending > 0) e.preventDefault();
+  });
+}
+
+// Upload one file into a conversation. It answers once the file is stored, and
+// the server reads it after (the doc comes back "reading"). Throws with the
+// server's own reason (too large, wrong type, too many), written to be shown.
 export async function uploadDocument(
   conversationId: ConversationId,
   file: File,
@@ -745,14 +769,19 @@ export async function uploadDocument(
   const token = await ensureToken();
   const body = new FormData();
   body.append("file", file);
-  const res = await fetch(`${BASE}/conversations/${conversationId}/documents`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-    body,
-    signal,
-  });
-  if (!res.ok) throw new Error(await errorMessage(res, t.uploads.failed));
-  return toDoc((await res.json()) as BackendDoc);
+  sending++;
+  try {
+    const res = await fetch(`${BASE}/conversations/${conversationId}/documents`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body,
+      signal,
+    });
+    if (!res.ok) throw new Error(await errorMessage(res, t.uploads.failed));
+    return toDoc((await res.json()) as BackendDoc);
+  } finally {
+    sending--;
+  }
 }
 
 // The original file, as the user uploaded it. Fetched rather than linked: the

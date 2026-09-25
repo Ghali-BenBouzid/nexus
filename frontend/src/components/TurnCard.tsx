@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
+import { stored } from "../lib/uploads";
 import type { Doc, Turn } from "../types";
 import { Markdown } from "./Markdown";
 import { Activity } from "./Activity";
@@ -45,6 +46,10 @@ export function TurnCard({
   const isEmpty = turn.status === "complete" && !answer.trim() && sources.length === 0;
   const isFailed = !turn.stopped && (turn.status === "failed" || turn.outcome === "failed");
   const hasActivity = turn.events.length > 0;
+  // Running a message again sends its words again. A message that was only a
+  // file has none, and one stopped before it was sent lost its files with it:
+  // offering to run either again only led to "attach the document first".
+  const canRerun = !turn.unsent && !!turn.query.trim();
 
   // Clicking a [n] in the answer opens the source list, highlights that source
   // and moves the view to it. The seq is what lets the same citation be clicked
@@ -73,7 +78,7 @@ export function TurnCard({
                 bytes={doc.sizeBytes}
                 state={doc.state}
                 error={doc.error}
-                onOpen={onPreview && !doc.state ? () => onPreview(doc) : undefined}
+                onOpen={onPreview && stored(doc) ? () => onPreview(doc) : undefined}
               />
             ))}
           </div>
@@ -125,26 +130,32 @@ export function TurnCard({
           {isEmpty && (
             <div className="reply-note">
               {t.turn.emptyNote}
-              <button className="linkish" onClick={() => onRerun(turn.query)}>
-                {t.turn.tryRewording}
-              </button>
+              {canRerun && (
+                <button className="linkish" onClick={() => onRerun(turn.query)}>
+                  {t.turn.tryRewording}
+                </button>
+              )}
             </div>
           )}
           {turn.stopped && (
             <div className="reply-note">
               {t.turn.stoppedNote}
-              <button className="linkish" onClick={() => onRerun(turn.query)}>
-                {t.turn.rerun}
-              </button>
+              {canRerun && (
+                <button className="linkish" onClick={() => onRerun(turn.query)}>
+                  {t.turn.rerun}
+                </button>
+              )}
             </div>
           )}
           {isFailed && (
             <div className="reply-error">
               <div className="re-title">{t.turn.runFailed}</div>
               <div className="re-msg">{turn.error || t.turn.defaultError}</div>
-              <button className="linkish" onClick={() => onRerun(turn.query)}>
-                {t.turn.tryAgain}
-              </button>
+              {canRerun && (
+                <button className="linkish" onClick={() => onRerun(turn.query)}>
+                  {t.turn.tryAgain}
+                </button>
+              )}
             </div>
           )}
         </div>

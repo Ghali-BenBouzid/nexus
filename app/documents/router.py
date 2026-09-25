@@ -1,10 +1,18 @@
 from urllib.parse import quote
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Request, UploadFile
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    HTTPException,
+    Request,
+    UploadFile,
+)
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import jobs
 from app.auth.dependencies import get_current_user
 from app.conversations import repository as conversations
 from app.db.session import get_db
@@ -27,6 +35,8 @@ def summary(document: Document) -> DocumentSummary:
         chars=len(document.text),
         truncated=service.truncated(document),
         ocr=document.ocr,
+        status=document.status,
+        error=document.error,
         created_at=document.created_at,
     )
 
@@ -47,6 +57,7 @@ async def upload(
     conversation_id: UUID,
     file: UploadFile,
     request: Request,
+    background_tasks: BackgroundTasks,
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> DocumentSummary:
@@ -59,10 +70,14 @@ async def upload(
         )
     except service.UploadError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    # The user pressed Stop while it was being read: the browser gave up on it,
+    # The user pressed Stop while it was going up: the browser gave up on it,
     # so it must not turn up attached to the conversation anyway.
     if await request.is_disconnected():
         await service.delete(db, document)
+        return summary(document)
+    # Reading it is a job of its own: a reload while a long scan is read no
+    # longer takes the file, or the message waiting on it, down with the page.
+    await jobs.submit(background_tasks, service.read_document, document_id=document.id)
     return summary(document)
 
 
