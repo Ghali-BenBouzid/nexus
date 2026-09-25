@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
-import { UPLOAD_ACCEPT } from "../lib/uploads";
+import { stored, UPLOAD_ACCEPT } from "../lib/uploads";
 import { elapsed, when } from "../lib/when";
 import type { Doc, Output, Result } from "../types";
 import { Artifact } from "./Artifact";
@@ -34,7 +34,8 @@ const kb = (bytes: number) =>
     : `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 function docMeta(doc: Doc): string {
-  if (doc.state === "uploading") return t.uploads.reading;
+  if (doc.state === "uploading") return t.uploads.uploading;
+  if (doc.state === "reading") return t.uploads.reading;
   if (doc.state === "failed") return doc.error ?? t.uploads.failedFile;
   // Size and length, and nothing about how the text was got out. Whether a page
   // came back through OCR is our problem, not something to hand the reader.
@@ -207,7 +208,11 @@ export function OutputsPanel({
           {documents.map((doc) => (
             <div key={doc.id} className="upload-item" data-state={doc.state}>
               <span className="upload-ic">
-                {doc.state === "uploading" ? <span className="spin" /> : I.doc}
+                {doc.state === "uploading" || doc.state === "reading" ? (
+                  <span className="spin" />
+                ) : (
+                  I.doc
+                )}
               </span>
               {/* The name opens the file. Nothing to open until the server has
                   it, so a file on its way up is plain text. */}
@@ -215,16 +220,16 @@ export function OutputsPanel({
                 type="button"
                 className="upload-main"
                 onClick={() => onPreview(doc)}
-                disabled={!!doc.state}
+                disabled={!stored(doc)}
                 aria-label={t.preview.open(doc.filename)}
               >
                 <div className="upload-name">{doc.filename}</div>
                 <div className="upload-meta">{docMeta(doc)}</div>
               </button>
               <div className="upload-actions">
-                {/* There is nothing to check until the server has read the
-                    file, so the action waits rather than failing. */}
-                {!doc.state && (
+                {/* Nothing to check until the server has the file. One still
+                    being read can be asked about: the turn waits for it. */}
+                {stored(doc) && doc.state !== "failed" && (
                   <button
                     className="icon-btn"
                     onClick={() => onFactCheck(doc)}

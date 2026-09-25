@@ -1,8 +1,10 @@
-// Lightweight, framework-free i18n. The language is resolved once at module load
-// from the browser's default (French if the primary preference is French, English
-// otherwise) and never changes during a session, so components import the already
-// resolved `t` dictionary and re-render nothing. Backend-streamed agent text stays
-// in whatever language the API returns; this only covers the static UI.
+// Lightweight, framework-free i18n. Components import `t` and `lang`, which are
+// live bindings: switching language swaps them and tells the app to re-render,
+// so every `t.x` read at render picks up the new language. Nothing may copy a
+// string out of `t` at module load, or it stays in the old language. Switching
+// used to reload the page, which threw away everything not yet saved: files
+// attached but not sent, the draft, an upload on its way. Backend-streamed agent
+// text stays in whatever language the API returns; this only covers the static UI.
 
 export type Lang = "fr" | "en";
 
@@ -29,19 +31,7 @@ function detect(): Lang {
   return storedLang() ?? "en";
 }
 
-export const lang: Lang = detect();
-
-if (typeof document !== "undefined") document.documentElement.lang = lang;
-
-// Persist the choice and reload so the resolved-once dictionary is rebuilt.
-export function setLang(next: Lang): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, next);
-  } catch {
-    /* ignore */
-  }
-  if (typeof window !== "undefined") window.location.reload();
-}
+export let lang: Lang = detect();
 
 const en = {
   docTitle: "Nexus, answers you can check",
@@ -293,10 +283,13 @@ const en = {
     truncated: "shortened",
     pages: (n: number) => (n === 1 ? "1 page" : `${n} pages`),
     ready: (name: string) => `${name} is attached. Ask about it, or fact-check it.`,
-    // A file is read on the way in, and a long PDF takes a while. The tile says
+    // A file goes up, then is read, and a long PDF takes a while. The tile says
     // so from the first frame rather than sitting there looking finished.
+    uploading: "Uploading",
     reading: "Reading",
-    failedFile: "Not added",
+    // A refused upload, or a file that could not be read: the reason is on
+    // hover and in the Uploads list.
+    failedFile: "Failed",
     retry: "Try again",
     drop: "Drop to attach",
     dropHint: "PDF, Word or text",
@@ -707,8 +700,9 @@ const fr: Dict = {
     pages: (n: number) => (n === 1 ? "1 page" : `${n} pages`),
     ready: (name: string) =>
       `${name} est joint. Posez une question dessus, ou faites-le vérifier.`,
+    uploading: "Envoi",
     reading: "Lecture",
-    failedFile: "Non ajouté",
+    failedFile: "Échec",
     retry: "Réessayer",
     drop: "Déposez pour joindre",
     dropHint: "PDF, Word ou texte",
@@ -873,5 +867,34 @@ const fr: Dict = {
   },
 };
 
-export const t: Dict = lang === "fr" ? fr : en;
-if (typeof document !== "undefined") document.title = t.docTitle;
+export let t: Dict = lang === "fr" ? fr : en;
+
+function applyToDocument(): void {
+  if (typeof document === "undefined") return;
+  document.documentElement.lang = lang;
+  document.title = t.docTitle;
+}
+applyToDocument();
+
+const listeners = new Set<() => void>();
+
+// Called on every switch, so the app can re-render. Returns an unsubscribe.
+export function onLangChange(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
+// Persist the choice and switch in place, without a reload.
+export function setLang(next: Lang): void {
+  try {
+    localStorage.setItem(STORAGE_KEY, next);
+  } catch {
+    /* ignore */
+  }
+  lang = next;
+  t = next === "fr" ? fr : en;
+  applyToDocument();
+  listeners.forEach((listener) => listener());
+}

@@ -27,7 +27,7 @@ import {
   type LoadedTurn,
 } from "./lib/api";
 import { creditsLeft } from "./lib/credits";
-import { t } from "./lib/i18n";
+import { lang, onLangChange, t } from "./lib/i18n";
 import { outcomeFor } from "./lib/outcome";
 import { getRoute, inviteFromUrl, navigate, onPopState, type Route } from "./lib/router";
 import {
@@ -44,6 +44,7 @@ import { isLive, LIVE_MODE, runResearch, type ResearchCallbacks } from "./lib/re
 import { formatAnswers } from "./lib/ask";
 import { markTipSeen, tipSeen, tourSeen, type Tip as TipDef, type TipId } from "./lib/tour";
 import { isUnread, loadSeen, markSeen, saveSeen, type Seen } from "./lib/unread";
+import { stored } from "./lib/uploads";
 import { DocPreview, type PreviewTarget } from "./components/DocPreview";
 import type {
   Answered,
@@ -77,12 +78,16 @@ function placeholder(file: File): Doc {
   };
 }
 
-const pending = (doc: Doc) => doc.id < 0;
+const pending = (doc: Doc) => !stored(doc);
 
 export default function App() {
   const [theme, setTheme] = useState<Theme>(
     () => (document.documentElement.getAttribute("data-theme") as Theme) || "light",
   );
+  // Switching language swaps the dictionary in place; re-rendering from here is
+  // what makes every component read the new one.
+  const [, setShownLang] = useState(lang);
+  useEffect(() => onLangChange(() => setShownLang(lang)), []);
   // The URL is the source of truth for the view; a deep link or reload on
   // /chat/:id starts on the chat view and the conversation is loaded on mount.
   const [view, setView] = useState<View>(() => getRoute().view);
@@ -159,7 +164,7 @@ export default function App() {
   // here rather than in whichever of the four places it was opened from.
   const [preview, setPreview] = useState<PreviewTarget | null>(null);
   const previewDoc = (doc: Doc) =>
-    !doc.state && setPreview({ name: doc.filename, bytes: doc.sizeBytes, docId: doc.id });
+    stored(doc) && setPreview({ name: doc.filename, bytes: doc.sizeBytes, docId: doc.id });
   const previewFile = (file: File) => setPreview({ name: file.name, bytes: file.size, file });
   const [openOutputId, setOpenOutputId] = useState<number | null>(null);
   const [openOutputResult, setOpenOutputResult] = useState<Result | null>(null);
@@ -491,6 +496,31 @@ export default function App() {
     lastView.current = view;
   }, [view]);
 
+  // A file is read by a job of its own, which takes a while for a scan and goes
+  // on whatever the page does. While one is being read, its tiles are brought
+  // up to date from the server, in the panel and on the message it came with.
+  const readingIds = [...documents, ...turns.flatMap((turn) => turn.attachments ?? [])]
+    .filter((doc) => doc.state === "reading")
+    .map((doc) => doc.id)
+    .join(",");
+  useEffect(() => {
+    if (!readingIds || activeConversationId == null) return;
+    const conversationId = activeConversationId;
+    const id = setInterval(async () => {
+      const latest = new Map((await listDocuments(conversationId)).map((doc) => [doc.id, doc]));
+      const fresh = (doc: Doc) => (doc.state === "reading" && latest.get(doc.id)) || doc;
+      setDocuments((docs) => docs.map(fresh));
+      setTurns((prev) =>
+        prev.map((turn) =>
+          turn.attachments?.some((doc) => doc.state === "reading")
+            ? { ...turn, attachments: turn.attachments.map(fresh) }
+            : turn,
+        ),
+      );
+    }, 1500);
+    return () => clearInterval(id);
+  }, [readingIds, activeConversationId]);
+
   // Update only one turn; turns run independently and never clobber each other.
   const patchTurn = (id: number, fn: (t: Turn) => Turn) =>
     setTurns((prev) => prev.map((t) => (t.id === id ? fn(t) : t)));
@@ -684,7 +714,7 @@ export default function App() {
         if (cancelled.current.has(id)) {
           const dropped = new Set([...holding, ...attached].map((doc) => doc.id));
           setDocuments((docs) => docs.filter((doc) => !dropped.has(doc.id)));
-          patchTurn(id, (t) => ({ ...t, attachments: [] }));
+          patchTurn(id, (t) => ({ ...t, attachments: [], unsent: true }));
           attached.forEach((doc) => deleteDocument(doc.id).catch(() => {}));
           return;
         }

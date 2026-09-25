@@ -1,6 +1,6 @@
 import { Fragment, useRef } from "react";
 
-import { t } from "../lib/i18n";
+import { lang, t } from "../lib/i18n";
 import { PromptBar, type PromptBarHandle } from "./PromptBar";
 
 // ``note``: the one line an invited visitor gets under the bar, their credits or
@@ -35,7 +35,9 @@ export function Hero({
   return (
     <header className="hero">
       <div className="wrap">
-        <h1>
+        {/* Keyed on the language, so a switch replays the whole line. Without
+            it only the letters that changed replayed, leaving holes in words. */}
+        <h1 key={lang}>
           {words.map((word, wi) => (
             <Fragment key={wi}>
               <span className="hword">

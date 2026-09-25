@@ -1,9 +1,15 @@
+import asyncio
+
 import pytest
 from httpx import AsyncClient
 
+from app.conversations import service as conversations_service
 from app.core.config import settings
-from app.documents import storage
+from app.documents import service, storage
+from app.research.dependencies import get_model
+from main import app
 from tests.accounts import login_as
+from tests.agents.fakes import ScriptedModel, says
 from tests.documents.test_parser import _docx, _pdf
 from tests.research.test_research import _use_fake_pipeline
 
@@ -59,8 +65,15 @@ async def test_uploading_a_pdf_keeps_its_text_and_its_file(
     )
 
     assert response.status_code == 201, response.text
-    document = response.json()
+    # The upload answers as soon as the file is kept; a job reads it.
+    assert response.json()["status"] == "reading"
+    [document] = (
+        await client.get(
+            f"/conversations/{conversation_id}/documents", headers=auth_headers
+        )
+    ).json()
     assert document["filename"] == "heat-pumps.pdf"
+    assert document["status"] == "ready"
     assert document["pages"] == 2
     assert document["chars"] > 0
     assert not document["truncated"]
@@ -164,14 +177,42 @@ async def test_long_text_is_cut_and_says_so(
     monkeypatch.setattr(settings, "max_document_chars", 100)
     conversation_id = await _conversation(client, auth_headers)
 
-    response = await client.post(
+    await client.post(
         f"/conversations/{conversation_id}/documents",
         files=_upload("long.txt", b"word " * 500, "text/plain"),
         headers=auth_headers,
     )
 
-    assert response.json()["chars"] == 100
-    assert response.json()["truncated"]
+    [document] = (
+        await client.get(
+            f"/conversations/{conversation_id}/documents", headers=auth_headers
+        )
+    ).json()
+    assert document["chars"] == 100
+    assert document["truncated"]
+
+
+async def test_a_file_that_cannot_be_read_is_kept_and_says_why(
+    client: AsyncClient, auth_headers: dict[str, str], bucket: dict[str, bytes]
+) -> None:
+    """Reading happens after the upload has answered, so a damaged file is not
+    refused: it stays, marked failed, with the reason the tile shows."""
+    conversation_id = await _conversation(client, auth_headers)
+
+    response = await client.post(
+        f"/conversations/{conversation_id}/documents",
+        files=_upload("broken.pdf", b"not a pdf at all", "application/pdf"),
+        headers=auth_headers,
+    )
+
+    assert response.status_code == 201
+    [document] = (
+        await client.get(
+            f"/conversations/{conversation_id}/documents", headers=auth_headers
+        )
+    ).json()
+    assert document["status"] == "failed"
+    assert "could not be read" in document["error"]
 
 
 async def test_a_conversation_stops_accepting_documents_at_the_limit(
@@ -365,3 +406,85 @@ async def test_a_file_the_browser_gave_up_on_is_not_kept(
     )
     assert listed.json() == []
     assert bucket == {}
+
+
+async def test_a_message_sent_while_its_file_is_read_waits_for_it(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    bucket: dict[str, bytes],
+    monkeypatch,
+) -> None:
+    """The message goes as soon as its file is kept, so a reload cannot lose it.
+    The turn then waits for the reading, rather than answering as though no
+    file had been attached, and shows that it is reading it."""
+    conversation_id = await _conversation(client, auth_headers)
+    # Hold the reading back, the way a long scan does, and finish it later.
+    read_now = service.read_document
+    monkeypatch.setattr(service, "read_document", _never)
+    monkeypatch.setattr(conversations_service, "_READING_POLL_SECONDS", 0.01)
+    uploaded = await client.post(
+        f"/conversations/{conversation_id}/documents",
+        files=_upload("claims.pdf", _pdf(pages=1), "application/pdf"),
+        headers=auth_headers,
+    )
+    document_id = uploaded.json()["id"]
+    model = ScriptedModel([says("It says the sky is green.")])
+    app.dependency_overrides[get_model] = lambda: model
+
+    async def read_later() -> None:
+        await asyncio.sleep(0.1)
+        await read_now(document_id)
+
+    reading = asyncio.create_task(read_later())
+    sent = await client.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"content": "what does this say?", "document_ids": [document_id]},
+        headers=auth_headers,
+    )
+    await reading
+
+    assert sent.status_code == 200
+    # Inline, the turn ran in the request: it could only end after the read.
+    detail = (
+        await client.get(f"/conversations/{conversation_id}", headers=auth_headers)
+    ).json()
+    turn = detail["messages"][-1]["query"]
+    assert turn["status"] == "complete", turn
+    # The supervisor was handed the file, not an empty conversation.
+    assert "claims.pdf" in str(model.seen[0])
+    events = (
+        await client.get(
+            f"/research/query/{detail['messages'][-1]['query_id']}/events",
+            headers=auth_headers,
+        )
+    ).json()
+    assert any(e["type"] == "document_read" for e in events), events
+
+
+async def test_a_file_that_could_not_be_read_is_named_to_the_supervisor(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    bucket: dict[str, bytes],
+) -> None:
+    """Left out silently, a file that failed to read made the supervisor tell
+    the user nothing had been attached."""
+    conversation_id = await _conversation(client, auth_headers)
+    uploaded = await client.post(
+        f"/conversations/{conversation_id}/documents",
+        files=_upload("broken.pdf", b"not a pdf at all", "application/pdf"),
+        headers=auth_headers,
+    )
+    model = ScriptedModel([says("That file could not be read.")])
+    app.dependency_overrides[get_model] = lambda: model
+
+    await client.post(
+        f"/conversations/{conversation_id}/messages",
+        json={"content": "check it", "document_ids": [uploaded.json()["id"]]},
+        headers=auth_headers,
+    )
+
+    assert "could not be read: broken.pdf" in str(model.seen[0])
+
+
+async def _never(document_id: int) -> None:
+    pass
