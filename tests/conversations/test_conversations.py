@@ -72,6 +72,7 @@ class _ResearchingModel(ScriptedModel):
         elif not self.researched:
             self.researched = True
             reply = call("research", question="what about this")
+            reply.content = "Let me look into it."
         else:
             reply = says("Here is what the research found.")
         return ChatResult(generations=[ChatGeneration(message=reply)])
@@ -93,7 +94,12 @@ async def test_a_turn_that_researches_still_answers_inline(
     detail = await client.get(f"/conversations/{conversation_id}", headers=auth_headers)
     turn = detail.json()["messages"][1]["query"]
     assert turn["status"] == "complete"
-    assert turn["reply"] == "Here is what the research found."
+    # what it said before researching stays in the reply, as its own part
+    assert turn["reply_parts"] == [
+        "Let me look into it.",
+        "Here is what the research found.",
+    ]
+    assert turn["reply"] == "Let me look into it.\n\nHere is what the research found."
     assert turn["report"] is None
     assert detail.json()["artifacts"] == []
 
@@ -102,6 +108,13 @@ async def test_a_turn_that_researches_still_answers_inline(
         f"/research/query/{turn_id(detail)}/events", headers=auth_headers
     )
     assert "researcher_done" in [e["type"] for e in events.json()]
+
+    # a reloaded thread gets the feed as a finished turn shows it: where each
+    # part ended and what the team did, but not a researcher's passing thoughts
+    feed = turn["events"]
+    assert {"said", "researcher_done"} <= {e["type"] for e in feed}
+    assert "thinking" not in {e["type"] for e in feed}
+    assert not [e for e in feed if e["type"] == "tool_call" and "index" in e["data"]]
 
 
 def turn_id(detail) -> int:

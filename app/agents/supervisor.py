@@ -19,9 +19,7 @@ from dataclasses import dataclass, field
 from typing import Annotated
 
 from langchain.agents import create_agent
-from langchain.agents.middleware import (
-    ModelCallLimitMiddleware,
-)
+from langchain.agents.middleware import AgentMiddleware, ModelCallLimitMiddleware
 from langchain_core.language_models import BaseChatModel
 from langchain_core.messages import (
     AIMessage,
@@ -90,6 +88,9 @@ class Answer:
 
     text: str
     sources: list[Source] = field(default_factory=list)
+    # The reply as it was written: what the model said before each round of
+    # tool calls, then its answer. ``text`` is these, joined.
+    parts: list[str] = field(default_factory=list)
 
 
 class ResearchArgs(BaseModel):
@@ -214,6 +215,7 @@ async def respond(
         ),
         middleware=[
             *middleware("supervisor", emit),
+            Preambles(emit),
             # Out of rounds means answer with what it has, not fail the turn,
             # and it is told so on the last one rather than cut off.
             LastStep(
@@ -227,8 +229,9 @@ async def respond(
         ],
     )
     titles = step_titles(model, emit, detect_language(message))
-    state = await _stream(agent, _conversation(history, message), emit, titles)
-    return _answer(_last_text(state.get("messages", [])), sources)
+    thread = _conversation(history, message)
+    state = await _stream(agent, thread, emit, titles)
+    return _answer(_parts(state.get("messages", [])[len(thread) :]), sources)
 
 
 # The supervisor's own stage. A sub-agent called through a tool runs under its
@@ -438,6 +441,30 @@ def _claim_check(mode: str, model: BaseChatModel, running: list[Running]) -> lis
     return [RunClaimCheck(mode, judge, [r.title for r in running if r.kind == mode])]
 
 
+class Preambles(AgentMiddleware):
+    """What the supervisor writes before a round of tool calls ("the first pass
+    left gaps, so let me dig further") is part of its reply, not a draft of it.
+    It streams like the answer does, and this marks where it ended, before the
+    tools it leads to run: the chat keeps it in place, with the work that
+    followed under it, instead of wiping it when the next call starts."""
+
+    def __init__(self, emit: Emit) -> None:
+        super().__init__()
+        self.emit = emit
+
+    async def awrap_model_call(self, request, handler):
+        response = await handler(request)
+        for message in getattr(response, "result", [response]):
+            if isinstance(message, AIMessage) and message.tool_calls:
+                if text := text_of(message).strip():
+                    await self.emit(
+                        AgentEvent(
+                            type="said", message=text, data={"agent": "supervisor"}
+                        )
+                    )
+        return response
+
+
 def _attachments(documents: list[Document]) -> str:
     """What is attached to this conversation, by id. Only the names: the text is
     read through the tool, so a long file never sits in the system prompt."""
@@ -622,6 +649,17 @@ def _tools(
     return tools
 
 
+def _parts(turn: list) -> list[str]:
+    """What the agent wrote this turn, in order: the words before each round of
+    tool calls, then its reply."""
+    said = [
+        text
+        for m in turn
+        if isinstance(m, AIMessage) and m.tool_calls and (text := text_of(m).strip())
+    ]
+    return [*said, _last_text(turn)]
+
+
 def _last_text(messages: list) -> str:
     """The reply: the last thing the agent wrote that was not a tool call."""
     for message in reversed(messages):
@@ -632,15 +670,23 @@ def _last_text(messages: list) -> str:
     return ""
 
 
-def _answer(text: str, sources: Sources) -> Answer:
+# Between two parts while they are finalized as one text, so the citations are
+# numbered down the whole reply and not restarted in each part.
+_PART = "\x1e"
+
+
+def _answer(parts: list[str], sources: Sources) -> Answer:
     """The reply as the user sees it: invented citations dropped, and only the
     sources it really cites kept."""
-    if not text.strip():
+    if not parts[-1].strip():
         logger.warning("the supervisor produced no reply")
         return Answer(text="", sources=[])
     # keep_uncited=False: an answer that cites nothing should not drag a source
     # list behind it, unlike a report, whose sources are half the point.
-    content, cited, stripped = finalize(text, sources.all, keep_uncited=False)
+    content, cited, stripped = finalize(
+        f"\n\n{_PART}\n\n".join(parts), sources.all, keep_uncited=False
+    )
     if stripped:
         logger.warning("stripped unbacked citation markers %s", stripped)
-    return Answer(text=content.strip(), sources=cited)
+    parts = [part.strip() for part in content.split(_PART)]
+    return Answer(text="\n\n".join(parts), sources=cited, parts=parts)

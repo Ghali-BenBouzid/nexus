@@ -39,6 +39,7 @@ export type ResearchOutcome = {
   error?: string;
   // What the turn produced: the answer, and the follow-ups offered under it.
   reply?: string;
+  parts?: string[];
 };
 
 const EMPTY_RESULT: Result = { report: "", sources: [], consulted: [], gaps: [] };

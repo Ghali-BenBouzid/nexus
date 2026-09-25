@@ -313,3 +313,28 @@ export function headline(p: Progress, items: Step[]): Headline {
   if (step && step.kind !== "understanding") return { kind: "step", step };
   return { kind: "stage" };
 }
+
+// One round of the supervisor's work, and what it said at the end of it. A turn
+// reads like a conversation: the work, a part of the reply, more work, the next
+// part, and so on down to the answer. `at` is when its words arrived: where the
+// round ended and the next began.
+export type Round = { events: TimelineEvent[]; said: string | null; at: number | null };
+
+export function rounds(events: TimelineEvent[]): Round[] {
+  const out: Round[] = [{ events: [], said: null, at: null }];
+  // A step is named after it ends, often once the words after it are out, and
+  // the name belongs with the step, not with whatever round is going by then.
+  const home = new Map<number, TimelineEvent[]>();
+  for (const e of events) {
+    const round = out[out.length - 1];
+    if (e.kind === "said") {
+      round.said = e.text;
+      round.at = e.at ?? null;
+      out.push({ events: [], said: null, at: null });
+      continue;
+    }
+    if (e.kind === "step") home.set(e.step, round.events);
+    (e.kind === "step_title" ? (home.get(e.step) ?? round.events) : round.events).push(e);
+  }
+  return out;
+}

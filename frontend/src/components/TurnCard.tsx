@@ -1,7 +1,8 @@
-import { useRef, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
+import { rounds, timeline } from "../lib/progress";
 import type { Doc, Turn } from "../types";
 import { Markdown } from "./Markdown";
 import { Activity } from "./Activity";
@@ -46,6 +47,17 @@ export function TurnCard({
   const isFailed = !turn.stopped && (turn.status === "failed" || turn.outcome === "failed");
   const hasActivity = turn.events.length > 0;
 
+  // The reply as it was written: a round of work, the part of the reply that
+  // came after it, and so on down to the answer. The stored parts line up with
+  // the rounds once the turn is done, and stand in for what each round said. A
+  // turn that failed has no parts, only what it said before it failed; one
+  // whose parts do not line up reads as a single round and a single reply.
+  let rs = rounds(turn.events);
+  const aligned = !turn.parts || turn.parts.length === rs.length;
+  if (!aligned) rs = [{ events: turn.events, said: null, at: null }];
+  const parts = aligned ? turn.parts : undefined;
+  const lastRound = rs.length - 1;
+
   // Clicking a [n] in the answer opens the source list, highlights that source
   // and moves the view to it. The seq is what lets the same citation be clicked
   // twice and still bring its source back after scrolling away.
@@ -89,15 +101,38 @@ export function TurnCard({
 
       <div className="msg-row assistant">
         <div className="assistant-reply">
-          {/* The live feed stays above the answer once it lands, so the work is
-              still inspectable after the fact. */}
-          {(running || hasActivity) && <Activity turn={turn} now={now} />}
-
-          {answer.trim() && (
-            <div className={"reply-text" + (streaming ? " streaming" : "")}>
-              <Markdown text={answer} onCite={onCite} sources={sources} />
-            </div>
-          )}
+          {/* Each round of work stays above the words that followed it once
+              they land, so the work is still inspectable after the fact. */}
+          {rs.map((round, i) => {
+            const last = i === lastRound;
+            const text = last ? (parts?.[i] ?? answer) : (parts?.[i] ?? round.said ?? "");
+            // With one round, the row is there from the start, as the sign the
+            // turn is working. Between parts, a round shows once it has done
+            // something: words straight after words need nothing between them.
+            const chip =
+              rs.length === 1
+                ? running || hasActivity
+                : timeline(round.events, "done").some((s) => s.kind !== "understanding");
+            return (
+              <Fragment key={i}>
+                {chip && (
+                  <Activity
+                    turn={turn}
+                    events={round.events}
+                    from={i === 0 ? turn.startedAt : (rs[i - 1].at ?? turn.startedAt)}
+                    to={last ? null : round.at}
+                    last={last}
+                    now={now}
+                  />
+                )}
+                {text.trim() && (
+                  <div className={"reply-text" + (last && streaming ? " streaming" : "")}>
+                    <Markdown text={text} onCite={onCite} sources={sources} />
+                  </div>
+                )}
+              </Fragment>
+            );
+          })}
 
           {sources.length > 0 && (
             <div className="reply-sources" onClick={(e) => e.stopPropagation()}>

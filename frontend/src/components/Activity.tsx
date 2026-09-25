@@ -13,7 +13,7 @@ import {
   type ResearcherRow,
   type Step as StepRow,
 } from "../lib/progress";
-import type { Turn } from "../types";
+import type { TimelineEvent, Turn } from "../types";
 
 // Seconds without a single frame from the run before the row warns that it may
 // be stuck. The job beats every 5 s and the stream sends a keep-alive after 15 s
@@ -193,33 +193,50 @@ function useCalmLabel(label: string, urgent: boolean): string {
   return shown;
 }
 
-// Everything a turn did before it answered, as the one inline row a chat app
-// shows: what it is doing right now, how long it has taken, and a chevron onto
-// every step it took, in order. Its thinking shows as those steps' titles,
-// never as the scratchpad itself.
-export function Activity({ turn, now }: { turn: Turn; now: number }) {
+// One round of a turn's work, as the inline row a chat app shows between the
+// parts of a reply: what it is doing right now, how long it has taken, and a
+// chevron onto every step it took, in order. Its thinking shows as those steps'
+// titles, never as the scratchpad itself. `from` and `to` bound the round; the
+// last one runs until the turn ends, and only it can still be working.
+export function Activity({
+  turn,
+  events,
+  from,
+  to,
+  last,
+  now,
+}: {
+  turn: Turn;
+  events: TimelineEvent[];
+  from: number;
+  to: number | null;
+  last: boolean;
+  now: number;
+}) {
   // Open while the run works, so its steps can be followed as they happen;
   // folded once it has answered, so they stop competing with the answer. A
   // reader who opens or closes it has decided, and that sticks.
   const [chosen, setChosen] = useState<boolean | null>(null);
+  // The stage is the turn's, whichever round it is in.
   const p = summarize(turn.events);
-  const running = turn.status === "running" || turn.status === "pending";
+  const running = last && (turn.status === "running" || turn.status === "pending");
   const open = chosen ?? running;
-  const elapsed = ((turn.endedAt ?? now) - turn.startedAt) / 1000;
+  const elapsed = ((to ?? turn.endedAt ?? now) - from) / 1000;
 
   const age = running ? heartbeatAge(turn, now) : null;
   const stale = age != null && age > STALE_AFTER;
 
+  // A round the turn has moved on from finished what it started.
   const rows = timeline(
-    turn.events,
-    running ? null : turn.stopped ? "stopped" : turn.status === "failed" ? "failed" : "done",
+    events,
+    running ? null : !last ? "done" : turn.stopped ? "stopped" : turn.status === "failed" ? "failed" : "done",
   );
   const counted = rows.filter((r) => r.kind !== "understanding" && !("sub" in r && r.sub)).length;
 
   // While the run works, the row says what it is doing, in the most specific
   // words available. Once it has answered, it says what it cost: the work is
   // still there to inspect, but it stops competing with the answer for the eye.
-  const settled = !running && turn.status === "complete";
+  const settled = !running && (!last || turn.status === "complete");
   const head = headline(p, rows);
   const next = stale
     ? t.progress.stale(clock(age!))

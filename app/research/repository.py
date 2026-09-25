@@ -245,6 +245,7 @@ async def complete_answer(
     query_id: int,
     reply: str,
     *,
+    parts: list[str] | None = None,
     result: ResearchResult | None = None,
 ) -> None:
     """End a chat turn with the supervisor's answer and the sources it cited."""
@@ -254,6 +255,7 @@ async def complete_answer(
         (QueryStatus.running,),
         status=QueryStatus.complete,
         reply=reply,
+        reply_parts=parts,
         result=result.model_dump() if result else None,
         completed_at=_now(),
     )
@@ -286,6 +288,28 @@ async def list_notes(db: AsyncSession, query_id: int) -> list[str]:
         .order_by(QueryEvent.id)
     )
     return list(result.scalars().all())
+
+
+async def list_turn_events(
+    db: AsyncSession, query_ids: list[int]
+) -> dict[int, list[QueryEvent]]:
+    """The feed of each of these turns, as a finished turn shows it: what a
+    researcher thought and searched is only its live state, gone once it is
+    done, so it is left out."""
+    if not query_ids:
+        return {}
+    result = await db.execute(
+        select(QueryEvent)
+        .where(QueryEvent.query_id.in_(query_ids), QueryEvent.type != "thinking")
+        .order_by(QueryEvent.id)
+    )
+    feeds: dict[int, list[QueryEvent]] = {}
+    for event in result.scalars():
+        # ponytail: filtered here, not in SQL, to stay portable to the sqlite tests.
+        if event.type == "tool_call" and "index" in (event.data or {}):
+            continue
+        feeds.setdefault(event.query_id, []).append(event)
+    return feeds
 
 
 async def list_events(

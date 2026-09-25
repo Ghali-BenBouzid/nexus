@@ -247,6 +247,7 @@ async def get_query(
         status=query.status,
         report=query.report,
         reply=query.reply,
+        reply_parts=query.reply_parts,
         error=query.error,
         stopped=repository.stopped_by_user(query),
         kind=query.kind,

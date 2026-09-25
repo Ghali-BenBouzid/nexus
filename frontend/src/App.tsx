@@ -227,14 +227,17 @@ export default function App() {
       attachments: lt.attachments,
       title: lt.title,
       status: lt.status,
-      events: [],
+      // A turn still running is followed from its first event instead, so
+      // nothing is drawn twice.
+      events: inFlight ? [] : (lt.events ?? []),
       reply: lt.reply,
+      parts: lt.parts,
       result: lt.result,
       outcome: outcomeFor(lt.status, lt.reply ?? "", lt.result.sources.length),
       error: lt.error,
       stopped: lt.stopped,
-      startedAt: performance.now(),
-      endedAt: inFlight ? null : performance.now(),
+      startedAt: lt.startedAt ?? performance.now(),
+      endedAt: inFlight ? null : (lt.endedAt ?? performance.now()),
     };
   };
 
@@ -506,8 +509,9 @@ export default function App() {
         events: [...t.events, { ...e, at: performance.now() }],
         // A new model call replaces whatever the last one streamed. That is
         // what makes a retry safe: the failed attempt's half-written answer
-        // does not stay on screen next to the real one.
-        ...(e.kind === "thinking" ? { streamed: undefined, thinking: undefined } : {}),
+        // does not stay on screen next to the real one. What it said before a
+        // round of tool calls is kept: it arrives whole, as its own event.
+        ...(e.kind === "thinking" || e.kind === "said" ? { streamed: undefined } : {}),
       }));
     },
     onHeartbeat: (secondsSince) => {
@@ -554,6 +558,7 @@ export default function App() {
     patchTurn(id, (t) => ({
       ...t,
       reply: res.reply ?? t.reply,
+      parts: res.parts ?? t.parts,
       // The stored reply replaces what was streamed; a retried call can have
       // streamed text that no longer exists.
       streamed: undefined,

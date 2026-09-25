@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentEvent, TimelineEvent } from "../types";
-import { headline, summarize, timeline } from "./progress";
+import { headline, rounds, summarize, timeline } from "./progress";
 
 let seq = 0;
 const at = (event: AgentEvent, when: number): TimelineEvent => ({ ...event, id: seq++, delay: 0, at: when });
@@ -215,5 +215,26 @@ describe("headline", () => {
 
   it("falls back to the stage before any step", () => {
     expect(head([])).toEqual({ kind: "stage" });
+  });
+});
+
+describe("rounds", () => {
+  it("cuts the feed where the supervisor said something, and names each step where it happened", () => {
+    const r = rounds([
+      at({ kind: "step", step: 1 }, 0),
+      at({ kind: "said", text: "Let me look." }, 1),
+      at({ kind: "tool", action: "search", text: "q" }, 2),
+      // Step 1's title lands after the words that followed it.
+      at({ kind: "step_title", step: 1, title: "Weighing it" }, 3),
+      at({ kind: "step", step: 2 }, 4),
+    ]);
+    expect(r.map((x) => x.said)).toEqual(["Let me look.", null]);
+    expect(r.map((x) => x.at)).toEqual([1, null]);
+    expect(timeline(r[0].events, "done")).toMatchObject([{ kind: "think", title: "Weighing it" }]);
+    expect(timeline(r[1].events, null).map((s) => s.kind)).toEqual(["search", "think"]);
+  });
+
+  it("is one round when nothing was said along the way", () => {
+    expect(rounds([at({ kind: "step", step: 1 }, 0)])).toHaveLength(1);
   });
 });
