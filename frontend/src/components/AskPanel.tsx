@@ -159,9 +159,11 @@ export function AskPanel({ questions, onAnswer, onDismiss }: AskPanelProps) {
               }
             }}
           />
-          <button type="button" className="ask-skip" onClick={() => pick(null)}>
-            {t.ask.skip}
-          </button>
+          {!question.confirm && (
+            <button type="button" className="ask-skip" onClick={() => pick(null)}>
+              {t.ask.skip}
+            </button>
+          )}
         </li>
       </ul>
     </div>

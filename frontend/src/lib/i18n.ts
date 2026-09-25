@@ -378,7 +378,7 @@ const en = {
     },
     deep: {
       label: "Deep research",
-      note: "A full cited report. Minutes.",
+      note: "A full cited report. About 20 to 30 minutes.",
     },
     factcheck: {
       label: "Fact check",
@@ -788,7 +788,7 @@ const fr: Dict = {
     },
     deep: {
       label: "Recherche approfondie",
-      note: "Un rapport complet, avec les sources consultées. Plusieurs minutes.",
+      note: "Un rapport complet, avec les sources consultées. Environ 20 à 30 minutes.",
     },
     factcheck: {
       label: "Vérification",

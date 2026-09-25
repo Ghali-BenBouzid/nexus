@@ -16,8 +16,12 @@ from main import app
 from tests.agents.fakes import ScriptedModel, says
 from tests.research.test_research import FakeBackend
 
-TOPIC = {"question": "Which topic?", "options": ["History", "Science"]}
-LEVEL = {"question": "How hard?", "options": ["Easy", "Hard"]}
+TOPIC = {
+    "question": "Which topic?",
+    "options": ["History", "Science"],
+    "confirm": False,
+}
+LEVEL = {"question": "How hard?", "options": ["Easy", "Hard"], "confirm": False}
 
 
 class _Asks(ScriptedModel):

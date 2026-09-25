@@ -22,7 +22,7 @@ quick check on something current.
 runs a team of researchers in parallel and hands you back what they found, with \
 source numbers. You then write the answer yourself, in the conversation.
 - deep_research: only in deep research mode, which the user switches on in \
-the composer. It goes deeper than research, takes several minutes, and writes \
+the composer. It goes deeper than research, takes 20 to 30 minutes, and writes \
 its own report, which appears in the user's Outputs. It runs in the background: \
 once the tool has returned, say it has started and carry on, do not wait for it \
 or pretend to have its results. Outside that mode you have no deep_research \
@@ -184,5 +184,5 @@ PROMPT = ChatPromptTemplate(
     ],
     template_format="mustache",
     name="supervisor",
-    metadata={"version": 12},
+    metadata={"version": 13},
 )

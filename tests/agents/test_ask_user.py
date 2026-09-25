@@ -12,8 +12,12 @@ from app.agents.supervisor import respond
 from tests.agents.fakes import ScriptedModel, says
 from tests.agents.test_supervisor import FakeBackend
 
-TOPIC = {"question": "Which topic?", "options": ["History", "Science"]}
-LEVEL = {"question": "How hard?", "options": ["Easy", "Hard"]}
+TOPIC = {
+    "question": "Which topic?",
+    "options": ["History", "Science"],
+    "confirm": False,
+}
+LEVEL = {"question": "How hard?", "options": ["Easy", "Hard"], "confirm": False}
 
 
 def asks(text: str, *questions: dict, id: str = "ask") -> AIMessage:
@@ -82,3 +86,32 @@ async def test_asking_beside_another_tool_still_ends_with_the_questions() -> Non
     assert answer.text == "Let me check, then ask."
     assert answer.ask == [TOPIC]
     assert len(model.seen) == 1
+
+
+async def test_a_confirmation_offers_one_go_ahead_and_nothing_to_skip() -> None:
+    # "Skip" on "launch the run?" read as consent: a user skipped it and the
+    # run started. A confirmation has one option, the go-ahead; anything else
+    # is typed into the panel's free answer.
+    two = {"question": "Launch?", "options": ["Go", "Change"], "confirm": True}
+    one = {"question": "Launch?", "options": ["Go"], "confirm": True}
+    model = ScriptedModel(
+        [
+            asks("Here is the brief.", two, id="a"),
+            asks("Here is the brief.", one, id="b"),
+        ]
+    )
+
+    answer = await _respond(model)
+
+    errors = [m for m in model.seen[1] if isinstance(m, ToolMessage)]
+    assert errors and "exactly one option" in errors[-1].content
+    assert answer.ask == [one]
+
+
+async def test_an_ordinary_question_still_needs_a_choice() -> None:
+    lone = {"question": "Which topic?", "options": ["History"]}
+    model = ScriptedModel([asks("Pick.", lone, id="a"), asks("Pick.", TOPIC, id="b")])
+
+    answer = await _respond(model)
+
+    assert answer.ask == [TOPIC]

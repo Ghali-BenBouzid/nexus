@@ -74,7 +74,9 @@ export type AgentEvent =
 export type TimelineEvent = AgentEvent & { id: number; delay: number; at?: number };
 
 // A question the supervisor put to the user, answered with one click.
-export type Question = { question: string; options: string[] };
+// `confirm`: a go-ahead before acting (launching a deep run). One option, the
+// free answer for anything else, and no skip: a skipped go-ahead read as a yes.
+export type Question = { question: string; options: string[]; confirm?: boolean };
 // What the user chose for one question; null when they skipped it.
 export type Answered = { question: string; answer: string | null };
 

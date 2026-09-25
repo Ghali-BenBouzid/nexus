@@ -40,9 +40,9 @@ _MAX_CONTEXT_MESSAGES = 12
 _TITLE_CHARS = 60
 
 DEEP_STARTED = (
-    "Deep research has started on that. It takes several minutes and will appear "
-    "in the user's Outputs when it is done. Tell them it is running; do not wait "
-    "for it or make up what it will say."
+    "Deep research has started on that. It takes about 20 to 30 minutes and "
+    "will appear in the user's Outputs when it is done. Tell them it is running; "
+    "do not wait for it or make up what it will say."
 )
 DEEP_BUSY = (
     "Nothing was started: deep research run {id} ({title}) is still working in "

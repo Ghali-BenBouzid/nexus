@@ -33,7 +33,7 @@ from langchain_core.messages import (
     ToolMessage,
 )
 from langchain_core.tools import InjectedToolCallId, StructuredTool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.agents.citations import finalize
 from app.agents.claim_check import STARTERS, RunClaimCheck, claim_judge
@@ -187,12 +187,31 @@ class DeepResearchArgs(BaseModel):
 class AskQuestion(BaseModel):
     question: str = Field(description="One short question, in the user's language")
     options: list[str] = Field(
-        min_length=2,
+        min_length=1,
         max_length=4,
         description="2 to 4 short answers built from this conversation, each a "
-        "few words. The interface adds 'Something else' and Skip itself: never "
-        "write those.",
+        "few words; a confirmation has exactly one, the go-ahead. The interface "
+        "adds 'Something else' and Skip itself: never write those.",
     )
+    confirm: bool = Field(
+        default=False,
+        description="True for a go-ahead before acting, such as launching a "
+        "deep run: its one option says go, the panel adds a free answer for "
+        "anything else, and it cannot be skipped",
+    )
+
+    @model_validator(mode="after")
+    def _options_fit(self) -> "AskQuestion":
+        # A skipped "launch it?" read as a yes and started a run: a confirmation
+        # has no skip, and no second option to stand in for "something else".
+        if self.confirm and len(self.options) != 1:
+            raise ValueError(
+                "A confirmation has exactly one option, the go-ahead; the panel "
+                "adds a free answer for changing something."
+            )
+        if not self.confirm and len(self.options) < 2:
+            raise ValueError("A question needs at least two options to choose from.")
+        return self
 
 
 class AskUserArgs(BaseModel):
@@ -522,7 +541,7 @@ theirs. research and web_search stay for what is not the run itself: a side \
 question while a run works, or what you need to ask them good questions.
 
 <brainstorm>
-A deep run takes several minutes and is only as good as its brief, so before \
+A deep run takes about 20 to 30 minutes and is only as good as its brief, so before \
 starting one you agree the brief with the user in a short brainstorm, through \
 ask_user. How much there is to ask depends on what they already said: never \
 ask what the conversation already answers.
@@ -539,13 +558,20 @@ reads the report and what they already know; which areas matter most; depth \
 on a few areas or a broad first look; constraints such as region, timeframe or \
 budget; the shape of the report (a comparison, a recommendation, a primer).
 3. The confirmation: two or three sentences restating the brief in your own \
-words, then one question asking whether to launch the run, with an option to \
-launch it and one to change something.
+words, and saying the run takes about 20 to 30 minutes, then one question \
+with confirm set and a single option to launch it. The panel gives them a \
+free answer for anything they want changed.
 Add a panel only when an answer opens a real fork, one that changes what the \
 run should research. When the user changes their mind at any point, go back to \
-whatever it touches and carry on from there. Start deep_research only once \
-they have confirmed; if they tell you to just go, restate the brief in a line \
-and start.
+whatever it touches and carry on from there.
+
+The confirmation is never skipped: not when their first message already says \
+everything, not when they say to just go or that there is nothing to ask. \
+Then it is the only panel, but it is still asked, because a run of 20 to 30 \
+minutes starts on their go-ahead, not on your reading of their message. Start \
+deep_research only when they answer the confirmation with its go-ahead; \
+anything else they write there is a change to the brief, so apply it and \
+confirm again.
 
 Their message is usually a question as well as a subject. Answer it first, in \
 a short paragraph giving the gist from what you know, without figures or \
