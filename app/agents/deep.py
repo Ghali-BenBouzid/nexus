@@ -151,10 +151,15 @@ async def _no_notes() -> list[str]:
 
 @dataclass
 class Deps:
-    """The runtime context: what the nodes need that is not state."""
+    """The runtime context: what the nodes need that is not state.
+
+    ``model`` is the lead's (and the curator's); researchers run on ``worker``
+    and the report is written by ``writer``, each ``model`` when not given."""
 
     model: BaseChatModel
     backend: SearchBackend
+    worker: BaseChatModel | None = None
+    writer: BaseChatModel | None = None
     emit: Emit = _noop
     middleware: Middleware = _no_middleware
     limits: Limits = field(default_factory=Limits.deep)
@@ -501,7 +506,7 @@ async def researcher_node(task: Task, runtime: Runtime[Deps]) -> dict:
         task["index"],
         task["total"],
         task["sub_question"],
-        model=deps.model,
+        model=deps.worker or deps.model,
         backend=deps.backend,
         emit=deps.emit,
         middleware=deps.middleware,
@@ -540,7 +545,7 @@ async def write_node(state: DeepState, runtime: Runtime[Deps]) -> dict:
     )
     report = await write_report(
         result,
-        model=deps.model,
+        model=deps.writer or deps.model,
         emit=deps.emit,
         guidance=_with_late_notes(
             state.get("outline", ""), (await deps.notes())[state.get("notes_seen", 0) :]

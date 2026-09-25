@@ -127,6 +127,7 @@ async def create(
             background_tasks=background_tasks,
             document_ids=payload.document_ids,
             mode=payload.mode,
+            effort=payload.effort,
         )
     return await _detail(db, conversation)
 
@@ -184,6 +185,7 @@ async def add_message(
         background_tasks=background_tasks,
         document_ids=payload.document_ids,
         mode=payload.mode,
+        effort=payload.effort,
         answers=[a.model_dump() for a in payload.answers] if payload.answers else None,
     )
     return await _detail(db, conversation)

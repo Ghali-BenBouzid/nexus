@@ -121,7 +121,9 @@ async def test_a_deep_run_resumes_from_its_checkpoint(
         return original(messages, stop, run_manager, **kwargs)
 
     monkeypatch.setattr(crashing, "_generate", counted)
-    monkeypatch.setattr(research_service, "get_model", lambda: crashing)
+    monkeypatch.setattr(
+        research_service, "models_for", lambda *_: (crashing, crashing, crashing)
+    )
     monkeypatch.setattr(research_service, "get_search_backend", FakeBackend)
 
     await research_deep.run_deep_research_job(query_id)
@@ -140,7 +142,9 @@ async def test_a_deep_run_resumes_from_its_checkpoint(
         return resumed_generate(messages, stop, run_manager, **kwargs)
 
     monkeypatch.setattr(resumed, "_generate", counted_again)
-    monkeypatch.setattr(research_service, "get_model", lambda: resumed)
+    monkeypatch.setattr(
+        research_service, "models_for", lambda *_: (resumed, resumed, resumed)
+    )
     async with db_session.SessionLocal() as db:
         await repository.set_status(db, query_id, QueryStatus.pending)
     await research_deep.run_deep_research_job(query_id)

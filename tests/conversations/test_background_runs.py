@@ -129,7 +129,12 @@ def _use(model_factory, backend_factory=FakeBackend, monkeypatch=None) -> None:
     app.dependency_overrides[get_model] = model_factory
     app.dependency_overrides[get_search_backend] = backend_factory
     if monkeypatch is not None:
-        monkeypatch.setattr(research_service, "get_model", model_factory)
+        # One fake for every role of the run, as a worker's models would be.
+        def models_for(model, effort):
+            model = model or model_factory()
+            return model, model, model
+
+        monkeypatch.setattr(research_service, "models_for", models_for)
         monkeypatch.setattr(research_service, "get_search_backend", backend_factory)
 
 
@@ -826,3 +831,39 @@ async def test_a_document_already_being_checked_is_not_checked_again(
 
     artifacts = (await client.get("/research/artifacts", headers=auth_headers)).json()
     assert [a["id"] for a in artifacts] == [first.id]
+
+
+async def test_the_user_picks_the_turns_effort_but_not_the_deep_runs(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    """The composer's effort is how hard the supervisor thinks on that turn. A
+    deep run it starts keeps its own, whatever the user picked."""
+    _use(lambda: _StartsDeepResearch(), monkeypatch=monkeypatch)
+    built = research_service.models_for
+    efforts: list[str] = []
+
+    def recording(model, effort):
+        efforts.append(effort)
+        return built(model, effort)
+
+    monkeypatch.setattr(research_service, "models_for", recording)
+
+    await client.post(
+        "/conversations",
+        headers=auth_headers,
+        json={"prompt": "go deep on X", "mode": "deep", "effort": "max"},
+    )
+    await drain()
+
+    assert efforts == ["max", settings.deep_effort]
+
+
+async def test_an_effort_below_high_is_refused(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    # Low and medium left the supervisor too little thought to cite its sources.
+    _use(lambda: ScriptedModel(responses=[]))
+    response = await client.post(
+        "/conversations", headers=auth_headers, json={"prompt": "hi", "effort": "low"}
+    )
+    assert response.status_code == 422

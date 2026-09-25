@@ -21,7 +21,7 @@ from app.agents.tools import SearchBackend
 from app.billing.service import has_budget
 from app.conversations import repository
 from app.conversations.schemas import Mode
-from app.core.config import settings
+from app.core.config import UserEffort, settings
 from app.db import session as db_session
 from app.documents import repository as documents_repository
 from app.models.conversation import Conversation, Message, MessageRole
@@ -46,7 +46,7 @@ _READING_POLL_SECONDS = 1.0
 
 DEEP_STARTED = (
     "Deep research has started on that. It takes about 20 to 30 minutes and "
-    "will appear in the user's Outputs when it is done. Tell them it is running; "
+    "will appear in the user's Reports panel when it is done. Tell them it is running; "
     "do not wait for it or make up what it will say."
 )
 DEEP_BUSY = (
@@ -57,12 +57,13 @@ DEEP_BUSY = (
 )
 FACT_CHECK_BUSY = (
     "Nothing was started: {filename} is already being checked in this "
-    "conversation (fact check {id}, {title}). Its report will appear in Outputs "
-    "when it is done; tell the user that rather than starting another."
+    "conversation (fact check {id}, {title}). Its report will appear in the "
+    "Reports panel when it is done; tell the user that rather than starting "
+    "another."
 )
 FACT_CHECK_STARTED = (
     "The fact check has started on {filename}. Its report will appear in the "
-    "user's Outputs when it is done. Tell them it is running; do not wait for it "
+    "user's Reports panel when it is done. Tell them it is running; do not wait for it "
     "or make up its verdicts."
 )
 NO_BUDGET = (
@@ -114,6 +115,7 @@ async def submit_message(
     background_tasks: BackgroundTasks,
     document_ids: list[int] | None = None,
     mode: Mode = "answer",
+    effort: UserEffort = "high",
     answers: list[dict] | None = None,
 ) -> Message:
     """Record the user's message and the assistant turn that will answer it, and
@@ -180,6 +182,7 @@ async def submit_message(
         conversation_id=conversation.id,
         message_id=assistant.id,
         mode=mode,
+        effort=effort,
     )
     return assistant
 
@@ -192,6 +195,7 @@ async def route_message(
     model: BaseChatModel | None = None,
     backend: SearchBackend | None = None,
     mode: Mode = "answer",
+    effort: UserEffort = "high",
 ) -> None:
     """The job for a new message: the supervisor answers it, using whatever
     tools the answer needs. Every model call is billed to the thread's owner."""
@@ -251,6 +255,7 @@ async def route_message(
             prompt,
             history,
             model=run.model,
+            worker=run.worker,
             backend=run.backend,
             sources=run.sources,
             documents=documents,
@@ -280,7 +285,14 @@ async def route_message(
             )
             await repository.set_content(db, message_id, answer.text, ask=answer.ask)
 
-    await run_query(query_id, user_id=user_id, work=work, model=model, backend=backend)
+    await run_query(
+        query_id,
+        user_id=user_id,
+        work=work,
+        model=model,
+        backend=backend,
+        effort=effort,
+    )
 
 
 async def _read(run: Run, conversation_id: int) -> list[DocumentRow]:

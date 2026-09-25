@@ -118,6 +118,8 @@ async def run_deep_research_job(
             config,
             context=deep.Deps(
                 model=run.model,
+                worker=run.worker,
+                writer=run.writer,
                 backend=run.backend,
                 emit=run.emit,
                 middleware=run.middleware,
@@ -144,6 +146,7 @@ async def run_deep_research_job(
         model=model,
         backend=backend,
         timeout=settings.deep_timeout,
+        effort=settings.deep_effort,
     )
 
 

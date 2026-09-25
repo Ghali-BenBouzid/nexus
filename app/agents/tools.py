@@ -115,8 +115,8 @@ class DispatchResearchersArgs(BaseModel):
 class WriteReportArgs(BaseModel):
     reasoning: str = Field(description="why the question is now answered")
     outline: str = Field(
-        description="how the report should be organised and how long it should "
-        "be, from what the findings support, and what stays open"
+        description="how the report should be organised, from what the findings "
+        "support, and what stays open; its length is set separately"
     )
 
 

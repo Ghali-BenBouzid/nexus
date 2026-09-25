@@ -392,6 +392,21 @@ const en = {
       request: (file: string) => `Fact-check ${file}`,
     },
   },
+  // How hard the supervisor thinks before replying. Relative times on purpose:
+  // seconds depend on the question as much as on the setting.
+  effort: {
+    pick: "Effort",
+    head: "How long it thinks before replying",
+    high: {
+      label: "High",
+      note: "Thinks it through and cites its sources. Right for most questions.",
+    },
+    max: {
+      label: "Max",
+      note: "Its most careful reasoning, for hard problems. Slower: a reply can take a minute or two.",
+    },
+  },
+
   // What the bar asks for once a mode changes what sending means.
   modePlaceholder: {
     answer: "",
@@ -813,6 +828,19 @@ const fr: Dict = {
       request: (file: string) => `Vérifie ${file}`,
     },
   },
+  effort: {
+    pick: "Effort",
+    head: "Le temps de réflexion avant de répondre",
+    high: {
+      label: "Élevé",
+      note: "Réfléchit et cite ses sources. Adapté à la plupart des questions.",
+    },
+    max: {
+      label: "Max",
+      note: "Son raisonnement le plus poussé, pour les problèmes difficiles. Plus lent : une réponse peut prendre une à deux minutes.",
+    },
+  },
+
   modePlaceholder: {
     answer: "",
     deep: "Que doit couvrir le rapport ?",

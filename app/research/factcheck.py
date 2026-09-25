@@ -53,7 +53,7 @@ async def run_fact_check_job(
         report = await fact_check(
             text,
             filename=filename,
-            model=run.model,
+            model=run.worker,
             backend=run.backend,
             sources=run.sources,
             middleware=run.middleware("fact_checker", run.emit),

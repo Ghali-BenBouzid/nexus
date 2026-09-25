@@ -1,8 +1,7 @@
-import { useEffect, useRef, useState } from "react";
-
 import { I } from "../icons";
 import { t } from "../lib/i18n";
 import type { Mode } from "../types";
+import { useMenu } from "./useMenu";
 
 // What sending does. A mode is not a setting hidden behind an icon: it changes
 // how long the wait is, what comes back and how much of the budget it costs, so
@@ -24,27 +23,7 @@ export function ModePicker({
   // until a document is attached.
   canFactCheck: boolean;
 }) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: MouseEvent) => {
-      if (!box.current?.contains(e.target as Node)) setOpen(false);
-    };
-    const key = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        setOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", away);
-    document.addEventListener("keydown", key);
-    return () => {
-      document.removeEventListener("mousedown", away);
-      document.removeEventListener("keydown", key);
-    };
-  }, [open]);
+  const { open, setOpen, box } = useMenu();
 
   const current = MODES.find((m) => m.id === mode) ?? MODES[0];
   const on = mode !== "answer";

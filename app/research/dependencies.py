@@ -7,7 +7,7 @@ from app.agents.rate_limit import RateLimiter
 from app.agents.retry import RetryPolicy
 from app.agents.search import SelfHostedBackend, TavilyBackend
 from app.agents.tools import SearchBackend
-from app.core.config import settings
+from app.core.config import Effort, settings
 
 # Each preset: (base_url, default_model, settings-attr holding the key). All run
 # through the one OpenAI-compatible adapter (so they share the limiter, retry, and
@@ -44,12 +44,14 @@ _OPENAI_PRESETS = {
 
 # Extra body fields only OpenRouter understands, sent on every call.
 #
-# ``reasoning.enabled`` asks for the model's thinking as its own stream of
-# deltas. On a reasoning model that thinking is most of the turn: the first
-# thought arrives seconds before the first word of the answer, so this is what
-# the live feed has to show while the answer is still being formed. Some models
-# reason whether or not we ask (glm refuses to turn it off); asking is what makes
-# it visible rather than silent.
+# ``reasoning`` asks for the model's thinking as its own stream of deltas. On a
+# reasoning model that thinking is most of the turn: the first thought arrives
+# seconds before the first word of the answer, so this is what the live feed has
+# to show while the answer is still being formed. Some models reason whether or
+# not we ask (glm refuses to turn it off); asking is what makes it visible rather
+# than silent. Its effort is set per call site (chat_model): asking with no
+# effort lets glm think at its own ceiling, 70 to 114 s on a question "high"
+# answered in 50 to 85 s, so that is kept for "max".
 #
 # ``provider`` picks which of the model's ~30 upstreams serves the call, and on
 # a stream that choice is something the user watches. Sorting by throughput
@@ -62,7 +64,6 @@ _OPENAI_PRESETS = {
 # and none of it is priced for one model: changing LLM_MODEL needs nothing else.
 # Measured on the same 700-token call: 64-68 s before, 4-11 s after.
 _OPENROUTER_BODY: dict[str, Any] = {
-    "reasoning": {"enabled": True},
     "provider": {
         "sort": "price",
         "preferred_min_throughput": {"p50": 80, "p90": 50},
@@ -119,8 +120,15 @@ def _retry_policy() -> RetryPolicy:
     )
 
 
-def get_model() -> Any:  # ChatOpenAI; see the note below
-    """The chat model the agents run on, built from settings.
+def get_model() -> Any:  # ChatOpenAI; see chat_model
+    """The request's model, as a FastAPI dependency so tests can swap in a fake.
+    A job builds the models it runs on itself (research.service.models_for)."""
+    return chat_model()
+
+
+def chat_model(model: str | None = None, effort: Effort = "high") -> Any:
+    """The chat model an agent runs on: ``model`` (LLM_MODEL by default)
+    thinking at ``effort``.
 
     Returned as ``Any`` on purpose: a chat model is itself a pydantic model, and
     FastAPI reads a dependency's return annotation as a request field.
@@ -142,7 +150,7 @@ def get_model() -> Any:  # ChatOpenAI; see the note below
             status_code=503,
             detail=f"Research is not configured (missing {provider} API key).",
         )
-    name = settings.llm_model or default_model
+    name = model or settings.llm_model or default_model
     # The limiter is per provider and model, and shared by everything running on
     # this model, so a fan-out paces against itself rather than each researcher
     # getting its own quota.
@@ -153,8 +161,16 @@ def get_model() -> Any:  # ChatOpenAI; see the note below
         pacing=_rate_limiter(provider, name),
         # extra_body, not the ChatOpenAI ``reasoning`` field: that field switches
         # langchain-openai to OpenAI's Responses API, which OpenRouter rejects.
-        extra_body=_OPENROUTER_BODY if provider == "openrouter" else None,
+        extra_body=(
+            {**_OPENROUTER_BODY, "reasoning": _reasoning(effort)}
+            if provider == "openrouter"
+            else None
+        ),
     )
+
+
+def _reasoning(effort: Effort) -> dict[str, Any]:
+    return {"enabled": True} if effort == "max" else {"effort": effort}
 
 
 def get_search_backend() -> SearchBackend:

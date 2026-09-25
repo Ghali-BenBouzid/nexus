@@ -5,6 +5,7 @@ from uuid import UUID
 from pydantic import BaseModel, Field
 
 from app.agents.schemas import Source
+from app.core.config import UserEffort
 from app.documents.schemas import DocumentSummary
 from app.models.conversation import MessageRole
 from app.models.query import QueryStatus
@@ -26,6 +27,7 @@ class ConversationCreate(BaseModel):
     prompt: str = ""
     document_ids: list[int] = []
     mode: Mode = "answer"
+    effort: UserEffort = "high"
 
 
 class Answered(BaseModel):
@@ -40,6 +42,9 @@ class MessageCreate(BaseModel):
     # Files uploaded into this conversation and sent with this message.
     document_ids: list[int] = []
     mode: Mode = "answer"
+    # How hard the supervisor thinks on this turn, picked in the composer. Deep
+    # runs and fact checks keep their own (settings), whatever it says.
+    effort: UserEffort = "high"
     # Sent from the question panel: the message's text is written from these.
     answers: list[Answered] | None = None
 
