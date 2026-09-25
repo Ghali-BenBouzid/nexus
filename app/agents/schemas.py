@@ -43,6 +43,9 @@ class Turn(BaseModel):
 
     role: Literal["user", "assistant"]
     content: str
+    # On an assistant turn that ended by asking: its questions, each a dict of
+    # question and options, so a typed "2" can be read against them.
+    ask: list[dict] | None = None
 
 
 class AgentEvent(BaseModel):

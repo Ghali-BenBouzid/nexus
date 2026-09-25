@@ -73,6 +73,13 @@ export type AgentEvent =
 // instant it reached the UI (what the step timers count from).
 export type TimelineEvent = AgentEvent & { id: number; delay: number; at?: number };
 
+// A question the supervisor put to the user, answered with one click.
+// `confirm`: a go-ahead before acting (launching a deep run). One option, the
+// free answer for anything else, and no skip: a skipped go-ahead read as a yes.
+export type Question = { question: string; options: string[]; confirm?: boolean };
+// What the user chose for one question; null when they skipped it.
+export type Answered = { question: string; answer: string | null };
+
 // One turn in the conversation: a submitted query and everything that run
 // produced. The thread is an ordered list of these; each runs independently.
 export type Turn = {
@@ -81,6 +88,10 @@ export type Turn = {
   query: string;
   // The files sent with this message, shown on the bubble that carries them.
   attachments?: Doc[];
+  // The user's message came from the question panel: drawn as these pairs.
+  answers?: Answered[];
+  // The turn ended by asking these; the panel shows them while it is the latest.
+  ask?: Question[];
   title?: string; // the supervisor-given report/artifact title
   status: Status;
   events: TimelineEvent[];

@@ -103,3 +103,13 @@ def no_real_api_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     that forgets its fakes fails on a laptop too instead of only in CI."""
     for name in _API_KEYS:
         monkeypatch.setattr(settings, name, None)
+
+
+@pytest.fixture(autouse=True)
+def no_depth_floors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The deep run's depth floors off by default. The scripted runs behind the
+    background-run, billing and resume tests submit without reading and write
+    after one round, which is what those tests need; the floors are pinned where
+    they live (test_researcher, test_deep), which turn them on."""
+    monkeypatch.setattr(settings, "deep_min_pages", 0)
+    monkeypatch.setattr(settings, "deep_min_rounds", 1)

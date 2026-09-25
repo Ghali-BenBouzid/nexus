@@ -14,6 +14,7 @@ from app.agents.schemas import ResearchResult
 from app.agents.tools import SearchBackend
 from app.auth.dependencies import get_current_user
 from app.billing.service import ensure_budget
+from app.conversations import repository as conversations
 from app.db.session import get_db
 from app.models.query import Query, QueryStatus
 from app.models.user import User
@@ -247,6 +248,12 @@ async def get_query(
         status=query.status,
         report=query.report,
         reply=query.reply,
+        # Only a chat turn can ask; the live thread reads it here, at the end.
+        ask=(
+            await conversations.ask_for_query(db, query.id)
+            if query.kind == "chat"
+            else None
+        ),
         error=query.error,
         stopped=repository.stopped_by_user(query),
         kind=query.kind,

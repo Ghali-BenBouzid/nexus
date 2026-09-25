@@ -123,6 +123,12 @@ class Settings(BaseSettings):
     deep_searches: int = 5  # web searches per researcher
     deep_concurrency: int = 6  # simultaneous researchers
     deep_research_budget: float = 180.0  # seconds one round's researchers get
+    # Floors on how shallow a deep run can be, enforced as tool errors the agent
+    # reads. Prod runs on a fast model took the minimum everywhere: researchers
+    # submitted from search snippets (60 searches, 9 pages read across four
+    # runs) and the lead wrote after one round.
+    deep_min_pages: int = 2  # pages a researcher reads before it may submit
+    deep_min_rounds: int = 2  # rounds the lead sends before it may write
     # The lead sends rounds of researchers until it judges the subject covered.
     # These are the ceilings on that judgement, not a target: a confused lead
     # must not research all day, and every researcher is model calls paid for.

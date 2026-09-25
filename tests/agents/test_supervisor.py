@@ -160,8 +160,8 @@ async def test_a_deep_run_can_only_be_started_from_deep_mode() -> None:
 async def test_a_background_run_is_started_once_and_not_waited_for() -> None:
     started: list[tuple[str, str, str]] = []
 
-    async def start(question: str, title: str, goal: str) -> str:
-        started.append((question, title, goal))
+    async def start(question: str, title: str, brief: str) -> str:
+        started.append((question, title, brief))
         return "Deep research has started."
 
     model = ScriptedModel(
@@ -170,7 +170,7 @@ async def test_a_background_run_is_started_once_and_not_waited_for() -> None:
                 "deep_research",
                 question="all about X",
                 title="About X",
-                goal="an overview",
+                brief={"goal": "an overview", "shape": "a primer"},
             ),
             says("I have started a deep run on that."),
         ]
@@ -178,7 +178,9 @@ async def test_a_background_run_is_started_once_and_not_waited_for() -> None:
 
     answer = await _respond(model, start_deep_research=start, mode="deep")
 
-    assert started == [("all about X", "About X", "an overview")]
+    [(question, title, brief)] = started
+    assert (question, title) == ("all about X", "About X")
+    assert "- Goal: an overview" in brief and "- Shape of the report: a primer" in brief
     assert answer.text == "I have started a deep run on that."
 
 
@@ -373,3 +375,22 @@ async def test_a_change_of_mind_is_passed_to_the_running_run() -> None:
     # Steering counts as acting in deep mode: no "you started nothing" check.
     assert len(model.seen) == 2
     assert answer.text.startswith("Done")
+
+
+def test_a_brief_reads_as_labelled_lines_and_skips_what_is_empty() -> None:
+    brief = supervisor.DeepBrief(
+        goal="choose a specialisation",
+        focus=["frameworks recruiters ask for", "sectors hiring"],
+        decided=["broad first look, chosen for them"],
+    )
+
+    text = supervisor.render_brief(brief)
+
+    assert text.splitlines()[0].startswith("The brief")
+    assert "- Goal: choose a specialisation" in text
+    assert (
+        "- Focus, most important first: frameworks recruiters ask for; sectors hiring"
+        in text
+    )
+    assert "- Left to you" in text
+    assert "Reader" not in text and "Out of scope" not in text

@@ -28,11 +28,20 @@ class ConversationCreate(BaseModel):
     mode: Mode = "answer"
 
 
+class Answered(BaseModel):
+    """One question of a panel, with what the user chose; None if skipped."""
+
+    question: str
+    answer: str | None = None
+
+
 class MessageCreate(BaseModel):
     content: str
     # Files uploaded into this conversation and sent with this message.
     document_ids: list[int] = []
     mode: Mode = "answer"
+    # Sent from the question panel: the message's text is written from these.
+    answers: list[Answered] | None = None
 
 
 class ConversationSummary(BaseSchema):
@@ -55,6 +64,8 @@ class MessageQuery(BaseModel):
     stopped: bool = False  # failed because the user stopped it, not broken
     sources: list[Source]
     gaps: list[str]
+    # The composer mode the turn was sent in; None on turns older than it.
+    mode: str | None = None
 
 
 class MessageResponse(BaseModel):
@@ -67,6 +78,8 @@ class MessageResponse(BaseModel):
     documents: list[DocumentSummary] = []
     # Present on an assistant message that carries a research run.
     query: MessageQuery | None = None
+    # The question panel: asked, on an assistant message; answered, on a user's.
+    ask: list[dict] | None = None
 
 
 class ConversationDetail(BaseSchema):

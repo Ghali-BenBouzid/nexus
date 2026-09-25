@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { I } from "../icons";
 import { t } from "../lib/i18n";
+import { openQuestion } from "../lib/ask";
 import { useIsMobile } from "../lib/useIsMobile";
 import type { Account } from "../lib/api";
 import type {
+  Answered,
   ConversationId,
   Doc,
   LayoutMode,
@@ -14,6 +16,7 @@ import type {
   Theme,
   Turn,
 } from "../types";
+import { AskPanel } from "./AskPanel";
 import { OutputsPanel } from "./OutputsPanel";
 import { ChatHistory } from "./ChatHistory";
 import { NexusLockup } from "./NexusLogo";
@@ -28,6 +31,8 @@ type ConversationProps = {
   focusedId: number | null;
   onFocus: (id: number | null) => void;
   onSubmit: (prompt: string) => void;
+  // Answers from the question panel, sent as one message.
+  onAnswer: (answers: Answered[]) => void;
   onStop: () => void;
   onExit: () => void;
   // What sending does, owned by App because App is what sends.
@@ -77,6 +82,7 @@ export function Conversation({
   focusedId,
   onFocus,
   onSubmit,
+  onAnswer,
   onStop,
   onExit,
   mode,
@@ -177,6 +183,36 @@ export function Conversation({
     following.current = true;
     onSubmit(prompt);
   };
+
+  // The questions the latest turn ended on, until they are answered (any new
+  // message does that) or closed. Closing is for this view only: the thread
+  // still ends on a question, so a reload shows it again.
+  const asked = openQuestion(turns);
+  const askingTurn = turns[turns.length - 1]?.id;
+  const [closedFor, setClosedFor] = useState<number | null>(null);
+  const questions = asked && closedFor !== askingTurn ? asked : null;
+  const closeQuestions = useCallback(() => setClosedFor(askingTurn ?? null), [askingTurn]);
+  const answer = (answers: Answered[]) => {
+    following.current = true;
+    onAnswer(answers);
+  };
+
+  // On a phone the composer floats over the thread, which keeps room at its end
+  // for it. How much room is measured, not guessed: a mode line, a staged file,
+  // a wrapped message or a question panel all make the composer taller, and a
+  // fixed allowance hid the end of the reply behind it (the brief to confirm,
+  // of all things). The thread's own observer keeps it at the bottom as it grows.
+  const composerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const composer = composerRef.current;
+    const body = bodyRef.current;
+    if (!composer || !body) return;
+    const ro = new ResizeObserver(() => {
+      body.style.setProperty("--composer-h", `${composer.offsetHeight}px`);
+    });
+    ro.observe(composer);
+    return () => ro.disconnect();
+  }, []);
 
   // Esc stops a run while one is in flight, and otherwise leaves the chat back to
   // the landing page (the conversation stays saved and reopenable from Recent).
@@ -342,7 +378,7 @@ export function Conversation({
         <div className="chat-center">
           {chatColumn}
 
-          <div className="composer">
+          <div className="composer" ref={composerRef}>
             {/* Inside the composer, so it rides on its top edge: the bar changes
                 height with a mode line, an attachment or a wrapped message, and
                 anything measuring it in pixels goes stale the first time it does. */}
@@ -352,6 +388,14 @@ export function Conversation({
               </button>
             )}
             <div className="composer-inner" data-tour="composer">
+              {questions && (
+                <AskPanel
+                  key={askingTurn}
+                  questions={questions}
+                  onAnswer={answer}
+                  onDismiss={closeQuestions}
+                />
+              )}
               <PromptBar
                 variant="composer"
                 onSubmit={submit}
@@ -365,9 +409,22 @@ export function Conversation({
                 mode={mode}
                 onMode={onMode}
                 hasDocuments={documents.length > 0}
+                asking={!!questions}
                 autoFocus
-                placeholder={running ? t.chat.runningPlaceholder : t.chat.idlePlaceholder}
+                placeholder={
+                  running
+                    ? t.chat.runningPlaceholder
+                    : questions
+                      ? t.ask.placeholder
+                      : t.chat.idlePlaceholder
+                }
               />
+              {questions && (
+                <p className="composer-note ask-hints" aria-hidden="true">
+                  <kbd>↑</kbd>
+                  <kbd>↓</kbd> {t.ask.navigate} · <kbd>↵</kbd> {t.ask.select} · {t.ask.typeBelow}
+                </p>
+              )}
               {accessNote && <p className="composer-note">{accessNote}</p>}
             </div>
           </div>

@@ -42,6 +42,7 @@ async def write_report(
     model: BaseChatModel,
     emit: Emit = _noop,
     guidance: str = "",
+    length: str = "",
     timeout: float | None = None,
 ) -> Report:
     """Render a ResearchResult into a cited prose Report with one model call."""
@@ -63,6 +64,7 @@ async def write_report(
         PROMPT,
         findings=render_findings(result),
         guidance=guidance.strip(),
+        length=length,
         today=today(),
         # Detected on the findings themselves (the sub-questions and claims), not
         # the rendered scaffolding, whose headers ("# Research points") are English.

@@ -18,12 +18,14 @@ yourself. You decide what gets researched, read what comes back, and decide \
 what to research next, until the user's question is answered well.
 Today's date is {{{today}}}.
 
-The message you are given is the user's question, and usually a brief: what \
-they want the report for, whether they want depth on a few areas or a broad \
-first look at the subject, and which areas matter to them. The brief decides \
-everything below: which angles to take, how deep to go, and when to stop. A \
-report that answers the question for that brief beats one that covers the \
-whole subject.
+The message you are given is the user's question, then the brief they agreed \
+with the assistant before the run: their goal, who reads the report, the areas \
+to focus on in order, what they left open, what they left to the assistant, \
+what is out of scope, their constraints, and the shape of report they want. \
+The brief decides everything below: which angles to take, how deep to go, and \
+when to stop. Take its focus in its order, keep off what it rules out, and \
+settle what it leaves open. A report that answers the question for that brief \
+beats one that covers the whole subject.
 
 <how_you_work>
 You work in rounds. Each round, call dispatch_researchers with the \
@@ -81,20 +83,15 @@ are a ceiling, not a target.
 
 In write_report, give the outline the report should follow: its few sections, \
 ordered by what matters most for the brief, what each one develops and from \
-which findings, and what stays open. Say how long each section should be. By \
-default the report is one a reader gets through in fifteen to twenty minutes, \
-around 3,000 to 4,500 words in total, and every section runs to several \
-paragraphs; never a section of one short paragraph. Go longer only when the \
-user asked for exhaustiveness in so many words. That length is for findings \
-that can fill it. When much of the research came back empty, the report is \
-as long as what was found, and says plainly what could not be established: a \
-section with little behind it is short or goes, and nothing is padded to \
-reach a length.
+which findings, and what stays open. A section with little behind it is \
+folded into another or goes. The writer is told separately how long the \
+report should run, from how much the research found, so the outline is about \
+structure, not length.
 </when_to_stop>"""
 
 PROMPT = ChatPromptTemplate(
     [("system", SYSTEM + LANGUAGE), ("human", "{{{query}}}")],
     template_format="mustache",
     name="deep_lead",
-    metadata={"version": 5},
+    metadata={"version": 6},
 )
