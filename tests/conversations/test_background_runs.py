@@ -837,8 +837,7 @@ async def test_the_user_picks_the_turns_effort_but_not_the_deep_runs(
     client: AsyncClient, auth_headers: dict[str, str], monkeypatch
 ) -> None:
     """The composer's effort is how hard the supervisor thinks on that turn. A
-    deep run it starts keeps its own: low effort there would cut short the one
-    run the user asked to have done properly."""
+    deep run it starts keeps its own, whatever the user picked."""
     _use(lambda: _StartsDeepResearch(), monkeypatch=monkeypatch)
     built = research_service.models_for
     efforts: list[str] = []
@@ -852,8 +851,19 @@ async def test_the_user_picks_the_turns_effort_but_not_the_deep_runs(
     await client.post(
         "/conversations",
         headers=auth_headers,
-        json={"prompt": "go deep on X", "mode": "deep", "effort": "low"},
+        json={"prompt": "go deep on X", "mode": "deep", "effort": "max"},
     )
     await drain()
 
-    assert efforts == ["low", settings.deep_effort]
+    assert efforts == ["max", settings.deep_effort]
+
+
+async def test_an_effort_below_high_is_refused(
+    client: AsyncClient, auth_headers: dict[str, str]
+) -> None:
+    # Low and medium left the supervisor too little thought to cite its sources.
+    _use(lambda: ScriptedModel(responses=[]))
+    response = await client.post(
+        "/conversations", headers=auth_headers, json={"prompt": "hi", "effort": "low"}
+    )
+    assert response.status_code == 422

@@ -21,7 +21,7 @@ from app.agents.tools import SearchBackend
 from app.billing.service import has_budget
 from app.conversations import repository
 from app.conversations.schemas import Mode
-from app.core.config import Effort, settings
+from app.core.config import UserEffort, settings
 from app.db import session as db_session
 from app.documents import repository as documents_repository
 from app.models.conversation import Conversation, Message, MessageRole
@@ -114,7 +114,7 @@ async def submit_message(
     background_tasks: BackgroundTasks,
     document_ids: list[int] | None = None,
     mode: Mode = "answer",
-    effort: Effort = "medium",
+    effort: UserEffort = "high",
     answers: list[dict] | None = None,
 ) -> Message:
     """Record the user's message and the assistant turn that will answer it, and
@@ -194,7 +194,7 @@ async def route_message(
     model: BaseChatModel | None = None,
     backend: SearchBackend | None = None,
     mode: Mode = "answer",
-    effort: Effort = "medium",
+    effort: UserEffort = "high",
 ) -> None:
     """The job for a new message: the supervisor answers it, using whatever
     tools the answer needs. Every model call is billed to the thread's owner."""

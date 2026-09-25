@@ -1123,7 +1123,7 @@ html[data-theme="dark"] .cites-pop {
 @media (max-width: 560px) {
   .mode-pill-label { display: none; }
   .cinput .mode-pick { position: static; }
-  .cinput .mode-menu { left: 0; right: 0; width: auto; max-width: none; }
+  .cinput .mode-pick .mode-menu { left: 0; right: 0; width: auto; max-width: none; }
 }
 
 .mode-menu { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 30;
@@ -1482,6 +1482,8 @@ html[data-theme="dark"] .cites-pop {
   font-size: 14.5px; line-height: 1.6; color: var(--fg); padding: 4px 4px 2px; max-height: 160px; text-align: left; }
 .cinput-ta::placeholder { color: var(--faint); }
 .cinput-actions { display: flex; align-items: center; gap: 8px; flex: none; }
+/* A menu opened from beside send opens leftwards, over the bar, not off it. */
+.cinput-actions .mode-menu, .prompt-row > .mode-pick .mode-menu { left: auto; right: 0; }
 .cinput-send { width: 34px; height: 34px; border-radius: 50%; border: none; flex: none; display: grid; place-items: center;
   cursor: pointer; background: var(--surface-2); color: var(--faint); transition: background 0.15s, color 0.15s, transform 0.15s; }
 .cinput-send svg { width: 16px; height: 16px; }

@@ -2,8 +2,13 @@ from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# How hard a model thinks before it answers, as OpenRouter's reasoning.effort.
-Effort = Literal["low", "medium", "high", "xhigh"]
+# How hard a model thinks before it answers: OpenRouter's reasoning.effort, or
+# "max" for no effort at all, which leaves the model at its own ceiling. glm
+# only has two steps below that: low answers like medium, high like xhigh.
+Effort = Literal["low", "medium", "high", "xhigh", "max"]
+# What the user can pick for the supervisor. Low and medium left glm too little
+# thought to cite what it had found.
+UserEffort = Literal["high", "max"]
 
 
 class Settings(BaseSettings):

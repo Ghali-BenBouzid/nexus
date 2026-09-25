@@ -220,7 +220,7 @@ async def run_query(
     model: BaseChatModel | None = None,
     backend: SearchBackend | None = None,
     timeout: float | None = None,
-    effort: Effort = "medium",
+    effort: Effort = "high",
 ) -> None:
     """Claim the query, run ``work`` against it, and always resolve its status.
 

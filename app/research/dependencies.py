@@ -49,9 +49,9 @@ _OPENAI_PRESETS = {
 # seconds before the first word of the answer, so this is what the live feed has
 # to show while the answer is still being formed. Some models reason whether or
 # not we ask (glm refuses to turn it off); asking is what makes it visible rather
-# than silent. Its effort is set per call site (get_model): asking with no effort
-# let glm think at its own ceiling, 70 to 114 s on a question "medium" answered
-# in 30 to 40 s.
+# than silent. Its effort is set per call site (chat_model): asking with no
+# effort lets glm think at its own ceiling, 70 to 114 s on a question "high"
+# answered in 50 to 85 s, so that is kept for "max".
 #
 # ``provider`` picks which of the model's ~30 upstreams serves the call, and on
 # a stream that choice is something the user watches. Sorting by throughput
@@ -126,7 +126,7 @@ def get_model() -> Any:  # ChatOpenAI; see chat_model
     return chat_model()
 
 
-def chat_model(model: str | None = None, effort: Effort = "medium") -> Any:
+def chat_model(model: str | None = None, effort: Effort = "high") -> Any:
     """The chat model an agent runs on: ``model`` (LLM_MODEL by default)
     thinking at ``effort``.
 
@@ -162,11 +162,15 @@ def chat_model(model: str | None = None, effort: Effort = "medium") -> Any:
         # extra_body, not the ChatOpenAI ``reasoning`` field: that field switches
         # langchain-openai to OpenAI's Responses API, which OpenRouter rejects.
         extra_body=(
-            {**_OPENROUTER_BODY, "reasoning": {"effort": effort}}
+            {**_OPENROUTER_BODY, "reasoning": _reasoning(effort)}
             if provider == "openrouter"
             else None
         ),
     )
+
+
+def _reasoning(effort: Effort) -> dict[str, Any]:
+    return {"enabled": True} if effort == "max" else {"effort": effort}
 
 
 def get_search_backend() -> SearchBackend:

@@ -397,17 +397,16 @@ const en = {
   effort: {
     pick: "Effort",
     head: "How long it thinks before replying",
-    low: { label: "Low", note: "Quick replies to simple questions. The fastest." },
-    medium: { label: "Medium", note: "Balanced, right for most questions." },
     high: {
       label: "High",
-      note: "Thinks longer first, for comparisons, plans and trade-offs. Slower.",
+      note: "Thinks it through and cites its sources. Right for most questions.",
     },
-    xhigh: {
+    max: {
       label: "Max",
-      note: "Its most careful reasoning, for hard problems. A reply can take a minute or more.",
+      note: "Its most careful reasoning, for hard problems. Slower: a reply can take a minute or two.",
     },
   },
+
   // What the bar asks for once a mode changes what sending means.
   modePlaceholder: {
     answer: "",
@@ -832,17 +831,16 @@ const fr: Dict = {
   effort: {
     pick: "Effort",
     head: "Le temps de réflexion avant de répondre",
-    low: { label: "Faible", note: "Des réponses rapides aux questions simples. Le plus rapide." },
-    medium: { label: "Moyen", note: "Équilibré, adapté à la plupart des questions." },
     high: {
       label: "Élevé",
-      note: "Réfléchit plus longtemps : comparaisons, plans, arbitrages. Plus lent.",
+      note: "Réfléchit et cite ses sources. Adapté à la plupart des questions.",
     },
-    xhigh: {
+    max: {
       label: "Max",
-      note: "Son raisonnement le plus poussé, pour les problèmes difficiles. Une réponse peut prendre une minute ou plus.",
+      note: "Son raisonnement le plus poussé, pour les problèmes difficiles. Plus lent : une réponse peut prendre une à deux minutes.",
     },
   },
+
   modePlaceholder: {
     answer: "",
     deep: "Que doit couvrir le rapport ?",

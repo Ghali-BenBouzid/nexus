@@ -331,14 +331,12 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
       document.body,
     );
 
-  // The effort goes with the mode: both only where a message reaches the
-  // supervisor, which is where either means anything.
   const modeButton = onMode && (
-    <>
-      <ModePicker mode={mode} onMode={onMode} canFactCheck={attachments.length > 0 || !!hasDocuments} />
-      <EffortPicker />
-    </>
+    <ModePicker mode={mode} onMode={onMode} canFactCheck={attachments.length > 0 || !!hasDocuments} />
   );
+  // Only where the mode is: both mean something only where a message reaches
+  // the supervisor. Beside send, since it sets how that send is answered.
+  const effortButton = onMode && <EffortPicker />;
 
   const attachButton = onAttach && (
     <>
@@ -393,6 +391,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
             {modeButton}
           </div>
           <div className="cinput-actions">
+            {effortButton}
             <button
               className={"cinput-send" + (active ? " active" : "") + (running ? " stop" : "")}
               onClick={() => (running ? onStop?.() : fire(val))}
@@ -429,6 +428,7 @@ export const PromptBar = forwardRef<PromptBarHandle, PromptBarProps>(function Pr
           placeholder={hint}
           aria-label={hint}
         />
+        {effortButton}
         {running ? (
           <button className="prompt-go stop" onClick={() => onStop?.()} aria-label="Stop generating" title="Stop generating">
             {I.stop}
