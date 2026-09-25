@@ -521,7 +521,7 @@ async function followQuery(
         message: frame.message,
         data: frame.data,
       });
-      if (mapped) cb.onEvent({ ...mapped, id: frame.id ?? lastEventId, delay: 0 });
+      if (mapped) cb.onEvent({ ...mapped, id: frame.id ?? lastEventId, delay: 0, at: clockAt(frame.at) });
     }
   } catch (err) {
     // An aborted stream is either the user stopping or our own time limit; the

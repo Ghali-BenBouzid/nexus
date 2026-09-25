@@ -9,6 +9,7 @@
 // a live one (a thought, a token) has none, because it is never stored.
 export type StreamFrame = {
   id?: number;
+  at?: string; // when a replayed event happened; a live one happens now
   type: string;
   message: string;
   data: Record<string, unknown> | null;

@@ -506,11 +506,12 @@ export default function App() {
   const callbacksFor = (id: number): ResearchCallbacks => ({
     onEvent: (e) => {
       if (cancelled.current.has(id)) return;
-      // Stamp the arrival time: the progress bar times each step from it.
+      // Stamp when it happened: the arrival time, unless it is a stored event
+      // replayed on reopening, which says when. The bar times each step from it.
       patchTurn(id, (t) => ({
         ...t,
         ...alive(),
-        events: [...t.events, { ...e, at: performance.now() }],
+        events: [...t.events, { ...e, at: e.at ?? performance.now() }],
         // A new model call replaces whatever the last one streamed. That is
         // what makes a retry safe: the failed attempt's half-written answer
         // does not stay on screen next to the real one. What it said before a
