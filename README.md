@@ -225,7 +225,8 @@ A fact check now records its document and refuses one whose check is still worki
 **One slow upstream made every call take a minute.**
 OpenRouter serves a model from several upstreams, and sorting them by throughput ranked them on a recent median that hid a degraded one: 12 tokens a second, over a minute for a 700-token reply.
 Sorting by latency picked a premium upstream at three times the price.
-Calls now sort by price, with throughput and latency floors that send an upstream missing them to the back of the line, and the same call went from over a minute to 4 to 11 seconds.
+Sorting by price with throughput and latency floors fixed it but settled on whichever cheap upstream scraped past them, 11 to 36 seconds for a 400-word answer.
+Calls now sort by throughput and keep the floors, which send an upstream degraded right now to the back of the line, and the same answer takes 4 to 5 seconds.
 
 **A long deep run ended in a raw dump of findings.**
 The deep run's writer was cut off at eight minutes and fell back to listing what the researchers found, after ten minutes of research.

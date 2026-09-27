@@ -55,17 +55,19 @@ _OPENAI_PRESETS = {
 #
 # ``provider`` picks which of the model's ~30 upstreams serves the call, and on
 # a stream that choice is something the user watches. Sorting by throughput
-# ranked upstreams on their recent median, and kept sending most calls to one
-# that was degraded (12 tok/s, 9 s to the first token, over a minute for 700
-# tokens) because its median still led. Sorting by latency alone settled on a
-# premium upstream at three times the price. So: the cheapest upstream that is
-# fast right now. The performance floors move an upstream that misses them to
-# the back of the line rather than excluding it, so a call never fails on them,
-# and none of it is priced for one model: changing LLM_MODEL needs nothing else.
-# Measured on the same 700-token call: 64-68 s before, 4-11 s after.
+# alone ranked upstreams on their recent median, and kept sending most calls to
+# one that was degraded (12 tok/s, 9 s to the first token) because its median
+# still led. Sorting by price with floors fixed that but chased the cheapest
+# upstream that scraped past them: on glm that meant Relace, Wafer and the like
+# at 11 to 36 s for a 400-word answer. So: the fastest upstream, with the floors
+# moving one that is degraded right now to the back of the line (never
+# excluding it, so a call never fails on them). On glm that is BaseTen, 3.6 to
+# 4.7 s on the same call; the premium over the cheapest upstream is a fraction
+# of a cent. Nothing here is priced for one model: changing LLM_MODEL needs
+# nothing else.
 _OPENROUTER_BODY: dict[str, Any] = {
     "provider": {
-        "sort": "price",
+        "sort": "throughput",
         "preferred_min_throughput": {"p50": 80, "p90": 50},
         "preferred_max_latency": {"p90": 2},
     },
