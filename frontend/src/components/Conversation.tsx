@@ -209,6 +209,12 @@ export function Conversation({
     if (!composer || !body) return;
     const ro = new ResizeObserver(() => {
       body.style.setProperty("--composer-h", `${composer.offsetHeight}px`);
+      // Pinned here, not left to the thread's own observer: when a turn ends
+      // on questions, the thread shrinks and the panel grows in one frame, and
+      // that observer missed the second change, leaving the brief to confirm
+      // behind the panel.
+      if (following.current) stickToBottom();
+      setAtBottom(isNearBottom());
     });
     ro.observe(composer);
     return () => ro.disconnect();
