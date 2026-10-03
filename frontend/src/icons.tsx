@@ -210,6 +210,12 @@ export const I: Record<string, ReactElement> = {
     </svg>
   ),
   // Effort: a dial, how hard the model thinks before it answers.
+  compass: (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <path d="m16.24 7.76-1.8 5.66-5.66 1.8 1.8-5.66z" />
+    </svg>
+  ),
   gauge: (
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
       <path d="m12 14 4-4" />

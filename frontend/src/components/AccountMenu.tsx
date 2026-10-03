@@ -13,7 +13,17 @@ const LOW = 15;
 // Who is signed in, and what they have left. The row (or, on the collapsed
 // rail, the avatar alone) opens a small menu over the page: drawn against the
 // viewport rather than inside the sidebar, which would clip it on the rail.
-export function AccountMenu({ account, compact }: { account: Account; compact?: boolean }) {
+export function AccountMenu({
+  account,
+  compact,
+  onTour,
+}: {
+  account: Account;
+  compact?: boolean;
+  // Replays the quick tour. Here because on a phone the landing nav that
+  // offers it is folded away.
+  onTour?: () => void;
+}) {
   const trigger = useRef<HTMLButtonElement>(null);
   const [at, setAt] = useState<{ left: number; bottom: number } | null>(null);
   const [confirming, setConfirming] = useState(false);
@@ -123,6 +133,22 @@ export function AccountMenu({ account, compact }: { account: Account; compact?: 
               </div>
               {until && <div className="acct-note">{t.account.until(until)}</div>}
             </div>
+
+            {onTour && (
+              <div className="acct-section">
+                <button
+                  type="button"
+                  className="acct-item acct-first"
+                  onClick={() => {
+                    setAt(null);
+                    onTour();
+                  }}
+                >
+                  {I.compass}
+                  {t.tour.start}
+                </button>
+              </div>
+            )}
 
             <div className="acct-section">
               {confirming ? (

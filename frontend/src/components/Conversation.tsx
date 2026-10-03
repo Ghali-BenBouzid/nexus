@@ -72,6 +72,7 @@ type ConversationProps = {
   theme: Theme;
   toggleTheme: () => void;
   account?: Account | null;
+  onTour?: () => void;
 };
 
 export function Conversation({
@@ -113,6 +114,7 @@ export function Conversation({
   theme,
   account,
   toggleTheme,
+  onTour,
 }: ConversationProps) {
   const isMobile = useIsMobile();
   const bodyRef = useRef<HTMLDivElement>(null);
@@ -260,6 +262,7 @@ export function Conversation({
   };
   // A report is drawn up as a bottom sheet on mobile whenever one is open.
   const reportUp = openOutputId != null;
+  const working = outputs.some((o) => o.status === "running" || o.status === "pending");
 
   // The panel has two states with two widths: the slim, fixed Outputs list, and
   // the wide, resizable report reader. The slim width is the resize floor, so the
@@ -340,7 +343,13 @@ export function Conversation({
               title={t.chat.showArtifacts}
             >
               {I.doc}
-              {unread.size > 0 && <span className="unread-badge">{unread.size}</span>}
+              {unread.size > 0 ? (
+                <span className="unread-badge">{unread.size}</span>
+              ) : (
+                // A run working in the background, said where its report will
+                // land, since a phone does not open the panel for it.
+                working && <span className="corner-working spin" aria-hidden="true" />
+              )}
             </button>
           )}
         </div>
@@ -377,6 +386,7 @@ export function Conversation({
           toggleTheme={toggleTheme}
           account={account}
           unread={unreadChats}
+          onTour={onTour}
         />
 
         {/* The conversation column owns the composer, so the prompt bar stays

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { t } from "../lib/i18n";
 import type { Tip as TipDef } from "../lib/tour";
-import { CARD_W, find, place, type Box } from "./Tour";
+import { cardWidth, find, place, type Box } from "./Tour";
 
 // Room left at the screen edge for the ring's pulsing halo.
 const EDGE = 12;
@@ -33,6 +33,9 @@ export function Tip({ tip, onDone }: { tip: TipDef; onDone: () => void }) {
       for (const target of tip.targets) if ((next = find(target, 4))) break;
       // A row that runs to the edge of the screen would have its ring cut off
       // there, so the ring stays inside, halo and all.
+      // A menu open in the composer is the user acting on what the tip says;
+      // the card would sit over the very option it names.
+      if (document.querySelector(".mode-menu")) next = null;
       if (next) {
         const right = Math.min(next.left + next.width, window.innerWidth - EDGE);
         const left = Math.max(next.left, EDGE);
@@ -59,7 +62,7 @@ export function Tip({ tip, onDone }: { tip: TipDef; onDone: () => void }) {
   // Clear of the larger box, but lined up with the ring, so the card still
   // reads as belonging to what it points at.
   const style = place(near ?? box, cardH);
-  if (near) style.left = Math.max(12, Math.min(box.left, window.innerWidth - 12 - CARD_W));
+  if (near) style.left = Math.max(12, Math.min(box.left, window.innerWidth - 12 - cardWidth()));
   return (
     <>
       <div

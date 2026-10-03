@@ -33,6 +33,7 @@ type ChatHistoryProps = {
   account?: Account | null;
   // Chats with a finished report the user has not opened yet.
   unread?: Set<ConversationId>;
+  onTour?: () => void;
 };
 
 // The chat workspace's left column, laid out like a chat app's: the brand in the
@@ -51,6 +52,7 @@ export function ChatHistory({
   toggleTheme,
   account,
   unread,
+  onTour,
 }: ChatHistoryProps) {
   const [items, setItems] = useState<ConversationSummary[] | null>(null);
   const listed = onOpen != null;
@@ -129,7 +131,7 @@ export function ChatHistory({
                 name and the kind of account, opening onto credits and sign out. */}
             {account && (
               <div className="ch-account-slot">
-                <AccountMenu account={account} />
+                <AccountMenu account={account} onTour={onTour} />
               </div>
             )}
           </>
@@ -146,7 +148,7 @@ export function ChatHistory({
             </button>
             <div className="ch-rail-foot">
               {settings}
-              {account && <AccountMenu account={account} compact />}
+              {account && <AccountMenu account={account} compact onTour={onTour} />}
             </div>
           </div>
         )}

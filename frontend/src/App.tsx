@@ -10,6 +10,7 @@ import { Nav } from "./components/Nav";
 import { Toast } from "./components/Toast";
 import { Tip } from "./components/Tip";
 import { Tour } from "./components/Tour";
+import { useIsMobile } from "./lib/useIsMobile";
 import { About, Footer, HowItWorks } from "./components/Sections";
 import {
   cancelQuery,
@@ -110,6 +111,7 @@ export default function App() {
   const [now, setNow] = useState(0);
   const [scrolled, setScrolled] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const isMobile = useIsMobile();
   // Locked design (the live Design Lab was removed): one accent palette for both
   // themes, a font, the dark-mode glow and background level. Applied once on mount.
   const [palette] = useState(getStoredPalette);
@@ -183,6 +185,13 @@ export default function App() {
   // find deep research or fact check. Auto once per browser, replayable from the
   // nav. It waits a beat so it lands on a settled page, not a half-painted one.
   const [tour, setTour] = useState(false);
+  // Replayed from a drawer, which is shut first: the tour points at what is
+  // behind it. Recent stays as it was on a desktop, where it is a column.
+  const startTour = () => {
+    setHistoryOpen(false);
+    if (isMobile) setChatHistoryOpen(false);
+    setTour(true);
+  };
   // One-time tips waiting to be shown, one at a time: a fact check can start a
   // second after its document was attached, and two bubbles would talk over
   // each other.
@@ -386,7 +395,10 @@ export default function App() {
     // The supervisor can start one from an ordinary message too, where the send
     // did not ask. Browsers that insist on a click simply ignore this.
     askToAnnounce();
-    setLayout("split");
+    // On a phone the panel is a sheet over the thread, and it would hide the
+    // reply that says the run started. The tip points at the Reports button
+    // instead, which shows the run is working.
+    if (!isMobile) setLayout("split");
     // The panel opening is movement at the edge of the eye, and the first time
     // it happens nobody knows what it means. Only for this chat's own run: one
     // from another chat is not in the panel to point at.
@@ -1038,7 +1050,7 @@ export default function App() {
           scrolled={scrolled}
           onHistory={live ? () => setHistoryOpen(true) : undefined}
           onStart={() => document.querySelector<HTMLTextAreaElement>(".prompt textarea")?.focus()}
-          onTour={live ? () => setTour(true) : undefined}
+          onTour={live ? startTour : undefined}
         />
       )}
 
@@ -1051,6 +1063,7 @@ export default function App() {
             setHistoryOpen(false);
             newChat();
           }}
+          onTour={startTour}
         />
       )}
 
@@ -1132,6 +1145,7 @@ export default function App() {
           theme={theme}
           toggleTheme={toggleTheme}
           account={live ? account : null}
+          onTour={live ? startTour : undefined}
         />
       )}
 

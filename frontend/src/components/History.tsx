@@ -10,6 +10,8 @@ type HistoryProps = {
   onClose: () => void;
   onOpen: (id: ConversationId) => void;
   onNewChat: () => void;
+  // Replays the quick tour, which a phone's folded nav has no room to offer.
+  onTour?: () => void;
 };
 
 function when(iso: string): string {
@@ -20,7 +22,7 @@ function when(iso: string): string {
 
 // Slide-in drawer over the whole app: the caller's past queries, pulled from the
 // backend. Selecting one rehydrates it as a turn in the conversation.
-export function History({ open, onClose, onOpen, onNewChat }: HistoryProps) {
+export function History({ open, onClose, onOpen, onNewChat, onTour }: HistoryProps) {
   const [items, setItems] = useState<ConversationSummary[] | null>(null);
 
   useEffect(() => {
@@ -67,6 +69,14 @@ export function History({ open, onClose, onOpen, onNewChat }: HistoryProps) {
             </button>
           ))}
         </div>
+        {onTour && (
+          <div className="drawer-foot">
+            <button type="button" className="acct-item" onClick={onTour}>
+              {I.compass}
+              {t.tour.start}
+            </button>
+          </div>
+        )}
       </aside>
     </div>
   );
