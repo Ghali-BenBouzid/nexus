@@ -1116,12 +1116,11 @@ html[data-theme="dark"] .cites-pop {
 .mode-pill-label { white-space: nowrap; }
 .mode-pill-chev { display: grid; place-items: center; flex: none; opacity: 0.7; }
 .mode-pill-chev svg { width: 12px; height: 12px; }
-/* Narrow bars keep the icon and drop the word; the chip above still names it. */
-/* On a phone the second pill sits far enough right that a menu opened from it
-   ran off the screen: menus open across the composer instead, whichever pill
-   opened them. */
+/* The pills keep their words on a phone: an unnamed sparkle and gauge tell a
+   first-time visitor nothing, and the bar has room for both down to 320px.
+   The second pill sits far enough right that a menu opened from it ran off
+   the screen, so menus open across the composer instead. */
 @media (max-width: 560px) {
-  .mode-pill-label { display: none; }
   .cinput .mode-pick { position: static; }
   .cinput .mode-pick .mode-menu { left: 0; right: 0; width: auto; max-width: none; }
 }
@@ -1375,6 +1374,9 @@ html[data-theme="dark"] .cites-pop {
   padding: 8px; border: none; border-radius: 8px; background: none; font: inherit; font-size: 13.5px;
   color: var(--fg); text-align: left; cursor: pointer; }
 .acct-item:hover { background: var(--surface-2); }
+.acct-item.acct-first { margin-top: -4px; margin-bottom: -4px; }
+.drawer-foot { flex: none; padding: 6px 14px 10px; border-top: 1px solid var(--line); }
+.drawer-foot .acct-item { margin-top: 0; }
 .acct-item svg { width: 16px; height: 16px; color: var(--muted); }
 .acct-warn { margin: 0; font-size: 12.5px; line-height: 1.5; color: var(--fg); }
 .acct-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
@@ -1735,6 +1737,11 @@ body:has(.nav) .toasts { top: 86px; } /* the nav is 78px tall */
   .chat-corner svg { width: 19px; height: 19px; }
   .chat-topbar-left { display: flex; align-items: center; gap: 12px; }
   .chat-corner-right.active { color: var(--accent); }
+  /* On the icon's corner, not the button's: the button grows to a 44px
+     target on touch screens and its corner sits well off the glyph. */
+  .chat-corner .unread-badge { top: calc(50% - 15px); right: calc(50% - 17px); }
+  .corner-working { position: absolute; top: calc(50% - 14px); right: calc(50% - 14px);
+    width: 10px; height: 10px; border-width: 1.5px; }
 
   /* Recent: an opaque left drawer over the thread (so the list text never bleeds
      through to the conversation), closed by default (corner opens it). It slides
@@ -1748,15 +1755,15 @@ body:has(.nav) .toasts { top: 86px; } /* the nav is 78px tall */
     background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px);
     animation: scrimIn 0.2s var(--ease); }
 
-  /* Artifacts list: a sheet dropping from the top, below the sub-bar. It shows
-     about one and a half entries, then the body scrolls to the rest. */
+  /* Artifacts list: a sheet dropping from the top, below the sub-bar. */
   .artifact-panel--list { position: fixed; left: 0; right: 0; width: auto;
     top: calc(var(--chat-top) + env(safe-area-inset-top, 0px));
     z-index: 30; border: 1px solid var(--line);
     border-radius: 0 0 16px 16px; box-shadow: var(--shadow);
     background: color-mix(in srgb, var(--panel) 95%, transparent); backdrop-filter: blur(16px) saturate(1.4);
     animation: sheetDown 0.24s var(--ease); }
-  .artifact-panel--list .ch-body { max-height: 104px; }
+  /* Sized to what it holds, uploads included, up to most of the screen. */
+  .artifact-panel--list .ch-body { max-height: 60dvh; }
   /* Tap-outside catcher for the artifacts list: under the sheet (z 30) and the
      sub-bar (z 40, so its toggle stays live), over the thread so a tap closes
      the sheet instead of falling through and focusing a turn behind it. */
@@ -1825,7 +1832,7 @@ body:has(.nav) .toasts { top: 86px; } /* the nav is 78px tall */
    independent of viewport width. Fine (mouse) pointers keep the tighter
    desktop density. */
 @media (pointer: coarse) {
-  .nav-rail, .icon-btn, .theme-toggle, .drawer-x, .cinput-send, .prompt-go, .nav-start {
+  .nav-rail, .icon-btn, .theme-toggle, .drawer-x, .cinput-send, .prompt-go, .nav-start, .chat-corner {
     min-width: 44px; min-height: 44px;
   }
   .chip { min-height: 44px; }

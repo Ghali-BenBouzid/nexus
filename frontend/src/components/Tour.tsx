@@ -8,7 +8,9 @@ import { markTourSeen, tourSteps, type TourStep } from "../lib/tour";
 // popover sits off it.
 const PAD = 8;
 const GAP = 14;
-export const CARD_W = 320;
+const CARD_W = 320;
+// The lit area stays this far inside the screen.
+const EDGE = 2;
 
 // How long the spotlight takes to travel between steps. A fixed duration meant
 // the velocity rose with the distance: the short hop from the mode pill to the
@@ -38,7 +40,19 @@ export function find(target: string | null, pad = PAD): Box | null {
   if (!el) return null;
   const r = el.getBoundingClientRect();
   if (r.width === 0 && r.height === 0) return null; // rendered but hidden
-  return { top: r.top - pad, left: r.left - pad, width: r.width + pad * 2, height: r.height + pad * 2 };
+  // Kept on screen: a control flush with the edge, like a phone's corner
+  // buttons, would otherwise have its lit area cut off there.
+  const top = Math.max(EDGE, r.top - pad);
+  const left = Math.max(EDGE, r.left - pad);
+  const bottom = Math.min(window.innerHeight - EDGE, r.bottom + pad);
+  const right = Math.min(window.innerWidth - EDGE, r.right + pad);
+  return { top, left, width: right - left, height: bottom - top };
+}
+
+// A phone gets the card across the screen in the composer's gutters, rather
+// than a desktop-sized card pushed against one side.
+export function cardWidth(): number {
+  return window.innerWidth <= 560 ? window.innerWidth - 32 : CARD_W;
 }
 
 // Where the card goes relative to the lit area. Four placements, then a clamp,
@@ -48,27 +62,30 @@ export function find(target: string | null, pad = PAD): Box | null {
 export function place(box: Box | null, cardH: number): React.CSSProperties {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
-  if (!box) return { top: Math.max(12, vh / 2 - cardH / 2), left: vw / 2 - CARD_W / 2 };
+  const w = cardWidth();
+  const edge = vw <= 560 ? 16 : 12;
+  if (!box) return { top: Math.max(12, vh / 2 - cardH / 2), left: vw / 2 - w / 2, width: w };
 
   let top: number;
   let left: number;
   if (box.top + box.height + GAP + cardH < vh) {
     top = box.top + box.height + GAP;
-    left = box.left + box.width / 2 - CARD_W / 2;
+    left = box.left + box.width / 2 - w / 2;
   } else if (box.top - GAP - cardH > 0) {
     top = box.top - GAP - cardH;
-    left = box.left + box.width / 2 - CARD_W / 2;
-  } else if (box.left + box.width + GAP + CARD_W < vw) {
+    left = box.left + box.width / 2 - w / 2;
+  } else if (box.left + box.width + GAP + w < vw) {
     left = box.left + box.width + GAP;
     top = box.top + box.height / 2 - cardH / 2;
   } else {
-    left = box.left - GAP - CARD_W;
+    left = box.left - GAP - w;
     top = box.top + box.height / 2 - cardH / 2;
   }
   // Whatever the placement decided, the card has to be on screen.
   return {
     top: Math.min(Math.max(12, top), Math.max(12, vh - 12 - cardH)),
-    left: Math.min(Math.max(12, left), Math.max(12, vw - 12 - CARD_W)),
+    left: Math.min(Math.max(edge, left), Math.max(edge, vw - edge - w)),
+    width: w,
   };
 }
 
