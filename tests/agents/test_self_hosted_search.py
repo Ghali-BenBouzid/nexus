@@ -2,8 +2,9 @@
 
 The request and response shapes here are the real ones: SearXNG's
 ``/search?format=json`` returns a ``results`` list of title/url/content, and
-Crawl4AI's ``/md`` returns ``{"markdown": ...}``. A fake transport stands in for
-the services so the contract is pinned without running either.
+Crawl4AI's ``/crawl`` returns a ``results`` list, one per URL, each with
+``success`` and a ``markdown`` of raw and pruned text. A fake transport stands
+in for the services so the contract is pinned without running either.
 """
 
 import json
@@ -95,24 +96,50 @@ async def test_a_result_missing_its_fields_does_not_break_the_search() -> None:
     assert hit.content == ""
 
 
-async def test_a_page_is_read_as_pruned_markdown() -> None:
+def _crawled(**result) -> dict:
+    """A Crawl4AI ``/crawl`` answer for one URL."""
+    return {"success": True, "results": [{"success": True, **result}]}
+
+
+PROSE = "The prose. " * 100  # past the pruning floor
+
+
+async def test_a_page_is_read_as_pruned_markdown_after_it_renders() -> None:
     seen: dict = {}
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen["path"] = request.url.path
         seen["body"] = json.loads(request.content)
         return httpx.Response(
-            200, json={"markdown": "# Title\n\nThe prose.", "success": True}
+            200,
+            json=_crawled(
+                markdown={"raw_markdown": "nav " + PROSE, "fit_markdown": PROSE}
+            ),
         )
 
     text = await _backend(handler).extract("https://example.org/page")
 
-    assert text == "# Title\n\nThe prose."
-    assert seen["path"] == "/md"
-    assert seen["body"]["url"] == "https://example.org/page"
-    # "fit" is the pruning filter: nav, ads and footers out, the page's own
-    # prose in. "raw" would spend the context window on chrome.
-    assert seen["body"]["f"] == "fit"
+    assert text == PROSE
+    assert seen["path"] == "/crawl"
+    assert seen["body"]["urls"] == ["https://example.org/page"]
+    run = seen["body"]["crawler_config"]["params"]
+    # /md captured a page before its scripts filled it in. "networkidle" would
+    # hang on sites that never stop streaming.
+    assert run["wait_until"] == "load"
+    assert run["delay_before_return_html"] > 0
+    filter_ = run["markdown_generator"]["params"]["content_filter"]
+    assert filter_["type"] == "PruningContentFilter"
+
+
+async def test_a_page_the_filter_hollowed_out_is_read_whole() -> None:
+    """Booking.com pruned to one blank line while the page held 70k characters."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200, json=_crawled(markdown={"raw_markdown": PROSE, "fit_markdown": "\n"})
+        )
+
+    assert await _backend(handler).extract("https://example.org/page") == PROSE
 
 
 async def test_a_token_is_sent_when_the_reader_wants_one() -> None:
@@ -120,7 +147,7 @@ async def test_a_token_is_sent_when_the_reader_wants_one() -> None:
 
     def handler(request: httpx.Request) -> httpx.Response:
         seen["auth"] = request.headers.get("Authorization")
-        return httpx.Response(200, json={"markdown": "text"})
+        return httpx.Response(200, json=_crawled(markdown={"fit_markdown": PROSE}))
 
     backend = _backend(handler)
     backend.crawl4ai_token = "s3cret"
@@ -131,9 +158,60 @@ async def test_a_token_is_sent_when_the_reader_wants_one() -> None:
 
 async def test_an_empty_page_reads_as_nothing_rather_than_none() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"success": True})
+        return httpx.Response(200, json=_crawled())
 
     assert await _backend(handler).extract("https://example.org/page") == ""
+
+
+async def test_a_bot_wall_fails_once_and_names_itself() -> None:
+    """Crawl4AI reports a bot wall inside a 200. Retrying it hits the same wall,
+    and the agent has to hear it was blocked, not that the page was empty."""
+    calls = [0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls[0] += 1
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "results": [
+                    {
+                        "success": False,
+                        "error_message": "Blocked by anti-bot protection: "
+                        "Cloudflare JS challenge",
+                    }
+                ],
+            },
+        )
+
+    backend = _backend(handler)
+    backend.retry = RetryPolicy(max_attempts=3, base_delay=0)
+    with pytest.raises(SearchError) as caught:
+        await backend.extract("https://example.org/page")
+
+    assert calls[0] == 1
+    assert str(caught.value) == (
+        "page fetch failed: the site blocks automated reading (Cloudflare JS challenge)"
+    )
+
+
+async def test_a_page_that_did_not_load_says_so_and_keeps_the_detail_out() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "success": True,
+                "results": [
+                    {"success": False, "error_message": "Error at /usr/local/x.py"}
+                ],
+            },
+        )
+
+    with pytest.raises(SearchError) as caught:
+        await _backend(handler).extract("https://example.org/page")
+
+    assert str(caught.value) == "page fetch failed: the page did not load"
+    assert "/usr/local" in str(caught.value.__cause__)
 
 
 @pytest.mark.parametrize("status", [403, 500])

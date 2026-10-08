@@ -12,7 +12,8 @@ from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.outputs import LLMResult
 
 from app.agents.model import _usage_of as usage_of
-from app.agents.tools import MAX_PAGE_CHARS, SearchBackend, SearchHit
+from app.agents.pages import clean
+from app.agents.tools import SearchBackend, SearchHit
 from app.evals.trace import FetchCall, SearchCall, SearchHitRecord
 from app.evals.trace import StageUsage as StageUsage_
 from app.observability import STAGE
@@ -77,7 +78,10 @@ class RecordingSearchBackend:
             raise
         finally:
             call.seconds = round(time.monotonic() - started, 1)
-        call.text = text[:MAX_PAGE_CHARS]  # what the researcher was actually shown
+        # The whole cleaned page, not the passages the researcher was shown:
+        # those depend on the focus it asked with, which this layer never sees,
+        # and a claim judged against less than it read fails for no reason.
+        call.text = clean(text)
         return text
 
 
