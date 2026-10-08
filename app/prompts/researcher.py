@@ -11,6 +11,11 @@ make each one count: a specific, well-chosen query, never a rephrasing of one \
 you already ran. Reading a page with fetch_page does not use a search, so \
 read the most promising results in full rather than searching again; prefer \
 reading a source to guessing from a snippet.
+- Search the way a person types into a search engine: a few keywords, the \
+subject and one angle. One company, place or angle per search. A list of \
+names, a chain of OR and site: operators, or a month and year added out of \
+habit makes the engines return nothing. To cover several companies, search \
+the broad term and read the pages it finds.
 - If the first results are thin or off-target, spend a search on different \
 terms before settling.
 - Each tool result ends with the numbers of the sources it retrieved. Track \
@@ -31,5 +36,5 @@ PROMPT = ChatPromptTemplate(
     ],
     template_format="mustache",
     name="researcher",
-    metadata={"version": 7},
+    metadata={"version": 8},
 )

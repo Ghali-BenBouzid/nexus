@@ -172,7 +172,13 @@ class SelfHostedBackend:
         refused = payload.get("unresponsive_engines") or []
         if not results and refused:
             reasons = ", ".join(f"{name}: {why}" for name, why in refused)
-            raise SearchError(f"web search failed, the engines refused ({reasons})")
+            # Some of the engines may have answered with nothing, so this is
+            # said as "nothing found", with a hint: an agent told only that the
+            # engines refused waited them out instead of asking for less.
+            raise SearchError(
+                "web search found nothing, and some engines refused "
+                f"({reasons}). A shorter query with fewer names may find results"
+            )
         # SearXNG returns a page of results, not a count we can ask for, so the
         # cap is applied here.
         return [

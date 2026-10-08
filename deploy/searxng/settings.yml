@@ -31,7 +31,11 @@ search:
 engines:
   - name: google
     disabled: false
+  # Bing stays off: through SearXNG it answers on one word of the query, so
+  # "Product Owner Data offre emploi" came back as dictionary entries for
+  # "offre" and "product", and some English queries came back empty. It filled
+  # half of every result page with that, crowding out the engines that work.
   - name: bing
-    disabled: false
+    disabled: true
   - name: yahoo
     disabled: false
