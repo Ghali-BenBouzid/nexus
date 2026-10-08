@@ -22,8 +22,12 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    # New status for a plan paused for the user to confirm or revise.
-    op.execute("ALTER TYPE query_status ADD VALUE IF NOT EXISTS 'awaiting_plan'")
+    # New status for a plan paused for the user to confirm or revise. Committed
+    # on its own: Postgres refuses a new enum value inside the transaction that
+    # added it, and a fresh database runs every migration in one transaction,
+    # so a1b2c3d4e5f7's UPDATE on 'awaiting_plan' failed there.
+    with op.get_context().autocommit_block():
+        op.execute("ALTER TYPE query_status ADD VALUE IF NOT EXISTS 'awaiting_plan'")
     op.add_column(
         "queries",
         sa.Column(

@@ -16,6 +16,7 @@ from typing import Any, Protocol
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 
+from app.agents.pages import clean, excerpt
 from app.agents.schemas import AgentEvent, Source
 from app.agents.sources import Sources
 
@@ -25,6 +26,7 @@ Emit = Callable[[AgentEvent], Awaitable[None]]
 _Retrieving = Callable[[], Awaitable["RetrievalResult"]]
 
 MAX_PAGE_CHARS = 6_000  # cap fetched page text so it can't blow the token budget
+MIN_PAGE_CHARS = 200  # less than this is not a page the agent can read
 
 
 def tagged(tag: str, body: str, **attributes: str) -> str:
@@ -180,12 +182,26 @@ class SubmitClaimsArgs(BaseModel):
 
 
 class WebSearchArgs(BaseModel):
-    query: str = Field(description="The search query to run against the web")
+    # Written from what SearXNG's engines do with a query: a few keywords find
+    # the pages, a sentence or a list of names finds nothing (zero results for a
+    # query naming five companies) or dictionary entries for its common words.
+    query: str = Field(
+        description="A few keywords, like a person would type: the subject and "
+        "one angle on it. Not a sentence, and not a list of names: one search "
+        "per company, place or angle."
+    )
     max_results: int = Field(default=5, description="How many results to return")
 
 
 class FetchPageArgs(BaseModel):
-    url: str = Field(description="The URL of the page to fetch and read in full")
+    url: str = Field(description="The URL of the page to read")
+    focus: str = Field(
+        default="",
+        description="What you need from this page, in a few words (e.g. "
+        '"companies hiring and their locations"). A long page comes back as '
+        "the passages that match it; read it again with another focus for "
+        "other parts. Leave empty to get the start of the page.",
+    )
 
 
 # --- retrieval ---------------------------------------------------------------
@@ -206,13 +222,32 @@ async def web_search_results(
     )
 
 
-async def fetch_page_text(backend: SearchBackend, url: str) -> RetrievalResult:
-    """One page, cleaned and capped so it cannot blow the context window."""
-    text = await backend.extract(url)
-    if len(text) > MAX_PAGE_CHARS:
-        text = text[:MAX_PAGE_CHARS] + "\n\n[...truncated]"
+async def fetch_page_text(
+    backend: SearchBackend, url: str, focus: str = ""
+) -> RetrievalResult:
+    """One page, cleaned and cut to the passages that bear on ``focus``, so it
+    cannot blow the context window and what fits is what the agent wants."""
+    text = clean(await backend.extract(url))
+    # A page that loads with next to no text is a bot check, a login wall or an
+    # app that never rendered. Handed over as an empty page, it read to the
+    # agent as "there is nothing here"; as a failure it reads as "try elsewhere".
+    # ponytail: length heuristic; a wall longer than this still gets through.
+    if len(text.strip()) < MIN_PAGE_CHARS:
+        raise ValueError(
+            "the page has no readable text (likely a bot check or login wall)"
+        )
+    whole = len(text)
+    text = excerpt(text, focus, MAX_PAGE_CHARS)
+    if len(text) < whole:
+        # Said outside the tag: it is ours, not the page's.
+        text = tagged("page", text, url=url) + (
+            f"\n\nThis is {len(text):,} of the page's {whole:,} characters. "
+            "Read it again with a different focus for other parts."
+        )
+    else:
+        text = tagged("page", text, url=url)
     return RetrievalResult(
-        content=tagged("page", text, url=url),
+        content=text,
         sources=[Source(title=url, url=url)],
     )
 
@@ -272,17 +307,20 @@ def retrieval_tools(
             "web_search", lambda: web_search_results(backend, query, max_results)
         )
 
-    async def fetch_page(url: str) -> str:
+    async def fetch_page(url: str, focus: str = "") -> str:
         if reads is not None:
             reads[0] += 1
-        return await retrieve("fetch_page", lambda: fetch_page_text(backend, url))
+        return await retrieve(
+            "fetch_page", lambda: fetch_page_text(backend, url, focus)
+        )
 
     return [
         StructuredTool.from_function(
             coroutine=web_search,
             name="web_search",
             description=(
-                "Run a web search for a query and return up to max_results results."
+                "Search the web and return up to max_results results, each with "
+                "a short snippet."
             ),
             args_schema=WebSearchArgs,
         ),
@@ -290,8 +328,9 @@ def retrieval_tools(
             coroutine=fetch_page,
             name="fetch_page",
             description=(
-                "Fetch a web page by URL and return its cleaned full text, for when "
-                "a search snippet is promising but insufficient."
+                "Read a web page: the whole of a short one, or the passages of a "
+                "long one that match your focus. For when a search snippet is "
+                "promising but insufficient."
             ),
             args_schema=FetchPageArgs,
         ),

@@ -93,7 +93,7 @@ class SelfHostedBackend:
 
     * **SearXNG** is the index. It is a metasearch proxy: it forwards the query
       to Google, Bing, DuckDuckGo and friends and normalises what comes back.
-    * **Crawl4AI** is the reader. Its ``/md`` endpoint fetches a page in a real
+    * **Crawl4AI** is the reader. Its ``/crawl`` endpoint fetches a page in a real
       browser and returns pruned markdown, so a JS-rendered page is not an empty
       shell.
 
@@ -172,7 +172,13 @@ class SelfHostedBackend:
         refused = payload.get("unresponsive_engines") or []
         if not results and refused:
             reasons = ", ".join(f"{name}: {why}" for name, why in refused)
-            raise SearchError(f"web search failed, the engines refused ({reasons})")
+            # Some of the engines may have answered with nothing, so this is
+            # said as "nothing found", with a hint: an agent told only that the
+            # engines refused waited them out instead of asking for less.
+            raise SearchError(
+                "web search found nothing, and some engines refused "
+                f"({reasons}). A shorter query with fewer names may find results"
+            )
         # SearXNG returns a page of results, not a count we can ask for, so the
         # cap is applied here.
         return [
@@ -194,11 +200,8 @@ class SelfHostedBackend:
 
         async def _call() -> dict:
             response = await client.post(
-                f"{self.crawl4ai_url}/md",
-                # f="fit" runs Crawl4AI's pruning filter, which drops nav, ads
-                # and footers and returns the page's own prose. "raw" would hand
-                # the whole document back and spend the context window on chrome.
-                json={"url": url, "f": "fit", "c": "0"},
+                f"{self.crawl4ai_url}/crawl",
+                json=_crawl_request(url),
                 headers=headers,
                 timeout=self.read_timeout,
             )
@@ -209,4 +212,62 @@ class SelfHostedBackend:
             payload = await retry_async(_call, policy=self.retry)
         except Exception as exc:
             raise SearchError("page fetch failed") from exc
-        return payload.get("markdown") or ""
+        # A page that would not load comes back inside a 200, so it is not
+        # retried: a bot wall or a dead page answers the same way every time.
+        # The agent is told which, so it moves to another source instead of
+        # concluding the subject has nothing written about it.
+        [result] = payload.get("results") or [{}]
+        if not result.get("success"):
+            error = result.get("error_message") or "no reason given"
+            if error.startswith("Blocked by anti-bot protection"):
+                wall = error.removeprefix("Blocked by anti-bot protection:").strip()
+                raise SearchError(
+                    f"page fetch failed: the site blocks automated reading ({wall})"
+                )
+            raise SearchError("page fetch failed: the page did not load") from (
+                RuntimeError(error)
+            )
+        markdown = result.get("markdown") or {}
+        fit = markdown.get("fit_markdown") or ""
+        # The pruning filter now and then prunes the page's own content along
+        # with the chrome. Past a screenful it is right; under one, the whole
+        # page beats what is left of it.
+        # ponytail: fixed threshold; compare against raw's length if it misfires.
+        return fit if len(fit) >= _FIT_FLOOR else markdown.get("raw_markdown") or ""
+
+
+_FIT_FLOOR = 1_000  # chars of pruned text below which the unpruned page is used
+
+
+def _crawl_request(url: str) -> dict:
+    """Crawl4AI ``/crawl`` body for reading one page. ``/md`` would be simpler
+    but captures the page as soon as its HTML is parsed, before its scripts fill
+    it in: IMDb and Booking came back as one blank line, Reddit as a skip link.
+    Only ``/crawl`` takes the wait settings."""
+    return {
+        "urls": [url],
+        "browser_config": {"type": "BrowserConfig", "params": {"headless": True}},
+        "crawler_config": {
+            "type": "CrawlerRunConfig",
+            "params": {
+                "cache_mode": "bypass",
+                # "load" plus a short settle, not "networkidle": sites that
+                # stream (x.com, The Verge) never go idle and would hang to the
+                # page timeout and fail.
+                "wait_until": "load",
+                "delay_before_return_html": 2.0,
+                "page_timeout": 20_000,  # ms
+                # The pruning filter drops nav, ads and footers, so the capped
+                # page the agent reads is the page's prose rather than chrome.
+                "markdown_generator": {
+                    "type": "DefaultMarkdownGenerator",
+                    "params": {
+                        "content_filter": {
+                            "type": "PruningContentFilter",
+                            "params": {},
+                        }
+                    },
+                },
+            },
+        },
+    }
