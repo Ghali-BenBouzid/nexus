@@ -117,6 +117,28 @@ async def test_another_users_run_is_not_streamable(
 # --- helpers ----------------------------------------------------------------
 
 
+async def test_the_feed_holds_no_connection_while_it_follows_along(
+    client: AsyncClient, auth_headers: dict[str, str], monkeypatch
+) -> None:
+    """A browser can watch a run for minutes. Behind a session-mode pooler every
+    open transaction pins a server connection, so the feed must end its read
+    transaction after the drain and after each keep-alive, not hold it open."""
+    monkeypatch.setattr(bus, "IDLE_SECONDS", 0.05)
+    query_id = await _query(client, auth_headers)
+    await EventSink(query_id)(AgentEvent(type="thinking", message="already happened"))
+
+    async with db_session.SessionLocal() as db:
+        query = await db.get(Query, query_id)
+        assert query is not None
+        frames = router.feed(db, query)
+        await anext(frames)  # the replayed event
+        await anext(frames)  # a keep-alive, read from the database
+        assert not db.in_transaction()
+        await bus.publish(query_id, AgentEvent(type=bus.DONE, message=""))
+        rest = [json.loads(frame[len("data: ") :]) async for frame in frames]
+        assert rest[-1]["type"] == "done"
+
+
 async def _query(client: AsyncClient, auth_headers: dict[str, str]) -> int:
     me = await client.get("/auth/me", headers=auth_headers)
     async with db_session.SessionLocal() as db:

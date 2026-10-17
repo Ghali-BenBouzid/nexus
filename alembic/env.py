@@ -84,7 +84,7 @@ async def run_migrations_online() -> None:
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
-        connect_args=settings.db_connect_args,  # SSL for managed Postgres (Neon)
+        connect_args=settings.db_connect_args,  # SSL for managed Postgres (Supabase)
     )
 
     async with connectable.connect() as connection:

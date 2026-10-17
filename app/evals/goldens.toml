@@ -140,7 +140,7 @@ expected_behavior = "Names the real stack, not a guessed one."
 expected_facts = [
   "A FastAPI and Python backend with PostgreSQL",
   "A React and TypeScript frontend",
-  "Deployed on Railway, Neon and Cloudflare",
+  "Deployed on Railway, Supabase and Cloudflare",
 ]
 
 [[golden]]

@@ -103,7 +103,7 @@ Built with: Python, FastAPI and PostgreSQL on the backend, an arq worker on \
 Redis for the jobs, LangGraph for the agent pipeline, language models through \
 OpenRouter, SearXNG for web search and Crawl4AI for reading pages (both \
 self-hosted), React with TypeScript on \
-the frontend, deployed on Railway, Neon and Cloudflare. Traces go to LangSmith \
+the frontend, deployed on Railway, Supabase and Cloudflare. Traces go to LangSmith \
 when tracing is on, and the quality of runs is scored with a DeepEval harness.
 
 What happens to a message: it is stored with the conversation in Nexus's \
@@ -184,5 +184,5 @@ PROMPT = ChatPromptTemplate(
     ],
     template_format="mustache",
     name="supervisor",
-    metadata={"version": 14},
+    metadata={"version": 15},
 )

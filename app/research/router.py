@@ -171,6 +171,10 @@ async def feed(db: AsyncSession, query: Query, *, after: int = 0) -> AsyncIterat
     if query.status in (QueryStatus.complete, QueryStatus.failed):
         yield _frame(bus.DONE, "", None, seen)
         return
+    # A browser can follow a run for minutes. Ending each read transaction hands
+    # the connection back to the pool, where an open one would pin a server
+    # connection behind the session-mode pooler for the whole run.
+    await db.commit()
     async with bus.subscribe(query.id) as live:
         async for event in live:
             if event is None:
@@ -178,6 +182,7 @@ async def feed(db: AsyncSession, query: Query, *, after: int = 0) -> AsyncIterat
                 # the run's liveness: a job that died mid-tool sends nothing at
                 # all, and this is what lets the bar say so.
                 await db.refresh(query, ["heartbeat_at"])
+                await db.commit()
                 yield _frame(
                     "heartbeat", "", {"since": _seconds_since(query.heartbeat_at)}, None
                 )
