@@ -1,3 +1,5 @@
+import ssl
+
 from app.core.config import Settings
 
 
@@ -39,3 +41,21 @@ def test_a_database_url_copied_from_a_provider_is_made_async(monkeypatch):
     for given, expected in cases.items():
         monkeypatch.setenv("DATABASE_URL", given)
         assert Settings(_env_file=None).database_url == expected
+
+
+def test_ssl_trusts_supabase_root_and_still_verifies(monkeypatch):
+    """Supabase's pooler chains to Supabase's own root, which no system store
+    holds, so a plain verified connection failed. The root is added to the
+    public ones, not swapped for them: the Neon backup still verifies too."""
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://u:p@h/d")
+    monkeypatch.setenv("DATABASE_SSL", "true")
+    monkeypatch.setenv("SECRET_KEY", "x")
+    monkeypatch.setenv("ALGORITHM", "HS256")
+    monkeypatch.setenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60")
+    context = Settings(_env_file=None).db_connect_args["ssl"]
+    assert isinstance(context, ssl.SSLContext)
+    assert context.verify_mode == ssl.CERT_REQUIRED
+    assert context.check_hostname
+    assert not context.verify_flags & ssl.VERIFY_X509_STRICT  # Supabase's root fails it
+    names = [dict(f[0] for f in ca["subject"]) for ca in context.get_ca_certs()]
+    assert any(name.get("commonName") == "Supabase Root 2021 CA" for name in names)

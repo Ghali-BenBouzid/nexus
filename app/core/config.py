@@ -1,3 +1,5 @@
+import ssl
+from pathlib import Path
 from typing import Literal
 
 from pydantic import field_validator
@@ -8,6 +10,9 @@ from sqlalchemy.engine import make_url
 # "max" for no effort at all, which leaves the model at its own ceiling. glm
 # only has two steps below that: low answers like medium, high like xhigh.
 Effort = Literal["low", "medium", "high", "xhigh", "max"]
+# Supabase's pooler chains to Supabase's own root CA, which no system store
+# holds. Public, valid until 2031, from Supabase's database settings page.
+SUPABASE_ROOT_CA = Path(__file__).parents[1] / "db" / "certs" / "supabase-root-2021.crt"
 # What the user can pick for the supervisor. Low and medium left glm too little
 # thought to cite what it had found.
 UserEffort = Literal["high", "max"]
@@ -259,8 +264,17 @@ class Settings(BaseSettings):
 
     @property
     def db_connect_args(self) -> dict[str, object]:
-        # asyncpg (unlike psycopg2) won't read sslmode from the URL; pass ssl here.
-        return {"ssl": True} if self.database_ssl else {}
+        """asyncpg won't read sslmode from the URL, so SSL is passed here: verified,
+        against the public roots plus Supabase's, so a Supabase or a Neon URL
+        both connect."""
+        if not self.database_ssl:
+            return {}
+        context = ssl.create_default_context()
+        context.load_verify_locations(cafile=SUPABASE_ROOT_CA)
+        # Python 3.13's strict X.509 mode rejects Supabase's root for lacking a
+        # key usage extension. The chain and the hostname are still verified.
+        context.verify_flags &= ~ssl.VERIFY_X509_STRICT
+        return {"ssl": context}
 
     @property
     def db_engine_args(self) -> dict[str, object]:
