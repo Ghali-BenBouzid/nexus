@@ -16,7 +16,14 @@ class Settings(BaseSettings):
 
     # database settings
     database_url: str
-    database_ssl: bool = False  # True for managed Postgres (Neon); off locally
+    database_ssl: bool = False  # True for managed Postgres (Supabase); off locally
+    # Connections per process. Supabase's session-mode pooler gives every client
+    # connection its own server connection, up to the project's Pool Size, so the
+    # API, the worker and the checkpointer have to fit under it together. Each
+    # SQLAlchemy pool opens at most db_pool_size + db_max_overflow.
+    db_pool_size: int = 3
+    db_max_overflow: int = 2
+    checkpoint_pool_size: int = 2  # the worker's LangGraph checkpointer, kept open
 
     # auth settings
     secret_key: str
@@ -236,6 +243,19 @@ class Settings(BaseSettings):
     def db_connect_args(self) -> dict[str, object]:
         # asyncpg (unlike psycopg2) won't read sslmode from the URL; pass ssl here.
         return {"ssl": True} if self.database_ssl else {}
+
+    @property
+    def db_engine_args(self) -> dict[str, object]:
+        """Pool sizing for Postgres. SQLite (the tests) keeps its own pool, which
+        refuses these arguments. pre_ping replaces a connection the pooler or a
+        database restart closed, instead of failing the request that drew it."""
+        if not self.database_url.startswith("postgresql"):
+            return {}
+        return {
+            "pool_size": self.db_pool_size,
+            "max_overflow": self.db_max_overflow,
+            "pool_pre_ping": True,
+        }
 
 
 settings = Settings()

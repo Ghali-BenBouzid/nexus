@@ -94,7 +94,7 @@ What each piece is used for:
 | LangSmith | Optional tracing of every agent step |
 | React + TypeScript + Vite | The chat interface and the report panel |
 | pdf.js, mammoth | Showing an uploaded PDF or Word file inside the app |
-| Railway, Neon, Cloudflare | Hosting for the API and worker, the database, and the frontend |
+| Railway, Supabase, Cloudflare | Hosting for the API and worker, the database, and the frontend |
 
 Each agent is a LangChain agent: a prompt, a set of tools and the loop that runs them.
 
@@ -437,9 +437,12 @@ uv run python -m app.evals run --category owner,current   # a slice; spends mode
 
 ## Deployment
 
-Nexus is set up to run on Railway (API, worker and Redis), Neon (Postgres) and Cloudflare (frontend).
+Nexus is set up to run on Railway (API, worker and Redis), Supabase (Postgres) and Cloudflare (frontend).
 
-1. **Neon:** create a database and use its connection string in the `postgresql+asyncpg://` form, with `DATABASE_SSL=true`.
+1. **Supabase:** create a project and take the **Session pooler** connection string from the Connect button, in the `postgresql+asyncpg://` form, with `DATABASE_SSL=true`.
+   The direct connection is IPv6 only on the free plan, which Railway cannot reach, and the transaction pooler breaks asyncpg's prepared statements.
+   The session pooler gives each client connection its own server connection, up to the project's Pool Size, so `DB_POOL_SIZE`, `DB_MAX_OVERFLOW` and `CHECKPOINT_POOL_SIZE` keep the API and the worker under it together.
+   Leave Supabase's GitHub integration off: Alembic owns the schema and runs on every API deploy, and a second migration tool would not know about it.
 2. **Railway, Redis:** add a Redis service; its private URL is `REDIS_URL`.
 3. **Railway, API:** deploy from the root `Dockerfile`, which runs the migrations and starts the API. Set the variables from `.env.example`, and give the OpenRouter key a hard credit limit.
 4. **Railway, worker:** a second service from the same repository and `Dockerfile`, with the same variables, the start command `arq app.worker.WorkerSettings` and no public domain.

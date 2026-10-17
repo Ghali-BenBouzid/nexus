@@ -1,7 +1,7 @@
 {
   "supervisor": {
-    "version": 14,
-    "sha256": "8211e044adf1b65711ab250fb95556e66b4d90556a79f71f0783e277c9949516"
+    "version": 15,
+    "sha256": "ff375dc39eada413de0974fc419b9cf7d8c5553fa000c72047b0156e5d29f37e"
   },
   "planner": {
     "version": 6,

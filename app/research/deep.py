@@ -54,6 +54,7 @@ async def open_graph(*, in_memory: bool = False) -> None:
         return
     _pool = AsyncConnectionPool(
         _conninfo(),
+        min_size=settings.checkpoint_pool_size,
         open=False,
         kwargs={"autocommit": True, "prepare_threshold": 0, "row_factory": dict_row},
     )

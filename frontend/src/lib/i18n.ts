@@ -63,7 +63,7 @@ const en = {
     builtWith: [
       { label: "Backend", items: ["FastAPI", "Python", "LangGraph", "Postgres", "Redis"] },
       { label: "Frontend", items: ["React", "TypeScript", "three.js"] },
-      { label: "Deployment", items: ["Railway", "Neon", "Cloudflare"] },
+      { label: "Deployment", items: ["Railway", "Supabase", "Cloudflare"] },
     ],
     sourceLink: "Source on GitHub",
   },
@@ -92,7 +92,7 @@ const en = {
 
     sysTitle: "What runs underneath",
     sysBody: "A run takes anywhere from two seconds to a few minutes. At first I ran the agents inside the API request, which worked until I deployed during one and killed it. Now the API saves your message, drops a job on a queue and returns straight away, and a separate worker does the work. The browser keeps one stream open, so you watch each step and then the answer arrive instead of watching a spinner.",
-    sysAria: "The browser loads the frontend from Cloudflare and calls a FastAPI service on Railway. The API writes to Neon Postgres and pushes jobs onto a Redis queue. A worker on Railway runs the agents, calling OpenRouter for models and our own SearXNG and Crawl4AI services for search and page reading, publishes each frame back through Redis, and the API forwards them to the browser as server-sent events.",
+    sysAria: "The browser loads the frontend from Cloudflare and calls a FastAPI service on Railway. The API writes to Postgres on Supabase and pushes jobs onto a Redis queue. A worker on Railway runs the agents, calling OpenRouter for models and our own SearXNG and Crawl4AI services for search and page reading, publishes each frame back through Redis, and the API forwards them to the browser as server-sent events.",
     sysNotes: [
       { lead: "The queue costs me a service.", rest: " Redis and a second process are both things that can break at three in the morning, and I would not add them to a smaller project. Here a run outliving a deploy was worth it." },
       { lead: "A heartbeat, and something to collect the dead.", rest: " The worker writes a heartbeat every few seconds. A scheduled check fails any run whose heartbeat stopped, because a crashed job sitting at \"running\" forever is worse than one that admits it failed." },
@@ -161,7 +161,7 @@ const en = {
       worker: "Worker",
       workerRole: "runs the agents",
       db: "Postgres",
-      dbRole: "Neon",
+      dbRole: "Supabase",
       models: "OpenRouter",
       search: "SearXNG + Crawl4AI",
       searchRole: "self-hosted",
@@ -512,7 +512,7 @@ const fr: Dict = {
     builtWith: [
       { label: "Partie serveur", items: ["FastAPI", "Python", "LangGraph", "Postgres", "Redis"] },
       { label: "Interface", items: ["React", "TypeScript", "three.js"] },
-      { label: "Déploiement", items: ["Railway", "Neon", "Cloudflare"] },
+      { label: "Déploiement", items: ["Railway", "Supabase", "Cloudflare"] },
     ],
     sourceLink: "Code sur GitHub",
   },
@@ -541,7 +541,7 @@ const fr: Dict = {
 
     sysTitle: "Ce qui tourne en dessous",
     sysBody: "Une recherche dure de deux secondes à quelques minutes. Au début, j'exécutais les agents dans la requête API, ce qui a fonctionné jusqu'au jour où un déploiement en a interrompu une en plein milieu. Désormais, l'API enregistre votre message, dépose une tâche dans une file d'attente et répond aussitôt, et un processus séparé s'en charge. Le navigateur garde un flux ouvert : vous voyez chaque étape, puis la réponse, arriver au lieu de regarder tourner un indicateur.",
-    sysAria: "Le navigateur charge l'interface depuis Cloudflare et appelle un service FastAPI sur Railway. L'API écrit dans Postgres chez Neon et dépose les tâches dans une file d'attente Redis. Un worker sur Railway exécute les agents, appelle OpenRouter pour les modèles et nos propres services SearXNG et Crawl4AI pour chercher et lire les pages, republie chaque trame via Redis, et l'API les transmet au navigateur en server-sent events.",
+    sysAria: "Le navigateur charge l'interface depuis Cloudflare et appelle un service FastAPI sur Railway. L'API écrit dans Postgres chez Supabase et dépose les tâches dans une file d'attente Redis. Un worker sur Railway exécute les agents, appelle OpenRouter pour les modèles et nos propres services SearXNG et Crawl4AI pour chercher et lire les pages, republie chaque trame via Redis, et l'API les transmet au navigateur en server-sent events.",
     sysNotes: [
       { lead: "La file me coûte un service.", rest: " Redis et un second processus sont deux choses qui peuvent tomber à trois heures du matin, et je ne les ajouterais pas à un projet plus petit. Ici, qu'une recherche survive à un déploiement le valait." },
       { lead: "Un signal de vie, et de quoi ramasser les morts.", rest: " Le worker émet un signal de vie à quelques secondes d'intervalle. Une vérification planifiée fait passer en échec toute recherche dont le signal s'est tu, parce qu'une tâche plantée qui reste « en cours » indéfiniment est pire qu'une tâche qui reconnaît son échec." },
@@ -610,7 +610,7 @@ const fr: Dict = {
       worker: "Worker",
       workerRole: "exécute les agents",
       db: "Postgres",
-      dbRole: "Neon",
+      dbRole: "Supabase",
       models: "OpenRouter",
       search: "SearXNG + Crawl4AI",
       searchRole: "auto-hébergés",
