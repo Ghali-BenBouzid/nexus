@@ -14,6 +14,9 @@ _CITATION = re.compile(r"\[(\d+)\]")
 # A comma-grouped citation the model sometimes emits despite the prompt, e.g.
 # "[2, 4, 5]" or "[2,4,5]"; the renderer only understands one number per bracket.
 _CITATION_GROUP = re.compile(r"\[(\d+(?:\s*,\s*\d+)+)\]")
+# A marker with the spaces before it, so a stripped one does not leave "word ."
+# behind. Spaces and tabs only: a newline before it is structure, not padding.
+_SPACED_CITATION = re.compile(r"[ \t]*\[(\d+)\]")
 # Fenced blocks and inline code, so a bracketed integer inside code is not treated
 # as a citation. Fenced first (it may span lines); inline code stays on one line.
 _CODE_SPAN = re.compile(r"```.*?```|`[^`\n]*`", re.DOTALL)
@@ -89,4 +92,4 @@ def _strip_unbacked(content: str, n_sources: int) -> tuple[str, list[int]]:
         stripped.append(number)
         return ""
 
-    return _CITATION.sub(replace, content), stripped
+    return _SPACED_CITATION.sub(replace, content), stripped
