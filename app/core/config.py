@@ -1,6 +1,8 @@
 from typing import Literal
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 # How hard a model thinks before it answers: OpenRouter's reasoning.effort, or
 # "max" for no effort at all, which leaves the model at its own ceiling. glm
@@ -232,6 +234,22 @@ class Settings(BaseSettings):
     # default: judging refuses to start without it, so the judge behind a score is
     # always one someone chose. Optional here because only the evals need it.
     eval_judge_model: str | None = None
+
+    @field_validator("database_url")
+    @classmethod
+    def _async_driver(cls, url: str) -> str:
+        """Take a provider's URL as it is copied. Supabase and Neon hand out the
+        libpq form: without a driver SQLAlchemy picks psycopg2, which the async
+        engine cannot use, and asyncpg refuses libpq's sslmode and
+        channel_binding (SSL comes from database_ssl instead)."""
+        parsed = make_url(url)
+        if parsed.drivername not in ("postgres", "postgresql"):
+            return url
+        return (
+            parsed.set(drivername="postgresql+asyncpg")
+            .difference_update_query(["sslmode", "channel_binding"])
+            .render_as_string(hide_password=False)
+        )
 
     @property
     def cors_origin_list(self) -> list[str]:
