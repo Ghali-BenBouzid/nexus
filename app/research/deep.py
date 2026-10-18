@@ -101,9 +101,13 @@ async def run_deep_research_job(
     graph = get_graph()
     config = deep.run_config(query_id)
 
-    async def notes() -> list[str]:
+    async def read_notes() -> list[str]:
         async with db_session.SessionLocal() as db:
             return await repository.list_notes(db, query_id)
+
+    async def notes() -> list[str]:
+        # The lead reads them between steps, which is where a stop lands.
+        return await db_session.finish_then_cancel(read_notes())
 
     async def work(run: Run) -> None:
         state = await graph.aget_state(config)

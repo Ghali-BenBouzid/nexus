@@ -504,6 +504,10 @@ async def test_a_deep_run_from_deep_mode_is_stoppable(
     its id is found."""
     go = asyncio.Event()
     _use(lambda: _LeadWaits(go=go), monkeypatch=monkeypatch)
+    # The stop reaches a run on its next heartbeat. Beating fast lands it in the
+    # middle of the run, often mid-write: a write cut there used to leave its
+    # connection holding the database, and the slow CI runners hit that.
+    monkeypatch.setattr(research_service, "HEARTBEAT_SECONDS", 0.01)
 
     await client.post(
         "/conversations",

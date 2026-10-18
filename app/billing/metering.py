@@ -31,9 +31,7 @@ def billing(*, user_id: int, query_id: int | None = None) -> Usage:
 
 def recorder(*, user_id: int, query_id: int | None = None) -> Record:
     async def record(usage: dict[str, Any]) -> None:
-        # ponytail: best-effort, like the event feed. A lost row under-bills one
-        # call; the key's credit limit still caps the real spend.
-        try:
+        async def store() -> None:
             async with db_session.SessionLocal() as db:
                 await repository.add_usage(
                     db,
@@ -44,6 +42,11 @@ def recorder(*, user_id: int, query_id: int | None = None) -> Record:
                     output_tokens=usage.get("output_tokens"),
                     cost_micro_usd=to_micro_usd(usage.get("cost_usd") or 0.0),
                 )
+
+        # ponytail: best-effort, like the event feed. A lost row under-bills one
+        # call; the key's credit limit still caps the real spend.
+        try:
+            await db_session.finish_then_cancel(store())
         except Exception:
             logger.exception("failed to record LLM usage for user %s", user_id)
 

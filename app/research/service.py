@@ -81,13 +81,16 @@ class EventSink:
         if event.type not in LIVE_ONLY:
             logger.info("agent[%s] %s", event.type, event.message)
             try:
-                async with db_session.SessionLocal() as db:
-                    await repository.add_event(db, self.query_id, event)
+                await db_session.finish_then_cancel(self._store(event))
             except Exception:
                 logger.exception(
                     "failed to persist agent event for query %s", self.query_id
                 )
         await bus.publish(self.query_id, event)
+
+    async def _store(self, event: AgentEvent) -> None:
+        async with db_session.SessionLocal() as db:
+            await repository.add_event(db, self.query_id, event)
 
 
 HEARTBEAT_SECONDS = 5.0
