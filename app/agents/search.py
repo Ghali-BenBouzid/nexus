@@ -3,11 +3,11 @@ from tavily import AsyncTavilyClient
 
 from app.agents.rate_limit import AsyncTokenBucket
 from app.agents.retry import RetryPolicy, retry_async
-from app.agents.tools import SearchHit
+from app.agents.tools import RetrievalError, SearchHit
 from app.core.config import settings
 
 
-class SearchError(Exception):
+class SearchError(RetrievalError):
     """A search-backend call failed (network/SDK error). Carries no SDK detail so
     a leaked API key can't ride along; the original is chained via ``__cause__``."""
 

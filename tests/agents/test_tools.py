@@ -4,13 +4,19 @@ Two things matter here: retrieved text is tagged so an agent can tell it from it
 own instructions, and a page cannot close that tag to write outside it.
 """
 
+import logging
+
 import pytest
 
+from app.agents.search import SearchError
+from app.agents.sources import Sources
 from app.agents.tools import (
     MAX_PAGE_CHARS,
     MIN_PAGE_CHARS,
+    RetrievalError,
     SearchHit,
     fetch_page_text,
+    retrieval_tools,
     tagged,
     web_search_results,
 )
@@ -58,7 +64,7 @@ async def test_a_page_comes_back_whole_and_attributed() -> None:
 async def test_a_page_with_no_readable_text_is_a_failure_not_an_empty_page() -> None:
     """Handed over empty, a bot check read to the agent as "nothing is written
     about this". As a failure it reads as "try another source"."""
-    with pytest.raises(ValueError, match="no readable text"):
+    with pytest.raises(RetrievalError, match="no readable text"):
         await fetch_page_text(
             FakeSearchBackend(page="  Click to continue  " + " " * MIN_PAGE_CHARS),
             "http://a",
@@ -107,3 +113,38 @@ def test_a_tag_attribute_cannot_carry_markup() -> None:
     block = tagged("report", "body", question='what is "X" <b>?')
 
     assert block.startswith('<report question="what is X b?">')
+
+
+class _BlockedPage(FakeSearchBackend):
+    async def extract(self, url: str) -> str:
+        raise SearchError("page fetch failed: the page did not load") from RuntimeError(
+            "Failed on navigating ACS-GOTO:\n  net::ERR_CONNECTION_RESET"
+        )
+
+
+class _BrokenBackend(FakeSearchBackend):
+    async def extract(self, url: str) -> str:
+        raise KeyError("results")
+
+
+async def test_a_page_that_will_not_load_is_one_log_line_with_its_reason(
+    caplog,
+) -> None:
+    """Blocked and dead pages are routine, a few per run. A stack trace for each
+    buried the log; the reason, cause included, fits on one line."""
+    fetch_page = retrieval_tools(_BlockedPage(), Sources(), agent="researcher")[1]
+    with caplog.at_level(logging.WARNING, logger="app.agents.tools"):
+        answer = await fetch_page.coroutine(url="http://a")
+    assert answer.startswith("fetch_page failed")
+    [record] = caplog.records
+    assert record.exc_info is None
+    assert "the page did not load" in record.getMessage()
+    assert "net::ERR_CONNECTION_RESET" in record.getMessage()
+
+
+async def test_an_unexpected_tool_failure_keeps_its_stack(caplog) -> None:
+    fetch_page = retrieval_tools(_BrokenBackend(), Sources(), agent="researcher")[1]
+    with caplog.at_level(logging.WARNING, logger="app.agents.tools"):
+        await fetch_page.coroutine(url="http://a")
+    [record] = caplog.records
+    assert record.exc_info is not None

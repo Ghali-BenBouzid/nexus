@@ -29,6 +29,22 @@ MAX_PAGE_CHARS = 6_000  # cap fetched page text so it can't blow the token budge
 MIN_PAGE_CHARS = 200  # less than this is not a page the agent can read
 
 
+class RetrievalError(Exception):
+    """An expected retrieval failure: a dead page, a bot wall, a search instance
+    that is down. A few happen every run, so they are logged as one line with
+    their reason; anything else is a bug and keeps its stack."""
+
+
+def _reason(exc: BaseException) -> str:
+    """The failure and the causes chained under it, on one line."""
+    parts: list[str] = []
+    current: BaseException | None = exc
+    while current is not None and len(parts) < 4:
+        parts.append(" ".join(str(current).split()))
+        current = current.__cause__
+    return " <- ".join(part for part in parts if part)[:500]
+
+
 def tagged(tag: str, body: str, **attributes: str) -> str:
     """Retrieved text inside a named tag, so an agent can tell it from its own
     instructions. A page that says "ignore your instructions" then reads as page
@@ -233,7 +249,7 @@ async def fetch_page_text(
     # agent as "there is nothing here"; as a failure it reads as "try elsewhere".
     # ponytail: length heuristic; a wall longer than this still gets through.
     if len(text.strip()) < MIN_PAGE_CHARS:
-        raise ValueError(
+        raise RetrievalError(
             "the page has no readable text (likely a bot check or login wall)"
         )
     whole = len(text)
@@ -285,7 +301,10 @@ def retrieval_tools(
             # from a search instance with JSON off, a 401 from a missing
             # token, a timeout against a private address), so it goes to the
             # log. Without this a deployment cannot be diagnosed at all.
-            logger.warning("%s failed for %s", what, agent, exc_info=exc)
+            if isinstance(exc, RetrievalError):
+                logger.warning("%s failed for %s: %s", what, agent, _reason(exc))
+            else:
+                logger.warning("%s failed for %s", what, agent, exc_info=exc)
             await emit(
                 AgentEvent(
                     type="tool_error",
