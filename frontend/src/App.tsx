@@ -1072,6 +1072,7 @@ export default function App() {
           <Hero
             onSubmit={heroSubmit}
             note={accessNote}
+            noteIsError={LIVE_MODE && !live && inviteError != null}
             staged={live ? staged : undefined}
             onAttach={(files) => setStaged((current) => [...current, ...files])}
             onUnstage={(index) => setStaged((current) => current.filter((_, i) => i !== index))}

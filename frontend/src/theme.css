@@ -1472,6 +1472,10 @@ html[data-theme="dark"] .cites-pop {
 .hero .composer-note { margin: 14px 0 6px; }
 .composer-note { margin: 8px 0 0; text-align: center; font-family: var(--font-mono); font-size: 11px;
   color: var(--faint); letter-spacing: 0.02em; font-variant-numeric: tabular-nums; }
+/* A link that did not work is something to act on, not a footnote like the credits. */
+.composer-note.bad { font-family: var(--font-sans); font-size: 14px; letter-spacing: 0; color: var(--bad);
+  width: fit-content; max-width: 100%; margin-left: auto; margin-right: auto; padding: 7px 14px; border-radius: 12px;
+  background: color-mix(in srgb, var(--bad) 9%, var(--panel)); border: 1px solid color-mix(in srgb, var(--bad) 28%, transparent); }
 .cinput { display: flex; flex-direction: column; gap: 6px; border-radius: 22px; background: var(--panel);
   border: 1px solid var(--line); box-shadow: var(--shadow); backdrop-filter: blur(12px); cursor: text;
   padding: 12px 12px 10px; transition: border-color 0.2s, box-shadow 0.2s; }

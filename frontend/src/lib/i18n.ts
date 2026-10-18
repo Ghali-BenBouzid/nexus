@@ -221,7 +221,8 @@ const en = {
   },
   access: {
     credits: (percent: number) => `${percent}% of your demo credits left`,
-    invalid: "This invite link is not valid.",
+    invalid: "This invite link is not valid. Ask the person who sent it for a new one.",
+    expired: "This invite link has expired. Ask the person who sent it for a new one.",
     none: "Live research needs an invite link.",
   },
   demo: {
@@ -669,7 +670,8 @@ const fr: Dict = {
   },
   access: {
     credits: (percent: number) => `Il vous reste ${percent} % de vos crédits de démo`,
-    invalid: "Ce lien d'invitation n'est pas valide.",
+    invalid: "Ce lien d'invitation n'est pas valide. Demandez-en un nouveau à la personne qui vous l'a envoyé.",
+    expired: "Ce lien d'invitation a expiré. Demandez-en un nouveau à la personne qui vous l'a envoyé.",
     none: "La recherche en direct nécessite un lien d'invitation.",
   },
   demo: {

@@ -5,9 +5,11 @@ import { PromptBar, type PromptBarHandle } from "./PromptBar";
 
 // ``note``: the one line an invited visitor gets under the bar, their credits or
 // why their invite link did not work. The chat's composer carries the same line.
+// ``noteIsError`` marks the second case, which must not read like the credits.
 type HeroProps = {
   onSubmit: (prompt: string) => void;
   note?: string | null;
+  noteIsError?: boolean;
   // Attaching from the landing page works the same as in the chat: the file goes
   // with the first message, which is what creates the chat.
   staged?: File[];
@@ -20,6 +22,7 @@ type HeroProps = {
 export function Hero({
   onSubmit,
   note,
+  noteIsError,
   staged,
   onAttach,
   onPreview,
@@ -63,7 +66,11 @@ export function Hero({
             onUnstage={onUnstage}
             attachError={attachError}
           />
-          {note && <p className="composer-note">{note}</p>}
+          {note && (
+            <p className={noteIsError ? "composer-note bad" : "composer-note"} role={noteIsError ? "alert" : undefined}>
+              {note}
+            </p>
+          )}
           <p className="chips-label">{t.hero.examplesLabel}</p>
           <div className="chips">
             {t.hero.chips.map((prompt, i) => (

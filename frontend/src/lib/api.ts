@@ -108,7 +108,14 @@ async function exchangeInvite(invite: string): Promise<string> {
     body: JSON.stringify({ token: invite }),
   });
   if (!res.ok) {
-    const message = await errorMessage(res, t.access.invalid);
+    // The two reasons a visitor can act on get their own words, in their language;
+    // anything else keeps the server's reason.
+    const message =
+      res.status === 401
+        ? t.access.invalid
+        : res.status === 403
+          ? t.access.expired
+          : await errorMessage(res, t.access.invalid);
     forgetAccess();
     throw new Error(message);
   }
