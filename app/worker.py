@@ -11,8 +11,15 @@ run spends money and is not safe to repeat blindly. Its heartbeat goes stale
 instead, and reap_stalled resolves it: a deep run is handed back to a worker,
 which resumes it from its last checkpoint, and everything else is failed so the
 user sees an error rather than a run that never ends.
+
+A run stalls when its worker stops, so the sweep that matters is the one the
+next worker makes once the old heartbeats have gone stale. Past that, a sweep
+twice a day is a backstop: sweeping every minute kept the database awake around
+the clock for something that happens on a deploy or a crash.
 """
 
+import asyncio
+import contextlib
 import logging
 from typing import Any
 
@@ -48,6 +55,10 @@ STALE_AFTER_SECONDS = 90
 # Reading a file has no heartbeat, but the longest a parser allows (a dozen
 # pages, ten of them by OCR) is well under a minute.
 READING_STALE_AFTER_SECONDS = 300
+# How long after a worker starts its sweeps run: once the heartbeats of the
+# worker it replaced are stale, then once its unfinished reads are. The margin
+# covers the old worker still beating while the new one boots.
+RESTART_SWEEPS_SECONDS = (STALE_AFTER_SECONDS + 30, READING_STALE_AFTER_SECONDS + 30)
 
 
 def _task(job: Job) -> Function:
@@ -76,6 +87,17 @@ async def reap_stalled(ctx: dict[str, Any]) -> None:
         logger.warning("failed %d document(s) whose reading stopped", unread)
 
 
+async def _sweep_after_restart(ctx: dict[str, Any]) -> None:
+    started = 0.0
+    for at in RESTART_SWEEPS_SECONDS:
+        await asyncio.sleep(at - started)
+        started = at
+        try:
+            await reap_stalled(ctx)
+        except Exception:
+            logger.exception("the sweep after a restart failed")
+
+
 async def startup(ctx: dict[str, Any]) -> None:
     logging.basicConfig(
         level=logging.INFO, format="%(levelname)s %(name)s: %(message)s"
@@ -87,9 +109,14 @@ async def startup(ctx: dict[str, Any]) -> None:
     await jobs.open_queue()  # so a turn can queue the runs it starts
     await bus.open_bus()  # the live feed's pipe to the API
     await open_graph()
+    ctx["restart_sweep"] = asyncio.create_task(_sweep_after_restart(ctx))
 
 
 async def shutdown(ctx: dict[str, Any]) -> None:
+    if sweep := ctx.get("restart_sweep"):
+        sweep.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await sweep
     await close_graph()
     await bus.close_bus()
     await jobs.close_queue()
@@ -97,7 +124,7 @@ async def shutdown(ctx: dict[str, Any]) -> None:
 
 class WorkerSettings:
     functions = [_task(job) for job in JOBS]
-    cron_jobs = [cron(reap_stalled, second=0, run_at_startup=True)]  # every minute
+    cron_jobs = [cron(reap_stalled, hour={3, 15}, minute=0)]  # UTC
     on_startup = startup
     on_shutdown = shutdown
     redis_settings = RedisSettings.from_dsn(settings.redis_url)
